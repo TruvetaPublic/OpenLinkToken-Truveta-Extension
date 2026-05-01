@@ -8,6 +8,8 @@ from typing import Any
 
 import requests
 
+from openlinktoken_ext_truveta.api.common import resolve_timeout_seconds
+
 
 class UploadAPIError(Exception):
     """Raised when upload API calls fail."""
@@ -31,15 +33,18 @@ def call_upload_endpoint(
     access_token: str,
     exchange_id: str,
     files: dict[str, Any],
+    timeout_seconds: int | None = None,
 ) -> dict[str, Any]:
     """Call POST /v1/uploads/{exchangeId} and return JSON payload on success."""
     upload_url = f"{api_url.rstrip('/')}/v1/uploads/{exchange_id}"
+    request_timeout = resolve_timeout_seconds(timeout_seconds)
+
     try:
         response = requests.post(
             upload_url,
             files=files,
             headers={"Authorization": f"Bearer {access_token}"},
-            timeout=30,
+            timeout=request_timeout,
         )
 
         if response.status_code != 202:

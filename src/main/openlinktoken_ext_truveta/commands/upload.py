@@ -16,13 +16,18 @@ from openlinktoken_ext_truveta.api.upload import UploadAPIError, call_upload_end
 from openlinktoken_ext_truveta.auth import (
     AuthError,
     Credentials,
+    _extract_domain,
     _extract_service_domain,
     ensure_auth,
+    get_api_domain_url,
 )
+from openlinktoken_ext_truveta.commands import common as common_commands
 from openlinktoken_ext_truveta.commands.common import (
     SessionResolutionError,
+    _is_local_dev,
     resolve_api_url,
     resolve_auth_url,
+    resolve_timeout_seconds,
 )
 from openlinktoken_ext_truveta.exchange.config import (
     ExchangeConfigError,
@@ -128,8 +133,18 @@ def _upload(args: argparse.Namespace) -> int:
         metadata_path = _discover_metadata_file(file_path)
 
     try:
-        url = resolve_api_url(args, session_only=True)
-        auth_url = resolve_auth_url(args, session_only=True)
+        if _is_local_dev(args):
+            url = resolve_api_url(args)
+            auth_url = resolve_auth_url(args)
+        else:
+            session_auth_url = common_commands.read_session_auth_url()
+            if not session_auth_url:
+                raise SessionResolutionError(
+                    "No login session found. Please run 'olt truveta login' first."
+                )
+
+            auth_url = session_auth_url
+            url = get_api_domain_url(_extract_domain(session_auth_url))
     except SessionResolutionError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -185,6 +200,7 @@ def _upload(args: argparse.Namespace) -> int:
                 credentials.access_token,
                 exchange_metadata["payload"]["exchangeId"],
                 files,
+                timeout_seconds=resolve_timeout_seconds(args),
             )
         upload_reference_id = payload.get("uploadReferenceId")
 

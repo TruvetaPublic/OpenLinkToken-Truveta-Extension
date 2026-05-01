@@ -6,6 +6,8 @@ Unit tests for exchange_config.py — config building, persistence, and loading.
 
 import base64
 import json
+import re
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -277,7 +279,7 @@ class TestBuildExchangeConfig:
 
 
 class TestWriteExchangeConfig:
-    def test_writes_config_to_current_dir_with_openlinktoken_date_name(
+    def test_writes_config_to_current_dir_with_openlink_date_name(
         self, tmp_path, monkeypatch
     ):
         monkeypatch.chdir(tmp_path)
@@ -286,13 +288,9 @@ class TestWriteExchangeConfig:
         config_path = write_exchange_config("test.domain.com", config)
 
         assert config_path.parent == tmp_path
-        assert config_path.name.startswith("openlinktoken-")
-        assert config_path.name.endswith(".exchange.json")
-        date_portion = config_path.name.removeprefix("openlinktoken-").removesuffix(
-            ".exchange.json"
+        assert re.fullmatch(
+            r"openlinktoken-\d{4}-\d{2}-\d{2}\.exchange\.json", config_path.name
         )
-        assert len(date_portion) == 8
-        assert date_portion.isdigit()
 
     def test_writes_valid_json(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -340,7 +338,9 @@ class TestLoadExchangeConfig:
     def test_raises_on_invalid_json(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
 
-        (tmp_path / "openlinktoken-20260423.exchange.json").write_text("invalid json {")
+        (tmp_path / "openlinktoken-2026-04-23.exchange.json").write_text(
+            "invalid json {"
+        )
 
         with pytest.raises(ExchangeConfigError):
             load_exchange_config("test.domain.com")
@@ -368,11 +368,66 @@ class TestLoadExchangeConfig:
 
         assert loaded == config
 
+    def test_prefers_todays_config_when_multiple_exist(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+
+        today_stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        old_config = _make_valid_exchange_config()
+        today_config = _make_valid_exchange_config()
+        today_config["protected"] = "today-config"
+
+        (tmp_path / "openlinktoken-2020-01-01.exchange.json").write_text(
+            json.dumps(old_config)
+        )
+        (tmp_path / f"openlinktoken-{today_stamp}.exchange.json").write_text(
+            json.dumps(today_config)
+        )
+
+        loaded = load_exchange_config("test.domain.com")
+        assert loaded["protected"] == "today-config"
+
+    def test_raises_when_multiple_configs_exist_without_todays_file(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+
+        config_a = _make_valid_exchange_config()
+        config_b = _make_valid_exchange_config()
+
+        (tmp_path / "openlinktoken-2026-04-22.exchange.json").write_text(
+            json.dumps(config_a)
+        )
+        (tmp_path / "openlinktoken-2026-04-23.exchange.json").write_text(
+            json.dumps(config_b)
+        )
+
+        with pytest.raises(
+            ExchangeConfigError,
+            match="today's date",
+        ):
+            load_exchange_config("test.domain.com")
+
+    def test_raises_when_single_config_exists_but_not_todays(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.chdir(tmp_path)
+
+        config = _make_valid_exchange_config()
+        (tmp_path / "openlinktoken-2020-01-01.exchange.json").write_text(
+            json.dumps(config)
+        )
+
+        with pytest.raises(
+            ExchangeConfigError,
+            match="today's date",
+        ):
+            load_exchange_config("test.domain.com")
+
 
 class TestResolveExchangePayload:
     def test_resolves_legacy_payload(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        (tmp_path / "openlinktoken-20260423.exchange.json").write_text(
+        (tmp_path / "openlinktoken-2026-04-23.exchange.json").write_text(
             json.dumps({"payload": {"exchangeId": "x"}})
         )
 

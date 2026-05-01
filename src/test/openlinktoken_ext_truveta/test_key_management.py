@@ -53,7 +53,7 @@ def _encrypt_for_recipient(
     plaintext: str,
     recipient_public_pem: str,
     sender_private_pem: str,
-    exchange_id: str | None = None,
+    exchange_id: str,
 ) -> str:
     """Encrypt plaintext using the same algorithm as the C# server."""
     from cryptography.hazmat.primitives.serialization import (
@@ -66,16 +66,16 @@ def _encrypt_for_recipient(
     )
     recipient_public = load_pem_public_key(recipient_public_pem.encode("utf-8"))
 
+    if not exchange_id:
+        raise ValueError("exchange_id is required")
+
     raw_shared = sender_private.exchange(ECDH(), recipient_public)
     shared_secret = hashlib.sha256(raw_shared).digest()
-    if exchange_id:
-        encryption_key = hmac.new(
-            shared_secret,
-            exchange_id.encode("utf-8"),
-            hashlib.sha256,
-        ).digest()
-    else:
-        encryption_key = shared_secret
+
+    salt = exchange_id.encode("utf-8")
+    prk = hmac.new(salt, shared_secret, hashlib.sha256).digest()
+    info = b"openlink-token-encryption"
+    encryption_key = hmac.new(prk, info + b"\x01", hashlib.sha256).digest()
 
     import secrets as _secrets
 
@@ -229,12 +229,19 @@ class TestDecryptHashingSecret:
         recipient_private_pem, recipient_public_pem = _generate_test_keypair_pem()
         sender_private_pem, sender_public_pem = _generate_test_keypair_pem()
         plaintext = "Truveta.OpenLink.Token.Hashing.Secret.V1"
+        exchange_id = "88f1373e-3ffd-4ec5-8980-4fbf544b61a8"
 
         encrypted_b64 = _encrypt_for_recipient(
-            plaintext, recipient_public_pem, sender_private_pem
+            plaintext,
+            recipient_public_pem,
+            sender_private_pem,
+            exchange_id,
         )
         decrypted = decrypt_hashing_secret(
-            encrypted_b64, recipient_private_pem, sender_public_pem
+            encrypted_b64,
+            recipient_private_pem,
+            sender_public_pem,
+            exchange_id,
         )
 
         assert decrypted == plaintext
@@ -245,6 +252,7 @@ class TestDecryptHashingSecret:
         recipient_private_pem, recipient_public_pem = _generate_test_keypair_pem()
         sender_private_pem, sender_public_pem = _generate_test_keypair_pem()
         plaintext = "my-hashing-secret"
+        exchange_id = "88f1373e-3ffd-4ec5-8980-4fbf544b61a8"
 
         sender_public_spki_b64 = base64.b64encode(
             load_pem_public_key(sender_public_pem.encode("utf-8")).public_bytes(
@@ -253,10 +261,16 @@ class TestDecryptHashingSecret:
         ).decode("utf-8")
 
         encrypted_b64 = _encrypt_for_recipient(
-            plaintext, recipient_public_pem, sender_private_pem
+            plaintext,
+            recipient_public_pem,
+            sender_private_pem,
+            exchange_id,
         )
         decrypted = decrypt_hashing_secret(
-            encrypted_b64, recipient_private_pem, sender_public_spki_b64
+            encrypted_b64,
+            recipient_private_pem,
+            sender_public_spki_b64,
+            exchange_id,
         )
 
         assert decrypted == plaintext
@@ -286,8 +300,12 @@ class TestDecryptHashingSecret:
         recipient_private_pem, recipient_public_pem = _generate_test_keypair_pem()
         sender_private_pem, sender_public_pem = _generate_test_keypair_pem()
 
+        exchange_id = "88f1373e-3ffd-4ec5-8980-4fbf544b61a8"
         encrypted_b64 = _encrypt_for_recipient(
-            "secret", recipient_public_pem, sender_private_pem
+            "secret",
+            recipient_public_pem,
+            sender_private_pem,
+            exchange_id,
         )
         encrypted_bytes = bytearray(base64.b64decode(encrypted_b64))
         encrypted_bytes[-1] ^= 0xFF
@@ -297,7 +315,10 @@ class TestDecryptHashingSecret:
             KeyManagementError, match="Failed to decrypt hashing secret"
         ):
             decrypt_hashing_secret(
-                tampered_b64, recipient_private_pem, sender_public_pem
+                tampered_b64,
+                recipient_private_pem,
+                sender_public_pem,
+                exchange_id,
             )
 
     def test_raises_on_wrong_private_key(self):
@@ -305,30 +326,67 @@ class TestDecryptHashingSecret:
         sender_private_pem, sender_public_pem = _generate_test_keypair_pem()
         wrong_private_pem, _ = _generate_test_keypair_pem()
 
+        exchange_id = "88f1373e-3ffd-4ec5-8980-4fbf544b61a8"
         encrypted_b64 = _encrypt_for_recipient(
-            "secret", recipient_public_pem, sender_private_pem
+            "secret",
+            recipient_public_pem,
+            sender_private_pem,
+            exchange_id,
         )
 
         with pytest.raises(
             KeyManagementError, match="Failed to decrypt hashing secret"
         ):
-            decrypt_hashing_secret(encrypted_b64, wrong_private_pem, sender_public_pem)
+            decrypt_hashing_secret(
+                encrypted_b64,
+                wrong_private_pem,
+                sender_public_pem,
+                exchange_id,
+            )
 
     def test_raises_on_invalid_private_key(self):
         _, sender_public_pem = _generate_test_keypair_pem()
+        exchange_id = "88f1373e-3ffd-4ec5-8980-4fbf544b61a8"
 
         with pytest.raises(
             KeyManagementError, match="Failed to decrypt hashing secret"
         ):
-            decrypt_hashing_secret("dGVzdA==", "not-a-valid-pem", sender_public_pem)
+            decrypt_hashing_secret(
+                "dGVzdA==",
+                "not-a-valid-pem",
+                sender_public_pem,
+                exchange_id,
+            )
 
     def test_raises_on_invalid_server_public_key(self):
         recipient_private_pem, _ = _generate_test_keypair_pem()
+        exchange_id = "88f1373e-3ffd-4ec5-8980-4fbf544b61a8"
 
         with pytest.raises(
             KeyManagementError, match="Failed to decrypt hashing secret"
         ):
-            decrypt_hashing_secret("dGVzdA==", recipient_private_pem, "not-a-valid-key")
+            decrypt_hashing_secret(
+                "dGVzdA==",
+                recipient_private_pem,
+                "not-a-valid-key",
+                exchange_id,
+            )
+
+    def test_raises_when_exchange_id_missing(self):
+        recipient_private_pem, recipient_public_pem = _generate_test_keypair_pem()
+        sender_private_pem, sender_public_pem = _generate_test_keypair_pem()
+
+        encrypted_b64 = _encrypt_for_recipient(
+            "secret",
+            recipient_public_pem,
+            sender_private_pem,
+            "88f1373e-3ffd-4ec5-8980-4fbf544b61a8",
+        )
+
+        with pytest.raises(KeyManagementError, match="exchange_id is required"):
+            decrypt_hashing_secret(
+                encrypted_b64, recipient_private_pem, sender_public_pem, ""
+            )
 
 
 class TestGetKeyFingerprint:

@@ -141,25 +141,40 @@ def _decrypt_hashing_secret_local(
     encrypted_b64: str,
     local_private_key_pem: str,
     server_public_key: str,
-    exchange_id: str | None = None,
+    exchange_id: str,
 ) -> str:
-    """Local compatibility decryption used only when OpenToken helper is unavailable."""
+    """Local decryption matching the server's HKDF-based key derivation.
+
+    Server-side derivation (EcdhKeyProvider.EncryptHashingSecret):
+      1. sharedSecret = DeriveKeyFromHash(callerPub, SHA256)
+                      = SHA-256(ECDH raw X-coordinate)
+      2. HKDF-Extract: PRK = HMAC-SHA256(key=exchangeId.bytes, data=sharedSecret)
+      3. HKDF-Expand:  key = HMAC-SHA256(key=PRK, data=info || 0x01)
+                       where info = b"openlink-token-encryption"
+      4. Encrypt: payload = nonce(12) + AES-GCM(key, nonce, plaintext) + tag(16)
+    """
     private_key = load_pem_private_key(
         local_private_key_pem.encode(_UTF8_ENCODING), password=None
     )
     peer_public_key = _load_public_key_from_pem_or_spki(server_public_key)
 
+    # Step 1: ECDH + SHA-256 (matches .NET DeriveKeyFromHash with SHA256)
     raw_shared_secret = private_key.exchange(ECDH(), peer_public_key)
     shared_secret = hashlib.sha256(raw_shared_secret).digest()
-    if exchange_id:
-        encryption_key = hmac.new(
-            shared_secret,
-            exchange_id.encode(_UTF8_ENCODING),
-            hashlib.sha256,
-        ).digest()
-    else:
-        encryption_key = shared_secret
 
+    if not exchange_id:
+        raise KeyManagementError("exchange_id is required to decrypt hashing secret.")
+
+    # Step 2: HKDF-Extract: PRK = HMAC-SHA256(salt=exchangeId, IKM=sharedSecret)
+    salt = exchange_id.encode(_UTF8_ENCODING)
+    prk = hmac.new(salt, shared_secret, hashlib.sha256).digest()
+
+    # Step 3: HKDF-Expand: key = HMAC-SHA256(PRK, info || 0x01)
+    info = b"openlink-token-encryption"
+    hmac_data = info + b"\x01"
+    encryption_key = hmac.new(prk, hmac_data, hashlib.sha256).digest()
+
+    # Step 4: Decode payload and decrypt AES-GCM
     encrypted_bytes = base64.b64decode(encrypted_b64)
     nonce = encrypted_bytes[:_NONCE_LENGTH]
     ciphertext = encrypted_bytes[_NONCE_LENGTH:-_TAG_LENGTH]
@@ -179,10 +194,15 @@ def decrypt_hashing_secret(
     encrypted_b64: str,
     local_private_key_pem: str,
     server_public_key: str,
-    exchange_id: str | None = None,
+    exchange_id: str,
 ) -> str:
     """Decrypt the ECDH-encrypted hashing secret received from the server."""
     try:
+        if not exchange_id:
+            raise KeyManagementError(
+                "exchange_id is required to decrypt hashing secret."
+            )
+
         core_decrypt = _load_core_decrypt_hashing_secret()
         if core_decrypt is not None:
             try:

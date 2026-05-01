@@ -8,16 +8,18 @@ import argparse
 import sys
 
 from openlinktoken_ext_truveta.auth import (
-    DEFAULT_DOMAIN_URL,
     AuthError,
     Credentials,
     _cache_path,
     _extract_domain,
     decode_jwt_payload,
     ensure_auth,
-    write_session_api_url,
+    get_api_domain_url,
+    write_session_auth_url,
 )
-from openlinktoken_ext_truveta.commands.common import resolve_api_url, resolve_auth_url
+from openlinktoken_ext_truveta.commands.common import resolve_auth_url
+
+DEFAULT_DOMAIN_URL = get_api_domain_url("truveta.com")
 
 __all__ = ["DEFAULT_DOMAIN_URL", "_login"]
 
@@ -65,13 +67,12 @@ def _login(args: argparse.Namespace) -> int:
     Returns:
         Exit code (0 on success, 1 on failure).
     """
-    api_url = resolve_api_url(args)
     auth_url, _credentials = _authenticate(args)
     if not auth_url:
         return 1
 
     try:
-        write_session_api_url(api_url)
+        write_session_auth_url(auth_url)
     except AuthError as exc:
         print(f"Failed to persist login session: {exc}", file=sys.stderr)
         return 1

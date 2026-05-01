@@ -71,6 +71,26 @@ class TestRegisterSubcommand:
 
         raise AssertionError("Expected parse_args to reject removed logout command")
 
+    def test_package_subcommand_removed(self):
+        root = self._build_parser()
+        with patch("sys.stderr"):
+            try:
+                root.parse_args(
+                    [
+                        "truveta",
+                        "package",
+                        "--input",
+                        "input.csv",
+                        "--output",
+                        "output.csv",
+                    ]
+                )
+            except SystemExit as exc:
+                assert exc.code == 2
+                return
+
+        raise AssertionError("Expected parse_args to reject removed package command")
+
     def test_initiate_exchange_subcommand_present(self):
         root = self._build_parser()
         parsed = root.parse_args(["truveta", "initiate-exchange"])
@@ -225,25 +245,17 @@ class TestRegisterSubcommand:
             "Expected parse_args to reject initiate-exchange --api-domain"
         )
 
-    def test_initiate_exchange_rejects_local_dev_flag(self):
+    def test_initiate_exchange_accepts_local_dev_flag(self):
         root = self._build_parser()
-
-        with patch("sys.stderr"):
-            try:
-                root.parse_args(
-                    [
-                        "truveta",
-                        "initiate-exchange",
-                        "--local-dev",
-                    ]
-                )
-            except SystemExit as exc:
-                assert exc.code == 2
-                return
-
-        raise AssertionError(
-            "Expected parse_args to reject initiate-exchange --local-dev"
+        parsed = root.parse_args(
+            [
+                "truveta",
+                "initiate-exchange",
+                "--local-dev",
+            ]
         )
+
+        assert parsed.local_dev is True
 
     def test_initiate_exchange_rejects_force_flag(self):
         root = self._build_parser()

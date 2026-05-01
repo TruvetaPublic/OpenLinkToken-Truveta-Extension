@@ -27,7 +27,9 @@ from openlinktoken_ext_truveta.auth import (
     ensure_auth,
     get_auth_headers,
     read_session_api_url,
+    read_session_auth_url,
     write_session_api_url,
+    write_session_auth_url,
 )
 
 # ---------------------------------------------------------------------------
@@ -228,12 +230,23 @@ class TestCacheReadWrite:
 
 
 class TestSessionReadWrite:
-    def test_write_and_read_session_api_url(self, tmp_path, monkeypatch):
+    def test_write_and_read_session_auth_url(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
             "openlinktoken_ext_truveta.auth.Path.home", lambda: tmp_path
         )
 
-        write_session_api_url("https://api.dev.truveta-int.com/")
+        write_session_auth_url("https://login.dev.truveta-int.com/")
+
+        assert read_session_auth_url() == "https://login.dev.truveta-int.com"
+
+    def test_read_session_api_url_derives_from_stored_auth_url(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "openlinktoken_ext_truveta.auth.Path.home", lambda: tmp_path
+        )
+
+        write_session_auth_url("https://login.dev.truveta-int.com/")
 
         assert read_session_api_url() == "https://api.dev.truveta-int.com"
 
@@ -250,11 +263,22 @@ class TestSessionReadWrite:
         monkeypatch.setattr(
             "openlinktoken_ext_truveta.auth.Path.home", lambda: tmp_path
         )
-        write_session_api_url("https://api.truveta.com")
+        write_session_auth_url("https://login.truveta.com")
 
         clear_session_file()
 
         assert read_session_api_url() is None
+
+    def test_write_session_api_url_remains_backward_compatible(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "openlinktoken_ext_truveta.auth.Path.home", lambda: tmp_path
+        )
+
+        write_session_api_url("https://api.truveta.com")
+
+        assert read_session_auth_url() == "https://login.truveta.com"
 
 
 # ---------------------------------------------------------------------------

@@ -85,8 +85,8 @@ class TestUploadCommand:
                 side_effect=_post,
             ),
             patch(
-                "openlinktoken_ext_truveta.commands.common.read_session_api_url",
-                return_value="https://api.truveta.com",
+                "openlinktoken_ext_truveta.commands.common.read_session_auth_url",
+                return_value="https://login.truveta.com",
             ),
         ):
             result = _upload(_args(str(data_file)))
@@ -283,15 +283,15 @@ class TestUploadCommand:
                 side_effect=_post,
             ),
             patch(
-                "openlinktoken_ext_truveta.commands.common.read_session_api_url",
-                return_value="https://api.dev.truveta-int.com",
+                "openlinktoken_ext_truveta.commands.common.read_session_auth_url",
+                return_value="https://login.dev.truveta-int.com",
             ),
         ):
             result = _upload(args)
 
         assert result == 0
         mock_auth.assert_called_once_with(
-            "https://api.dev.truveta-int.com", cached_only=True
+            "https://login.dev.truveta-int.com", cached_only=True
         )
         assert captured["url"] == "https://api.dev.truveta-int.com/v1/uploads/x"
 
@@ -300,10 +300,47 @@ class TestUploadCommand:
         data_file.write_text("token\nabc")
 
         with patch(
-            "openlinktoken_ext_truveta.commands.common.read_session_api_url",
+            "openlinktoken_ext_truveta.commands.common.read_session_auth_url",
             return_value=None,
         ):
             result = _upload(_args(str(data_file), domain=None, api_domain=None))
 
         assert result == 1
         assert "olt truveta login" in capsys.readouterr().err
+
+    def test_upload_local_dev_uses_localhost_endpoint_and_timeout(self, tmp_path):
+        data_file = tmp_path / "tokenized.csv"
+        data_file.write_text("token\nabc")
+
+        captured = {}
+
+        def _post(url, files, headers, timeout):
+            captured["url"] = url
+            captured["timeout"] = timeout
+            return _Response(202, {"uploadReferenceId": "upload-123"})
+
+        with (
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.resolve_exchange_payload",
+                return_value={
+                    "exchangeId": "x",
+                    "senderKeyFingerprint": "sender",
+                    "recipientKeyFingerprint": "recipient",
+                    "curve": "P-256",
+                },
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.ensure_auth",
+                return_value=_creds(),
+            ) as mock_auth,
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.requests.post",
+                side_effect=_post,
+            ),
+        ):
+            result = _upload(_args(str(data_file), local_dev=True))
+
+        assert result == 0
+        mock_auth.assert_called_once_with("http://localhost:18080", cached_only=True)
+        assert captured["url"] == "http://localhost:18080/v1/uploads/x"
+        assert captured["timeout"] == 180
