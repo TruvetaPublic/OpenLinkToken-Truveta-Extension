@@ -58,12 +58,13 @@ class TestCallExchangeEndpoint:
     def test_successful_call_returns_response(self):
         public_pem = _sample_public_key()
         api_response = {
+            "exchangeId": "ex-123",
             "encryptedHashingKey": "encrypted-secret",
             "truvetaPublicKey": "server-spki-b64",
         }
         expected_normalized = {
             "exchangeName": "",
-            "exchangeId": "derived-acb41b3ccedbcae9b7b05e2a62ebdbfb",
+            "exchangeId": "ex-123",
             "hashingSecret": "encrypted-secret",
             "hashingSecretEncoding": "base64",
             "serverPublicKey": "server-spki-b64",
@@ -96,23 +97,51 @@ class TestCallExchangeEndpoint:
 
         assert response["exchangeId"] == "ex-123"
 
+    def test_raises_when_exchange_id_missing(self):
+        public_pem = _sample_public_key()
+        api_response = {
+            "encryptedHashingKey": "encrypted-secret",
+            "truvetaPublicKey": "server-spki-b64",
+        }
+
+        with patch("openlinktoken_ext_truveta.api.exchange.requests.post") as mock_post:
+            mock_post.return_value = _make_mock_response(200, api_response)
+
+            with pytest.raises(
+                ExchangeAPIError,
+                match="exchangeId",
+            ):
+                call_exchange_endpoint("https://api.test.com", public_pem, "test-token")
+
     def test_post_request_to_correct_url(self):
         public_pem = _sample_public_key("sender")
 
         with patch("openlinktoken_ext_truveta.api.exchange.requests.post") as mock_post:
-            mock_post.return_value = _make_mock_response(200, {})
+            mock_post.return_value = _make_mock_response(200, {"exchangeId": "ex-1"})
 
             call_exchange_endpoint("https://api.test.com", public_pem, "test-token")
 
         mock_post.assert_called_once()
         call_args = mock_post.call_args
-        assert call_args[0][0] == "https://api.test.com/v1/exchange"
+        assert call_args[0][0] == "https://api.test.com/openlink/v1/exchange"
+
+    def test_post_request_to_correct_url_for_localhost(self):
+        public_pem = _sample_public_key("sender")
+
+        with patch("openlinktoken_ext_truveta.api.exchange.requests.post") as mock_post:
+            mock_post.return_value = _make_mock_response(200, {"exchangeId": "ex-1"})
+
+            call_exchange_endpoint("http://localhost:18080", public_pem, "test-token")
+
+        mock_post.assert_called_once()
+        call_args = mock_post.call_args
+        assert call_args[0][0] == "http://localhost:18080/v1/exchange"
 
     def test_includes_bearer_token_in_headers(self):
         public_pem = _sample_public_key("sender")
 
         with patch("openlinktoken_ext_truveta.api.exchange.requests.post") as mock_post:
-            mock_post.return_value = _make_mock_response(200, {})
+            mock_post.return_value = _make_mock_response(200, {"exchangeId": "ex-1"})
 
             call_exchange_endpoint(
                 "https://api.test.com", public_pem, "my-access-token"
@@ -126,7 +155,7 @@ class TestCallExchangeEndpoint:
         public_pem = _sample_public_key("sender")
 
         with patch("openlinktoken_ext_truveta.api.exchange.requests.post") as mock_post:
-            mock_post.return_value = _make_mock_response(200, {})
+            mock_post.return_value = _make_mock_response(200, {"exchangeId": "ex-1"})
 
             call_exchange_endpoint("https://api.test.com", public_pem, "test-token")
 
@@ -138,7 +167,7 @@ class TestCallExchangeEndpoint:
         public_pem = _sample_public_key()
 
         with patch("openlinktoken_ext_truveta.api.exchange.requests.post") as mock_post:
-            mock_post.return_value = _make_mock_response(200, {})
+            mock_post.return_value = _make_mock_response(200, {"exchangeId": "ex-1"})
 
             call_exchange_endpoint("https://api.test.com", public_pem, "test-token")
 
@@ -149,16 +178,43 @@ class TestCallExchangeEndpoint:
 
         _b64.b64decode(json_body["publicKey"])
 
-    def test_uses_30_second_timeout(self):
+    def test_uses_30_second_timeout_for_non_localhost(self):
         public_pem = _sample_public_key("sender")
 
         with patch("openlinktoken_ext_truveta.api.exchange.requests.post") as mock_post:
-            mock_post.return_value = _make_mock_response(200, {})
+            mock_post.return_value = _make_mock_response(200, {"exchangeId": "ex-1"})
 
             call_exchange_endpoint("https://api.test.com", public_pem, "test-token")
 
         call_kwargs = mock_post.call_args[1]
         assert call_kwargs["timeout"] == 30
+
+    def test_uses_default_timeout_for_localhost_without_override(self):
+        public_pem = _sample_public_key("sender")
+
+        with patch("openlinktoken_ext_truveta.api.exchange.requests.post") as mock_post:
+            mock_post.return_value = _make_mock_response(200, {"exchangeId": "ex-1"})
+
+            call_exchange_endpoint("http://localhost:18080", public_pem, "test-token")
+
+        call_kwargs = mock_post.call_args[1]
+        assert call_kwargs["timeout"] == 30
+
+    def test_uses_custom_timeout_when_provided(self):
+        public_pem = _sample_public_key("sender")
+
+        with patch("openlinktoken_ext_truveta.api.exchange.requests.post") as mock_post:
+            mock_post.return_value = _make_mock_response(200, {"exchangeId": "ex-1"})
+
+            call_exchange_endpoint(
+                "https://api.test.com",
+                public_pem,
+                "test-token",
+                timeout_seconds=90,
+            )
+
+        call_kwargs = mock_post.call_args[1]
+        assert call_kwargs["timeout"] == 90
 
     def test_raises_http_error_on_400(self):
         public_pem = _sample_public_key("sender")
@@ -251,9 +307,24 @@ class TestCallExchangeEndpoint:
         public_pem = _sample_public_key("sender")
 
         with patch("openlinktoken_ext_truveta.api.exchange.requests.post") as mock_post:
-            mock_post.return_value = _make_mock_response(200, {})
+            mock_post.return_value = _make_mock_response(200, {"exchangeId": "ex-1"})
 
             call_exchange_endpoint("https://api.test.com/", public_pem, "test-token")
 
         call_args = mock_post.call_args
-        assert call_args[0][0] == "https://api.test.com/v1/exchange"
+        assert call_args[0][0] == "https://api.test.com/openlink/v1/exchange"
+
+    def test_does_not_retry_with_openlink_path_on_404(self):
+        public_pem = _sample_public_key("sender")
+
+        with patch("openlinktoken_ext_truveta.api.exchange.requests.post") as mock_post:
+            mock_post.return_value = _make_mock_response(404)
+
+            with pytest.raises(requests.HTTPError):
+                call_exchange_endpoint("https://api.test.com", public_pem, "test-token")
+
+        assert mock_post.call_count == 1
+        assert (
+            mock_post.call_args_list[0][0][0]
+            == "https://api.test.com/openlink/v1/exchange"
+        )

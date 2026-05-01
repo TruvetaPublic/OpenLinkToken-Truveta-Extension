@@ -2,12 +2,10 @@
 Copyright (c) Truveta. All rights reserved.
 
 Exchange endpoint API client for OpenToken exchange negotiation.
-
-Calls the POST /v1/exchange endpoint to negotiate a new exchange.
 """
 
 import base64
-import hashlib
+from urllib.parse import urlparse
 
 import requests
 from cryptography.hazmat.primitives.serialization import (
@@ -16,9 +14,25 @@ from cryptography.hazmat.primitives.serialization import (
     load_pem_public_key,
 )
 
+from openlinktoken_ext_truveta.api.common import resolve_timeout_seconds
+
 
 class ExchangeAPIError(Exception):
     """Raised when exchange API calls fail."""
+
+
+def _is_local_dev_url(domain_url: str) -> bool:
+    """Return True when the target URL points at the local dev token service."""
+    hostname = (urlparse(domain_url).hostname or "").lower()
+    return hostname in {"localhost", "127.0.0.1", "::1"}
+
+
+def _resolve_exchange_url(domain_url: str) -> str:
+    """Resolve the exchange URL for local dev and hosted environments."""
+    if _is_local_dev_url(domain_url):
+        return f"{domain_url.rstrip('/')}/v1/exchange"
+
+    return f"{domain_url.rstrip('/')}/openlink/v1/exchange"
 
 
 def _pem_to_spki_b64(public_key_pem: str) -> str:
@@ -34,45 +48,28 @@ def _resolve_exchange_id(server_data: dict) -> str:
     if exchange_id:
         return exchange_id
 
-    # Back-compat: some service deployments omit exchangeId. Derive a stable ID
-    # from returned exchange material so downstream package/upload flows can run.
-    derivation_material = "|".join(
-        [
-            str(server_data.get("exchangeName", "")).strip(),
-            str(
-                server_data.get(
-                    "encryptedHashingKey",
-                    server_data.get("hashingSecret", ""),
-                )
-            ).strip(),
-            str(
-                server_data.get(
-                    "truvetaPublicKey",
-                    server_data.get("serverPublicKey", ""),
-                )
-            ).strip(),
-        ]
-    )
-    digest = hashlib.sha256(derivation_material.encode("utf-8")).hexdigest()[:32]
-    return f"derived-{digest}"
+    raise ExchangeAPIError("Exchange response must include a non-empty exchangeId.")
 
 
 def call_exchange_endpoint(
     domain_url: str,
     local_public_key_pem: str,
     access_token: str,
+    timeout_seconds: int | None = None,
 ) -> dict:
     """
-    Call the /v1/exchange endpoint to negotiate a new exchange.
+    Call the exchange endpoint to negotiate a new exchange.
 
-    Makes an authenticated POST request to https://api.<domain>/v1/exchange
-    with the local public key, receiving the server's public key and
-    encrypted hashing secret in response.
+    Hosted environments use ``/openlink/v1/exchange``. Local development
+    targets (for example ``http://localhost:18080``) use ``/v1/exchange``
+    directly. The endpoint returns the server's public key and encrypted
+    hashing secret.
 
     Inputs:
         domain_url: The Truveta API URL (e.g. "https://api.truveta.com").
         local_public_key_pem: Our generated public key (PEM-encoded).
         access_token: Valid OAuth access token for authentication.
+        timeout_seconds: Optional request timeout override in seconds.
 
     Returns:
         Parsed JSON response from the endpoint (dict).
@@ -82,20 +79,21 @@ def call_exchange_endpoint(
         requests.HTTPError: For 4xx/5xx responses (propagated as-is for
                           caller control over error handling).
     """
-    url = f"{domain_url.rstrip('/')}/v1/exchange"
+    url = _resolve_exchange_url(domain_url)
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
     }
 
     body = {"publicKey": _pem_to_spki_b64(local_public_key_pem)}
+    request_timeout = resolve_timeout_seconds(timeout_seconds)
 
     try:
         response = requests.post(
             url,
             json=body,
             headers=headers,
-            timeout=30,
+            timeout=request_timeout,
         )
         response.raise_for_status()
         server_data = response.json()

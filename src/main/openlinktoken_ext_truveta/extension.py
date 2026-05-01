@@ -125,6 +125,11 @@ class _InitiateExchangeSubcommandRegistrar:
             "initiate-exchange",
             help="Negotiate exchange config (authenticates first if needed)",
         )
+        initiate_exchange_parser.add_argument(
+            "--local-dev",
+            action="store_true",
+            help="Use local Token Service API endpoint (http://localhost:18080)",
+        )
         initiate_exchange_parser.set_defaults(func=TruvetaExtension._initiate_exchange)
 
 

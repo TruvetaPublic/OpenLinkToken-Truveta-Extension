@@ -61,6 +61,30 @@ class Credentials:
 
 
 # ---------------------------------------------------------------------------
+# Public functions
+# ---------------------------------------------------------------------------
+
+
+def get_auth_domain_url(domain: str) -> str:
+    """
+    Derive the Auth0 domain login URL from a Truveta domain.
+
+    Args:
+        domain: The Truveta domain (e.g. "dev.truveta-int.com" or "truveta.com").
+
+    Returns:
+        The Auth0 login URL (e.g. "https://login.dev.truveta-int.com").
+    """
+    return f"https://login.{domain}"
+
+
+def get_api_domain_url(domain: str) -> str:
+    """Build the Truveta API base URL for a domain string."""
+    audience = _get_audience(domain)
+    return audience.removesuffix("/openlink")
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
@@ -178,48 +202,86 @@ def _session_path() -> Path:
     return session_file_path()
 
 
-def write_session_api_url(api_url: str) -> None:
-    """
-    Persist the selected API URL and derived service domain for non-login commands.
+def write_session_auth_url(auth_url: str) -> None:
+    """Persist the selected Auth0 login URL for subsequent non-login commands."""
+    normalized_auth_url = auth_url.strip().rstrip("/")
+    if not normalized_auth_url:
+        raise AuthError("Cannot persist an empty auth URL in session.")
 
-    Inputs:
-        api_url: API URL selected during login.
-    """
-    normalized_api_url = api_url.strip().rstrip("/")
-    if not normalized_api_url:
-        raise AuthError("Cannot persist an empty API URL in session.")
-
-    domain = _extract_service_domain(normalized_api_url)
+    domain = _extract_domain(normalized_auth_url)
     session_path = _session_path()
     session_path.parent.mkdir(parents=True, exist_ok=True)
     session_path.write_text(
         json.dumps(
             {
-                "api_url": normalized_api_url,
-                "domain": domain,
+                "auth_url": get_auth_domain_url(domain),
             }
         )
     )
 
 
-def read_session_api_url() -> str | None:
-    """
-    Read the API URL persisted in the extension session file.
-
-    Returns:
-        The stored API URL or None when unavailable/invalid.
-    """
+def read_session_auth_url() -> str | None:
+    """Read the persisted Auth0 login URL from the extension session file."""
     session_path = _session_path()
     try:
         session_data = json.loads(session_path.read_text())
     except Exception:
         return None
 
+    auth_url = session_data.get("auth_url")
+    if isinstance(auth_url, str) and auth_url.strip():
+        return auth_url.strip().rstrip("/")
+
+    domain = session_data.get("domain")
+    if isinstance(domain, str) and domain.strip():
+        return get_auth_domain_url(domain.strip().rstrip("/"))
+
     api_url = session_data.get("api_url")
     if isinstance(api_url, str) and api_url.strip():
-        return api_url.strip().rstrip("/")
+        try:
+            return get_auth_domain_url(
+                _extract_service_domain(api_url.strip().rstrip("/"))
+            )
+        except AuthError:
+            return None
 
     return None
+
+
+def write_session_domain(api_url: str) -> None:
+    """Backward-compatible wrapper for persisting the selected login domain."""
+    write_session_api_url(api_url)
+
+
+def read_session_domain() -> str | None:
+    """Read the persisted Truveta domain from the extension session file."""
+    auth_url = read_session_auth_url()
+    if auth_url:
+        try:
+            return _extract_domain(auth_url)
+        except AuthError:
+            return None
+
+    return None
+
+
+def write_session_api_url(api_url: str) -> None:
+    """Backward-compatible wrapper for persisting the selected login domain."""
+    normalized_api_url = api_url.strip().rstrip("/")
+    if not normalized_api_url:
+        raise AuthError("Cannot persist an empty API URL in session.")
+
+    domain = _extract_service_domain(normalized_api_url)
+    write_session_auth_url(get_auth_domain_url(domain))
+
+
+def read_session_api_url() -> str | None:
+    """Backward-compatible wrapper returning an API URL from the persisted domain."""
+    auth_url = read_session_auth_url()
+    if not auth_url:
+        return None
+    domain = _extract_domain(auth_url)
+    return get_api_domain_url(domain)
 
 
 def clear_session_file() -> None:

@@ -18,7 +18,11 @@ from cryptography.hazmat.primitives.serialization import (
     PrivateFormat,
     PublicFormat,
 )
-from openlinktoken_ext_truveta.auth import AuthError, Credentials, write_session_api_url
+from openlinktoken_ext_truveta.auth import (
+    AuthError,
+    Credentials,
+    write_session_auth_url,
+)
 from openlinktoken_ext_truveta.commands.initiate_exchange import _initiate_exchange
 from openlinktoken_ext_truveta.commands.login import DEFAULT_DOMAIN_URL, _login
 
@@ -90,8 +94,8 @@ class TestLoginCommand:
     def test_returns_zero_on_success(self):
         with (
             patch(
-                "openlinktoken_ext_truveta.commands.common.read_session_api_url",
-                return_value="https://api.test.domain.com",
+                "openlinktoken_ext_truveta.commands.common.read_session_auth_url",
+                return_value="https://login.dev.truveta-int.com",
             ),
             patch(
                 "openlinktoken_ext_truveta.commands.initiate_exchange.ensure_auth",
@@ -120,8 +124,8 @@ class TestLoginCommand:
         private_pem, public_pem = _sample_keypair()
         with (
             patch(
-                "openlinktoken_ext_truveta.commands.common.read_session_api_url",
-                return_value="https://api.truveta.com",
+                "openlinktoken_ext_truveta.commands.common.read_session_auth_url",
+                return_value="https://login.truveta.com",
             ),
             patch(
                 "openlinktoken_ext_truveta.commands.initiate_exchange.ensure_auth",
@@ -153,6 +157,10 @@ class TestLoginCommand:
     def test_prints_welcome_with_name_and_email(self, capsys):
         with (
             patch(
+                "openlinktoken_ext_truveta.commands.common.read_session_auth_url",
+                return_value="https://login.truveta.com",
+            ),
+            patch(
                 "openlinktoken_ext_truveta.commands.initiate_exchange.ensure_auth",
                 return_value=_fake_creds(),
             ),
@@ -182,6 +190,10 @@ class TestLoginCommand:
         expected_path = Path("/home/user/.openlinktoken/truveta/test.com/exchange.json")
         with (
             patch(
+                "openlinktoken_ext_truveta.commands.common.read_session_auth_url",
+                return_value="https://login.truveta.com",
+            ),
+            patch(
                 "openlinktoken_ext_truveta.commands.initiate_exchange.ensure_auth",
                 return_value=_fake_creds(),
             ),
@@ -208,6 +220,36 @@ class TestLoginCommand:
         assert str(expected_path) in out
         assert "Exchange config written to:" in out
 
+    def test_initiate_exchange_local_dev_uses_localhost_api(self):
+        args = _args()
+        args.local_dev = True
+
+        with (
+            patch(
+                "openlinktoken_ext_truveta.commands.initiate_exchange.ensure_auth",
+                return_value=_fake_creds(),
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.initiate_exchange.load_or_generate_domain_keys",
+                return_value=_sample_keypair(),
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.initiate_exchange.call_exchange_endpoint",
+                return_value=_make_server_response(),
+            ) as mock_exchange,
+            patch(
+                "openlinktoken_ext_truveta.commands.initiate_exchange.build_exchange_config",
+                return_value={"payload": {"test": "data"}},
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.initiate_exchange.write_exchange_config",
+                return_value=Path("/path/to/config"),
+            ),
+        ):
+            assert _initiate_exchange(args) == 0
+
+        assert mock_exchange.call_args[0][0] == "http://localhost:18080"
+
     def test_prints_welcome_email_only_when_name_equals_email(self, capsys):
         with (
             patch(
@@ -229,22 +271,6 @@ class TestLoginCommand:
 
         assert result == 1
         assert "denied" in capsys.readouterr().err
-
-    def test_login_can_use_separate_auth_domain(self):
-        args = argparse.Namespace(
-            domain="http://localhost:8080",
-            auth_domain="https://api.dev.truveta-int.com",
-            force=False,
-        )
-
-        with patch(
-            "openlinktoken_ext_truveta.commands.login.ensure_auth",
-            return_value=_fake_creds(),
-        ) as mock_auth:
-            result = _login(args)
-
-        assert result == 0
-        mock_auth.assert_called_once_with("https://api.dev.truveta-int.com")
 
     def test_returns_one_on_key_management_error(self, capsys):
         from openlinktoken_ext_truveta.exchange.key_management import KeyManagementError
@@ -332,8 +358,8 @@ class TestLoginCommand:
 
         with (
             patch(
-                "openlinktoken_ext_truveta.commands.common.read_session_api_url",
-                return_value="https://api.test.domain.com",
+                "openlinktoken_ext_truveta.commands.common.read_session_auth_url",
+                return_value="https://login.dev.truveta-int.com",
             ),
             patch(
                 "openlinktoken_ext_truveta.commands.initiate_exchange.ensure_auth",
@@ -361,7 +387,7 @@ class TestLoginCommand:
             tmp_path
             / ".openlinktoken"
             / "truveta"
-            / "test.domain.com"
+            / "dev.truveta-int.com"
             / "credentials.json"
         )
         assert credentials_cache.exists()
@@ -384,7 +410,7 @@ class TestLoginCommand:
 
         assert not cache.exists()
 
-    def test_login_persists_api_domain_in_session(self, tmp_path, monkeypatch):
+    def test_login_persists_auth_domain_in_session(self, tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
         with patch(
@@ -397,11 +423,11 @@ class TestLoginCommand:
         session_file = tmp_path / ".openlinktoken" / "truveta" / "session.json"
         assert session_file.exists()
         session_data = json.loads(session_file.read_text())
-        assert session_data["api_url"] == "https://api.dev.truveta-int.com"
+        assert session_data["auth_url"] == "https://login.dev.truveta-int.com"
 
     def test_uses_session_domain_when_args_domain_is_none(self, tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        write_session_api_url("https://api.truveta-int.com")
+        write_session_auth_url("https://login.truveta-int.com")
         args = argparse.Namespace(domain=None, force=False)
 
         with (
@@ -429,7 +455,7 @@ class TestLoginCommand:
             _initiate_exchange(args)
 
         mock_auth.assert_called_once_with(
-            "https://api.truveta-int.com", cached_only=True
+            "https://login.truveta-int.com", cached_only=True
         )
 
     def test_requires_login_session_when_no_session(
@@ -440,7 +466,7 @@ class TestLoginCommand:
 
         with (
             patch(
-                "openlinktoken_ext_truveta.commands.common.read_session_api_url",
+                "openlinktoken_ext_truveta.commands.common.read_session_auth_url",
                 return_value=None,
             ),
             patch(
@@ -475,8 +501,8 @@ class TestLoginCommand:
 
         with (
             patch(
-                "openlinktoken_ext_truveta.commands.common.read_session_api_url",
-                return_value="https://api.dev.truveta-int.com",
+                "openlinktoken_ext_truveta.commands.common.read_session_auth_url",
+                return_value="https://login.dev.truveta-int.com",
             ),
             patch(
                 "openlinktoken_ext_truveta.commands.initiate_exchange.ensure_auth",
@@ -503,12 +529,54 @@ class TestLoginCommand:
 
         assert result == 0
         mock_auth.assert_called_once_with(
-            "https://api.dev.truveta-int.com", cached_only=True
+            "https://login.dev.truveta-int.com", cached_only=True
         )
         mock_exchange.assert_called_once_with(
             "https://api.dev.truveta-int.com",
             _sample_keypair()[1],
             "acc_token",
+            timeout_seconds=30,
+        )
+
+    def test_initiate_exchange_uses_localhost_api_in_local_dev(self):
+        args = argparse.Namespace(force=False, local_dev=True)
+
+        with (
+            patch(
+                "openlinktoken_ext_truveta.commands.common.read_session_auth_url",
+                return_value="https://login.dev.truveta-int.com",
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.initiate_exchange.ensure_auth",
+                return_value=_fake_creds(),
+            ) as mock_auth,
+            patch(
+                "openlinktoken_ext_truveta.commands.initiate_exchange.load_or_generate_domain_keys",
+                return_value=_sample_keypair(),
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.initiate_exchange.call_exchange_endpoint",
+                return_value=_make_server_response(),
+            ) as mock_exchange,
+            patch(
+                "openlinktoken_ext_truveta.commands.initiate_exchange.build_exchange_config",
+                return_value={"payload": {"test": "data"}},
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.initiate_exchange.write_exchange_config",
+                return_value=Path("/path/to/config"),
+            ),
+        ):
+            result = _initiate_exchange(args)
+
+        assert result == 0
+        # local_dev takes precedence: both auth and API calls use localhost
+        mock_auth.assert_called_once_with("http://localhost:18080", cached_only=True)
+        mock_exchange.assert_called_once_with(
+            "http://localhost:18080",
+            _sample_keypair()[1],
+            "acc_token",
+            timeout_seconds=180,
         )
 
     def test_round_trip_exchange_config_load(self, tmp_path, monkeypatch):
@@ -519,8 +587,8 @@ class TestLoginCommand:
 
         with (
             patch(
-                "openlinktoken_ext_truveta.commands.common.read_session_api_url",
-                return_value="https://api.test.domain.com",
+                "openlinktoken_ext_truveta.commands.common.read_session_auth_url",
+                return_value="https://login.dev.truveta-int.com",
             ),
             patch(
                 "openlinktoken_ext_truveta.commands.initiate_exchange.ensure_auth",

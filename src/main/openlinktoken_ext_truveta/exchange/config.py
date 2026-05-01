@@ -264,10 +264,10 @@ def build_exchange_config(
 
 
 def write_exchange_config(domain: str, config: dict[str, Any]) -> Path:
-    """Persist an exchange config to the current directory as openlinktoken-YYYYMMDD.exchange.json."""
+    """Persist an exchange config to the current directory as openlinktoken-<YYYY-MM-DD>.exchange.json."""
     try:
         _validate_exchange_envelope_shape(config)
-        date_stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
+        date_stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         config_path = Path.cwd() / f"openlinktoken-{date_stamp}.exchange.json"
         config_path.write_text(json.dumps(config, indent=2))
         return config_path
@@ -280,11 +280,20 @@ def write_exchange_config(domain: str, config: dict[str, Any]) -> Path:
 def load_exchange_config(domain: str) -> dict[str, Any]:
     """Load an exchange config from the current directory only."""
     try:
-        dated_configs = sorted(Path.cwd().glob("openlinktoken-*.exchange.json"))
-        if dated_configs:
-            return json.loads(dated_configs[-1].read_text())
+        cwd_configs = sorted(Path.cwd().glob("openlinktoken-*.exchange.json"))
+        if not cwd_configs:
+            raise ExchangeConfigError("Exchange config not found in current directory")
 
-        raise ExchangeConfigError("Exchange config not found in current directory")
+        today_stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today_config = Path.cwd() / f"openlinktoken-{today_stamp}.exchange.json"
+
+        if today_config.exists():
+            return json.loads(today_config.read_text())
+
+        raise ExchangeConfigError(
+            f"Exchange config for today's date ({today_stamp}) not found in current directory; "
+            f"place the config file at openlinktoken-{today_stamp}.exchange.json"
+        )
     except ExchangeConfigError:
         raise
     except Exception as exc:
