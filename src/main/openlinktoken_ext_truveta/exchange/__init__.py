@@ -10,6 +10,7 @@ from openlinktoken_ext_truveta.exchange.key_management import (
     KeyManagementError,
     decrypt_hashing_secret,
     get_key_fingerprint,
+    load_or_generate_daily_keys,
     load_or_generate_domain_keys,
 )
 
@@ -21,5 +22,6 @@ __all__ = [
     "KeyManagementError",
     "decrypt_hashing_secret",
     "get_key_fingerprint",
+    "load_or_generate_daily_keys",
     "load_or_generate_domain_keys",
 ]

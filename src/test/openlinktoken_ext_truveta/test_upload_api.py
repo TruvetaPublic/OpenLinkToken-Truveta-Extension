@@ -6,7 +6,8 @@ Unit tests for upload API client behavior.
 
 from unittest.mock import MagicMock, patch
 
-from openlinktoken_ext_truveta.api.upload import call_upload_endpoint
+import pytest
+from openlinktoken_ext_truveta.api.upload import UploadAPIError, call_upload_endpoint
 
 
 def _make_response(status_code: int, json_payload=None, json_side_effect=None, text=""):
@@ -51,3 +52,18 @@ class TestCallUploadEndpoint:
             )
 
         assert result == {}
+
+    def test_non_202_error_includes_resolved_upload_url(self):
+        with patch("openlinktoken_ext_truveta.api.upload.requests.post") as mock_post:
+            mock_post.return_value = _make_response(413, text="request too large")
+
+            with pytest.raises(
+                UploadAPIError,
+                match="https://api.truveta.com/openlink/v1/uploads/ex-123",
+            ):
+                call_upload_endpoint(
+                    "https://api.truveta.com/openlink",
+                    "token",
+                    "ex-123",
+                    {"dataFile": ("f.csv", b"x", "application/octet-stream")},
+                )

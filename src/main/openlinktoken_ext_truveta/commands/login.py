@@ -1,7 +1,7 @@
 """
 Copyright (c) Truveta. All rights reserved.
 
-login command: authenticate with Truveta services via OAuth 2.0 Device Code Flow.
+Login command: authenticate with Truveta services via OAuth 2.0 Device Code Flow.
 """
 
 import argparse
@@ -11,34 +11,44 @@ from openlinktoken_ext_truveta.auth import (
     AuthError,
     Credentials,
     _cache_path,
-    _extract_domain,
     decode_jwt_payload,
     ensure_auth,
-    get_api_domain_url,
-    write_session_auth_url,
 )
-from openlinktoken_ext_truveta.commands.common import resolve_auth_url
-
-DEFAULT_DOMAIN_URL = get_api_domain_url("truveta.com")
-
-__all__ = ["DEFAULT_DOMAIN_URL", "_login"]
+from openlinktoken_ext_truveta.commands.common import (
+    SessionResolutionError,
+    resolve_domain,
+)
+from openlinktoken_ext_truveta.session import write_session_domain
 
 
 def _authenticate(
     args: argparse.Namespace,
 ) -> tuple[str, Credentials] | tuple[None, None]:
-    auth_url = resolve_auth_url(args)
+    """
+    Authenticate the user against the resolved Truveta domain.
+
+    Inputs:
+        args: Parsed CLI arguments containing --domain and --force flags.
+
+    Returns:
+        A tuple of the resolved domain and credentials on success, otherwise
+        (None, None) after printing the failure reason.
+    """
+    try:
+        domain = resolve_domain(args, allow_default=True)
+    except SessionResolutionError as exc:
+        print(str(exc), file=sys.stderr)
+        return None, None
+
     force = getattr(args, "force", False)
 
     try:
         if force:
-            domain = _extract_domain(auth_url)
             cache_file = _cache_path(domain)
             if cache_file.exists():
                 cache_file.unlink()
 
-        credentials: Credentials = ensure_auth(auth_url)
-
+        credentials = ensure_auth(domain)
         payload = decode_jwt_payload(credentials.id_token)
         name = payload.get("name") or payload.get("email") or "unknown"
         email = payload.get("email", "")
@@ -48,7 +58,7 @@ def _authenticate(
         else:
             print(f"You've successfully logged in, {name}!")
 
-        return auth_url, credentials
+        return domain, credentials
     except AuthError as exc:
         print(f"Authentication failed: {exc}", file=sys.stderr)
         return None, None
@@ -58,22 +68,19 @@ def _login(args: argparse.Namespace) -> int:
     """
     Authenticate with Truveta services.
 
-    This command only performs authentication and credential caching.
-    For exchange configuration setup, use the ``initiate-exchange`` subcommand.
-
     Inputs:
         args: Parsed CLI arguments containing --domain and --force flags.
 
     Returns:
-        Exit code (0 on success, 1 on failure).
+        Exit code 0 on success or 1 when authentication/session persistence fails.
     """
-    auth_url, _credentials = _authenticate(args)
-    if not auth_url:
+    domain, _credentials = _authenticate(args)
+    if not domain:
         return 1
 
     try:
-        write_session_auth_url(auth_url)
-    except AuthError as exc:
+        write_session_domain(domain)
+    except Exception as exc:
         print(f"Failed to persist login session: {exc}", file=sys.stderr)
         return 1
 

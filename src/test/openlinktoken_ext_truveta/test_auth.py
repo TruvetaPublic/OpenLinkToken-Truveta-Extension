@@ -1,8 +1,7 @@
 """
 Copyright (c) Truveta. All rights reserved.
 
-Unit tests for auth.py — domain extraction, client ID lookup, JWT decoding,
-cache read/write, and ensure_auth.
+Unit tests for auth.py cache handling, JWT decoding, and ensure_auth.
 """
 
 import base64
@@ -16,25 +15,13 @@ from openlinktoken_ext_truveta.auth import (
     AuthError,
     Credentials,
     _cache_path,
-    _extract_domain,
-    _get_audience,
-    _get_client_id,
     _is_token_valid,
     _read_cache,
     _write_cache,
-    clear_session_file,
     decode_jwt_payload,
     ensure_auth,
     get_auth_headers,
-    read_session_api_url,
-    read_session_auth_url,
-    write_session_api_url,
-    write_session_auth_url,
 )
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 def _make_jwt(payload: dict) -> str:
@@ -50,72 +37,6 @@ def _future_jwt(**extra) -> str:
 
 def _expired_jwt() -> str:
     return _make_jwt({"exp": int(time.time()) - 10})
-
-
-# ---------------------------------------------------------------------------
-# _extract_domain
-# ---------------------------------------------------------------------------
-
-
-class TestExtractDomain:
-    def test_api_url_dev(self):
-        assert (
-            _extract_domain("https://api.dev.truveta-int.com") == "dev.truveta-int.com"
-        )
-
-    def test_api_url_int(self):
-        assert _extract_domain("https://api.truveta-int.com") == "truveta-int.com"
-
-    def test_api_url_prod(self):
-        assert _extract_domain("https://api.truveta.com") == "truveta.com"
-
-    def test_login_url_dev(self):
-        assert (
-            _extract_domain("https://login.dev.truveta-int.com")
-            == "dev.truveta-int.com"
-        )
-
-    def test_plain_domain_url(self):
-        assert _extract_domain("https://dev.truveta-int.com") == "dev.truveta-int.com"
-
-    def test_invalid_url_raises(self):
-        with pytest.raises(AuthError, match="Invalid URL format"):
-            _extract_domain("https://not-a-valid-url.com")
-
-
-# ---------------------------------------------------------------------------
-# _get_client_id
-# ---------------------------------------------------------------------------
-
-
-class TestGetClientId:
-    def test_known_domains_return_ids(self):
-        assert _get_client_id("truveta.com") == "MV87rfAh0Qy5ExTXZIDKssdgoYUVBIbY"
-        assert _get_client_id("truveta-int.com") == "Ouw9CrFQy8nakVDmgdINXeCZ0iB1laxw"
-        assert (
-            _get_client_id("dev.truveta-int.com") == "NLEN3QJPPoIPHA6bQ6XUM1qCfDmz5RrO"
-        )
-
-    def test_unknown_domain_raises(self):
-        with pytest.raises(AuthError, match="Unknown domain"):
-            _get_client_id("unknown.example.com")
-
-
-# ---------------------------------------------------------------------------
-# _get_audience
-# ---------------------------------------------------------------------------
-
-
-class TestGetAudience:
-    def test_dev_domain_returns_audience(self):
-        assert (
-            _get_audience("dev.truveta-int.com")
-            == "https://api.dev.truveta-int.com/openlink"
-        )
-
-    def test_unknown_domain_raises(self):
-        with pytest.raises(AuthError, match="Unknown domain"):
-            _get_audience("unknown.example.com")
 
 
 # ---------------------------------------------------------------------------
@@ -229,63 +150,6 @@ class TestCacheReadWrite:
         assert _read_cache("truveta.com") is None
 
 
-class TestSessionReadWrite:
-    def test_write_and_read_session_auth_url(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(
-            "openlinktoken_ext_truveta.auth.Path.home", lambda: tmp_path
-        )
-
-        write_session_auth_url("https://login.dev.truveta-int.com/")
-
-        assert read_session_auth_url() == "https://login.dev.truveta-int.com"
-
-    def test_read_session_api_url_derives_from_stored_auth_url(
-        self, tmp_path, monkeypatch
-    ):
-        monkeypatch.setattr(
-            "openlinktoken_ext_truveta.auth.Path.home", lambda: tmp_path
-        )
-
-        write_session_auth_url("https://login.dev.truveta-int.com/")
-
-        assert read_session_api_url() == "https://api.dev.truveta-int.com"
-
-    def test_read_session_api_url_returns_none_when_missing(
-        self, tmp_path, monkeypatch
-    ):
-        monkeypatch.setattr(
-            "openlinktoken_ext_truveta.auth.Path.home", lambda: tmp_path
-        )
-
-        assert read_session_api_url() is None
-
-    def test_clear_session_file(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(
-            "openlinktoken_ext_truveta.auth.Path.home", lambda: tmp_path
-        )
-        write_session_auth_url("https://login.truveta.com")
-
-        clear_session_file()
-
-        assert read_session_api_url() is None
-
-    def test_write_session_api_url_remains_backward_compatible(
-        self, tmp_path, monkeypatch
-    ):
-        monkeypatch.setattr(
-            "openlinktoken_ext_truveta.auth.Path.home", lambda: tmp_path
-        )
-
-        write_session_api_url("https://api.truveta.com")
-
-        assert read_session_auth_url() == "https://login.truveta.com"
-
-
-# ---------------------------------------------------------------------------
-# ensure_auth
-# ---------------------------------------------------------------------------
-
-
 class TestEnsureAuth:
     def test_returns_cached_credentials(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
@@ -296,13 +160,13 @@ class TestEnsureAuth:
         )
         _write_cache("truveta.com", creds)
 
-        result = ensure_auth("https://api.truveta.com")
+        result = ensure_auth("truveta.com")
 
         assert result.access_token == creds.access_token
 
     def test_unknown_domain_raises(self):
         with pytest.raises(AuthError, match="Unknown domain"):
-            ensure_auth("https://api.unknown.example.com")
+            ensure_auth("unknown.example.com")
 
     def test_runs_device_flow_when_no_cache(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
@@ -315,7 +179,7 @@ class TestEnsureAuth:
         with patch(
             "openlinktoken_ext_truveta.auth._device_code_flow", return_value=fake_creds
         ) as mock_flow:
-            result = ensure_auth("https://api.truveta.com")
+            result = ensure_auth("truveta.com")
 
         mock_flow.assert_called_once()
         assert result.access_token == fake_creds.access_token
@@ -331,7 +195,7 @@ class TestEnsureAuth:
         with patch(
             "openlinktoken_ext_truveta.auth._device_code_flow", return_value=fake_creds
         ):
-            ensure_auth("https://api.truveta.com")
+            ensure_auth("truveta.com")
 
         assert _cache_path("truveta.com").exists()
 

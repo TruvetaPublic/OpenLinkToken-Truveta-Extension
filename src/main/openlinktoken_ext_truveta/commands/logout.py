@@ -11,8 +11,9 @@ from pathlib import Path
 
 import requests
 
-from openlinktoken_ext_truveta.auth import _get_client_id, clear_session_file
+from openlinktoken_ext_truveta.domain import get_client_id, get_login_url
 from openlinktoken_ext_truveta.paths import truveta_root_dir
+from openlinktoken_ext_truveta.session import clear_session
 
 
 def _revoke_token(domain: str, access_token: str) -> None:
@@ -22,10 +23,13 @@ def _revoke_token(domain: str, access_token: str) -> None:
     Inputs:
         domain: The Truveta domain the token was issued by.
         access_token: The access token to revoke.
+
+    Returns:
+        None. The revocation request is best-effort.
     """
-    client_id = _get_client_id(domain)
+    client_id = get_client_id(domain)
     requests.post(
-        f"https://login.{domain}/oauth/revoke",
+        f"{get_login_url(domain)}/oauth/revoke",
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         data={
             "client_id": client_id,
@@ -72,7 +76,7 @@ def _logout(args: argparse.Namespace) -> int:
                     file=sys.stderr,
                 )
 
-    clear_session_file()
+    clear_session()
 
     if not deleted:
         print("No credentials found.")

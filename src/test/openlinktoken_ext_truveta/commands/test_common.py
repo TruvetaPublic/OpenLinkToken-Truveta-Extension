@@ -1,21 +1,25 @@
 """
 Copyright (c) Truveta. All rights reserved.
 
-Unit tests for common command URL resolution helpers.
+Unit tests for common command domain resolution helpers.
 """
 
 import argparse
 from unittest.mock import patch
 
-from openlinktoken_ext_truveta.auth import DEFAULT_DOMAIN_URL, get_auth_domain_url
+from openlinktoken_ext_truveta.auth import Credentials
 from openlinktoken_ext_truveta.commands.common import (
-    DEFAULT_LOCAL_DEV_API_URL,
     DEFAULT_TIMEOUT_SECONDS,
+    LOCAL_API_URL,
     LOCAL_DEV_TIMEOUT_SECONDS,
-    resolve_api_url,
-    resolve_auth_url,
+    AuthenticatedCommandContext,
+    SessionResolutionError,
+    resolve_api_base_url,
+    resolve_authenticated_context,
+    resolve_domain,
     resolve_timeout_seconds,
 )
+from openlinktoken_ext_truveta.domain import DEFAULT_DOMAIN
 
 
 def _args(
@@ -30,84 +34,102 @@ def _args(
 
 
 class TestCommonResolution:
-    def test_default_local_dev_api_url_is_openlink_service_port(self):
-        assert DEFAULT_LOCAL_DEV_API_URL == "http://localhost:18080"
+    def test_local_api_url_is_openlink_service_port(self):
+        assert LOCAL_API_URL == "http://localhost:18080"
 
-    def test_resolve_api_url_uses_domain_arg_for_login(self):
-        resolved = resolve_api_url(_args(domain="https://api.example.com"))
+    def test_resolve_domain_uses_local_dev_auth_domain(self):
+        resolved = resolve_domain(_args(local_dev=True))
 
-        assert resolved == "https://api.example.com"
+        assert resolved == "dev.truveta-int.com"
 
-    def test_resolve_api_url_falls_back_to_default_when_no_domain(self):
+    def test_resolve_domain_uses_explicit_domain_arg(self):
+        resolved = resolve_domain(_args(domain="truveta-int.com"))
+
+        assert resolved == "truveta-int.com"
+
+    def test_resolve_domain_uses_trv_domain_env(self, monkeypatch):
+        monkeypatch.setenv("OLT_TRV_DOMAIN", "dev.truveta-int.com")
+
+        resolved = resolve_domain(_args())
+
+        assert resolved == "dev.truveta-int.com"
+
+    def test_resolve_domain_uses_session_domain(self, monkeypatch):
+        monkeypatch.setattr(
+            "openlinktoken_ext_truveta.commands.common.read_session_domain",
+            lambda: "dev.truveta-int.com",
+        )
+
+        resolved = resolve_domain(_args())
+
+        assert resolved == "dev.truveta-int.com"
+
+    def test_resolve_domain_defaults_for_login(self):
+        resolved = resolve_domain(_args(), allow_default=True)
+
+        assert resolved == DEFAULT_DOMAIN
+
+    def test_resolve_domain_raises_without_session_for_non_login_command(self):
         with patch(
-            "openlinktoken_ext_truveta.commands.common.read_session_auth_url",
+            "openlinktoken_ext_truveta.commands.common.read_session_domain",
             return_value=None,
         ):
-            resolved = resolve_api_url(_args())
+            try:
+                resolve_domain(_args())
+            except SessionResolutionError as exc:
+                assert "No login session found" in str(exc)
+            else:
+                raise AssertionError("Expected SessionResolutionError")
 
-        assert resolved == DEFAULT_DOMAIN_URL
+    def test_resolve_api_base_url_uses_local_dev_url(self):
+        resolved = resolve_api_base_url(_args(local_dev=True), "dev.truveta-int.com")
 
-    def test_resolve_api_url_ignores_trv_api_domain_env(self, monkeypatch):
-        monkeypatch.setenv("TRV_API_DOMAIN", "https://should-be-ignored.example.com")
+        assert resolved == LOCAL_API_URL
 
-        with patch(
-            "openlinktoken_ext_truveta.commands.common.read_session_auth_url",
-            return_value=None,
-        ):
-            resolved = resolve_api_url(_args())
+    def test_resolve_api_base_url_derives_hosted_url_from_domain(self):
+        resolved = resolve_api_base_url(_args(), "dev.truveta-int.com")
 
-        assert resolved == DEFAULT_DOMAIN_URL
+        assert resolved == "https://api.dev.truveta-int.com/openlink"
 
-    def test_resolve_api_url_derives_api_domain_from_session_auth_url(
+    def test_resolve_authenticated_context_uses_hosted_domain_and_cached_auth(
         self, monkeypatch
     ):
+        expected_credentials = Credentials(access_token="access", id_token="id")
         monkeypatch.setattr(
-            "openlinktoken_ext_truveta.commands.common.read_session_auth_url",
-            lambda: "https://login.dev.truveta-int.com",
+            "openlinktoken_ext_truveta.commands.common.read_session_domain",
+            lambda: "dev.truveta-int.com",
+        )
+        monkeypatch.setattr(
+            "openlinktoken_ext_truveta.commands.common.ensure_auth",
+            lambda domain, cached_only: expected_credentials,
         )
 
-        resolved = resolve_api_url(_args())
+        resolved = resolve_authenticated_context(_args())
 
-        assert resolved == "https://api.dev.truveta-int.com"
-
-    def test_resolve_auth_url_ignores_deprecated_trv_auth_domain_env(self, monkeypatch):
-        monkeypatch.setenv("TRV_AUTH_DOMAIN", "https://deprecated.example.com")
-
-        with patch(
-            "openlinktoken_ext_truveta.commands.common.read_session_auth_url",
-            return_value=None,
-        ):
-            resolved = resolve_auth_url(_args())
-
-        # Should derive auth domain from default API domain, not use env var.
-        assert resolved == get_auth_domain_url("truveta.com")
-
-    def test_resolve_auth_url_derives_auth_domain_from_api_domain(self):
-        resolved = resolve_auth_url(_args(domain="https://api.example.com"))
-
-        # Should derive the auth domain from the API domain (extract domain and make login URL).
-        assert resolved == "https://login.example.com"
-
-    def test_resolve_auth_url_prefers_local_dev_over_session(self, monkeypatch):
-        monkeypatch.setattr(
-            "openlinktoken_ext_truveta.commands.common.read_session_auth_url",
-            lambda: "https://login.dev.truveta-int.com",
+        assert resolved == AuthenticatedCommandContext(
+            domain="dev.truveta-int.com",
+            api_url="https://api.dev.truveta-int.com/openlink",
+            storage_domain="dev.truveta-int.com",
+            credentials=expected_credentials,
         )
 
-        resolved = resolve_auth_url(_args(local_dev=True))
-
-        # local_dev always takes precedence over any saved session.
-        assert resolved == DEFAULT_LOCAL_DEV_API_URL
-
-    def test_resolve_auth_url_uses_stored_session_auth_url(self, monkeypatch):
+    def test_resolve_authenticated_context_uses_local_api_and_dev_auth(
+        self, monkeypatch
+    ):
+        expected_credentials = Credentials(access_token="access", id_token="id")
         monkeypatch.setattr(
-            "openlinktoken_ext_truveta.commands.common.read_session_auth_url",
-            lambda: "https://login.dev.truveta-int.com",
+            "openlinktoken_ext_truveta.commands.common.ensure_auth",
+            lambda domain, cached_only: expected_credentials,
         )
 
-        resolved = resolve_auth_url(_args())
+        resolved = resolve_authenticated_context(_args(local_dev=True))
 
-        assert resolved == "https://login.dev.truveta-int.com"
+        assert resolved == AuthenticatedCommandContext(
+            domain="dev.truveta-int.com",
+            api_url="http://localhost:18080",
+            storage_domain="localhost-18080",
+            credentials=expected_credentials,
+        )
 
     def test_resolve_timeout_seconds_uses_default_in_non_local_dev(self):
         resolved = resolve_timeout_seconds(_args(local_dev=False))

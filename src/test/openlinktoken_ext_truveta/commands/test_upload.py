@@ -8,7 +8,12 @@ import argparse
 from pathlib import Path
 from unittest.mock import patch
 
-from openlinktoken_ext_truveta.auth import AuthError, Credentials
+from openlinktoken_ext_truveta.auth import Credentials
+from openlinktoken_ext_truveta.commands.common import (
+    LOCAL_API_URL,
+    AuthenticatedCommandContext,
+    SessionResolutionError,
+)
 from openlinktoken_ext_truveta.commands.upload import _upload
 
 
@@ -40,6 +45,20 @@ def _args(
 
 def _creds() -> Credentials:
     return Credentials(access_token="access-token", id_token="id-token")
+
+
+def _context(
+    *,
+    domain: str = "truveta.com",
+    api_url: str = "https://api.truveta.com/openlink",
+    storage_domain: str = "truveta.com",
+) -> AuthenticatedCommandContext:
+    return AuthenticatedCommandContext(
+        domain=domain,
+        api_url=api_url,
+        storage_domain=storage_domain,
+        credentials=_creds(),
+    )
 
 
 class TestUploadCommand:
@@ -77,22 +96,18 @@ class TestUploadCommand:
                 },
             ),
             patch(
-                "openlinktoken_ext_truveta.commands.upload.ensure_auth",
-                return_value=_creds(),
+                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
+                return_value=_context(),
             ),
             patch(
                 "openlinktoken_ext_truveta.commands.upload.requests.post",
                 side_effect=_post,
             ),
-            patch(
-                "openlinktoken_ext_truveta.commands.common.read_session_auth_url",
-                return_value="https://login.truveta.com",
-            ),
         ):
             result = _upload(_args(str(data_file)))
 
         assert result == 0
-        assert captured["url"] == "https://api.truveta.com/v1/uploads/x"
+        assert captured["url"] == "https://api.truveta.com/openlink/v1/uploads/x"
         assert captured["keys"] == {"dataFile", "metadataFile"}
         assert captured["auth"] == "Bearer access-token"
         assert captured["timeout"] == 30
@@ -113,8 +128,10 @@ class TestUploadCommand:
                 },
             ),
             patch(
-                "openlinktoken_ext_truveta.commands.upload.ensure_auth",
-                side_effect=AuthError("No valid cached credentials found."),
+                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
+                side_effect=SessionResolutionError(
+                    "Not logged in. Please, run 'olt truveta login' first."
+                ),
             ),
         ):
             result = _upload(_args(str(data_file)))
@@ -143,8 +160,8 @@ class TestUploadCommand:
                 },
             ),
             patch(
-                "openlinktoken_ext_truveta.commands.upload.ensure_auth",
-                return_value=_creds(),
+                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
+                return_value=_context(),
             ),
             patch(
                 "openlinktoken_ext_truveta.commands.upload.requests.post",
@@ -154,7 +171,10 @@ class TestUploadCommand:
             result = _upload(_args(str(data_file)))
 
         assert result == 1
-        assert "Upload failed: 500" in capsys.readouterr().err
+        assert (
+            "Upload failed for https://api.truveta.com/openlink/v1/uploads/x: 500"
+            in capsys.readouterr().err
+        )
 
     def test_explicit_metadata_override_is_used(self, tmp_path):
         data_file = tmp_path / "tokenized.csv"
@@ -188,8 +208,8 @@ class TestUploadCommand:
                 },
             ),
             patch(
-                "openlinktoken_ext_truveta.commands.upload.ensure_auth",
-                return_value=_creds(),
+                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
+                return_value=_context(),
             ),
             patch(
                 "openlinktoken_ext_truveta.commands.upload.requests.post",
@@ -233,8 +253,8 @@ class TestUploadCommand:
                 },
             ),
             patch(
-                "openlinktoken_ext_truveta.commands.upload.ensure_auth",
-                return_value=_creds(),
+                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
+                return_value=_context(),
             ),
             patch(
                 "openlinktoken_ext_truveta.commands.upload.requests.post",
@@ -258,11 +278,7 @@ class TestUploadCommand:
             captured["url"] = url
             return _Response(202, {"uploadReferenceId": "upload-123"})
 
-        args = _args(
-            str(data_file),
-            domain="http://localhost:8080",
-            api_domain="http://override.example",
-        )
+        args = _args(str(data_file), domain="dev.truveta-int.com")
 
         with (
             patch(
@@ -275,33 +291,34 @@ class TestUploadCommand:
                 },
             ),
             patch(
-                "openlinktoken_ext_truveta.commands.upload.ensure_auth",
-                return_value=_creds(),
-            ) as mock_auth,
+                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
+                return_value=_context(
+                    domain="dev.truveta-int.com",
+                    api_url="https://api.dev.truveta-int.com/openlink",
+                    storage_domain="dev.truveta-int.com",
+                ),
+            ),
             patch(
                 "openlinktoken_ext_truveta.commands.upload.requests.post",
                 side_effect=_post,
-            ),
-            patch(
-                "openlinktoken_ext_truveta.commands.common.read_session_auth_url",
-                return_value="https://login.dev.truveta-int.com",
             ),
         ):
             result = _upload(args)
 
         assert result == 0
-        mock_auth.assert_called_once_with(
-            "https://login.dev.truveta-int.com", cached_only=True
+        assert (
+            captured["url"] == "https://api.dev.truveta-int.com/openlink/v1/uploads/x"
         )
-        assert captured["url"] == "https://api.dev.truveta-int.com/v1/uploads/x"
 
     def test_upload_requires_session_when_not_local_dev(self, tmp_path, capsys):
         data_file = tmp_path / "tokenized.csv"
         data_file.write_text("token\nabc")
 
         with patch(
-            "openlinktoken_ext_truveta.commands.common.read_session_auth_url",
-            return_value=None,
+            "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
+            side_effect=SessionResolutionError(
+                "No login session found. Please run 'olt truveta login' first."
+            ),
         ):
             result = _upload(_args(str(data_file), domain=None, api_domain=None))
 
@@ -330,9 +347,13 @@ class TestUploadCommand:
                 },
             ),
             patch(
-                "openlinktoken_ext_truveta.commands.upload.ensure_auth",
-                return_value=_creds(),
-            ) as mock_auth,
+                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
+                return_value=_context(
+                    domain="dev.truveta-int.com",
+                    api_url=LOCAL_API_URL,
+                    storage_domain="localhost-18080",
+                ),
+            ),
             patch(
                 "openlinktoken_ext_truveta.commands.upload.requests.post",
                 side_effect=_post,
@@ -341,6 +362,5 @@ class TestUploadCommand:
             result = _upload(_args(str(data_file), local_dev=True))
 
         assert result == 0
-        mock_auth.assert_called_once_with("http://localhost:18080", cached_only=True)
         assert captured["url"] == "http://localhost:18080/v1/uploads/x"
         assert captured["timeout"] == 180
