@@ -71,11 +71,17 @@ def _make_server_response(server_public_key: str) -> dict:
     }
 
 
-def _patch_decrypt(return_value: str = _DECRYPTED_SECRET):
+def _patch_decrypt(
+    return_value: str = _DECRYPTED_SECRET, already_encoded: bool = False
+):
     """Patch decrypt_hashing_secret in exchange_config module."""
+    patched_value = return_value
+    if not already_encoded:
+        patched_value = base64.b64encode(return_value.encode("utf-8")).decode("utf-8")
+
     return patch(
         "openlinktoken_ext_truveta.exchange.config.decrypt_hashing_secret",
-        return_value=return_value,
+        return_value=patched_value,
     )
 
 
@@ -196,7 +202,11 @@ class TestBuildExchangeConfig:
         _, public_pem, _ = _generate_keypair()
         _, _, server_public_der_b64 = _generate_keypair()
         server_response = _make_server_response(server_public_der_b64)
-        mock_decrypt = MagicMock(return_value=_DECRYPTED_SECRET)
+        mock_decrypt = MagicMock(
+            return_value=base64.b64encode(_DECRYPTED_SECRET.encode("utf-8")).decode(
+                "utf-8"
+            )
+        )
 
         with patch(
             "openlinktoken_ext_truveta.exchange.config.decrypt_hashing_secret",
@@ -276,6 +286,33 @@ class TestBuildExchangeConfig:
             )
 
         assert mock_builder.call_args.kwargs["curve"] == "P-384"
+
+    def test_decodes_base64_hashing_secret_before_writing_exchange_config(self):
+        local_private_pem, local_public_pem, _ = _generate_keypair()
+        _, _, server_public_der_b64 = _generate_keypair()
+        server_response = _make_server_response(server_public_der_b64)
+        decrypted_secret = "YjFLRlBKeUYzdGp1c1BxSXkvUXNrdz09"
+        expected_secret_bytes = base64.b64decode(decrypted_secret)
+
+        with _patch_decrypt(return_value=decrypted_secret, already_encoded=True):
+            config = build_exchange_config(
+                "test.domain.com",
+                server_response,
+                local_public_pem,
+                local_private_pem,
+            )
+
+        resolved = resolve_exchange_config_inputs(
+            exchange_config_value=config,
+            private_key_value=local_private_pem,
+        )
+        payload = resolved.payload
+
+        assert resolved.hashing_secret == expected_secret_bytes
+        assert payload["hashingSecret"] == base64.urlsafe_b64encode(
+            expected_secret_bytes
+        ).rstrip(b"=").decode("ascii")
+        assert payload["hashingSecretEncoding"] == "base64url"
 
 
 class TestWriteExchangeConfig:
@@ -425,14 +462,35 @@ class TestLoadExchangeConfig:
 
 
 class TestResolveExchangePayload:
-    def test_resolves_legacy_payload(self, tmp_path, monkeypatch):
+    def test_resolves_jwe_payload_with_daily_private_key(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        (tmp_path / "openlinktoken-2026-04-23.exchange.json").write_text(
-            json.dumps({"payload": {"exchangeId": "x"}})
+        monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
+        local_private_pem, local_public_pem, _ = _generate_keypair()
+        _, _, server_public_der_b64 = _generate_keypair()
+        server_response = _make_server_response(server_public_der_b64)
+        today_stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        with _patch_decrypt():
+            config = build_exchange_config(
+                "test.domain.com",
+                server_response,
+                local_public_pem,
+                local_private_pem,
+            )
+
+        (tmp_path / f"openlinktoken-{today_stamp}.exchange.json").write_text(
+            json.dumps(config)
         )
+        key_path = (
+            tmp_path / ".openlinktoken" / f"openlinktoken-{today_stamp}.private.pem"
+        )
+        key_path.parent.mkdir(parents=True)
+        key_path.write_text(local_private_pem)
 
         payload = resolve_exchange_payload("test.domain.com")
-        assert payload["exchangeId"] == "x"
+
+        assert payload["exchangeId"] == server_response["exchangeId"]
 
 
 class TestModuleLoaderFallbacks:

@@ -27,27 +27,35 @@ olt truveta <subcommand>
 | ------------------------------------------- | -------------------------------------------------------- |
 | `olt truveta login`                         | Authenticate with Truveta via OAuth 2.0 Device Code Flow |
 | `olt truveta login --force`                 | Re-authenticate, discarding any cached credentials       |
-| `olt truveta login --domain URL`            | Authenticate against a specific environment              |
-| `olt truveta initiate-exchange --local-dev` | Use local Token Service API for exchange negotiation     |
-| `olt truveta upload --local-dev`            | Use local Token Service API for upload                   |
+| `olt truveta login --domain DOMAIN`         | Authenticate against a specific Truveta domain           |
+| `olt truveta initiate-exchange --local-dev` | Authenticate against dev and call a local Token Service  |
+| `olt truveta upload --local-dev`            | Authenticate against dev and upload to a local API       |
 | `olt truveta logout`                        | Revoke and clear all cached Truveta credentials          |
 
 ### Environment Configuration
 
-| Variable     | Description                                                         | Default                   |
-| ------------ | ------------------------------------------------------------------- | ------------------------- |
-| `TRV_DOMAIN` | Override the target Truveta environment URL for `olt truveta login` | `https://api.truveta.com` |
+| Variable         | Description                                                | Default       |
+| ---------------- | ---------------------------------------------------------- | ------------- |
+| `OLT_TRV_DOMAIN` | Override the target Truveta domain for `olt truveta login` | `truveta.com` |
 
 **Example — target the dev environment:**
 
 ```bash
-export TRV_DOMAIN=https://api.dev.truveta-int.com
+export OLT_TRV_DOMAIN=dev.truveta-int.com
 olt truveta login
 ```
 
+Supported domain values are:
+
+- `dev.truveta-int.com`
+- `truveta-int.com`
+- `truveta.com`
+
 ### Token Storage
 
-Credentials are cached at `~/.openlinktoken/truveta/<domain>/credentials.json` and auto-evicted 5 minutes before expiry. The selected API URL is persisted at `~/.openlinktoken/truveta/session.json` and is used by non-login commands by default. Run `olt truveta logout` to revoke the access token server-side and clear session files.
+Credentials are cached at `~/.openlinktoken/truveta/<domain>/credentials.json` and auto-evicted 5 minutes before expiry. The selected domain is persisted in `~/.openlinktoken/truveta/session.json`, and non-login commands derive their Auth0 and API URLs from that saved domain. The session file is merge-friendly so additional session metadata can be added over time without overwriting existing fields. Exchange keypairs are stored per UTC day at `~/.openlinktoken/openlinktoken-YYYY-MM-DD.private.pem` and `~/.openlinktoken/openlinktoken-YYYY-MM-DD.public.pem`. Run `olt truveta logout` to revoke the access token server-side and clear session files.
+
+When `--local-dev` is supplied, the extension still authenticates against `dev.truveta-int.com`, but it sends exchange and upload API calls to `http://localhost:18080`.
 
 ## Local Development Setup
 
@@ -94,7 +102,7 @@ cd openlinktoken-ext-truveta
 After `uv sync --dev`, run:
 
 ```bash
-(unset GIT_DIR; uv run olt truveta login --domain https://api.dev.truveta-int.com)
+(unset GIT_DIR; uv run olt truveta login --domain dev.truveta-int.com)
 # Opens browser for Auth0 device code login, then prints: Welcome, <name>!
 ```
 

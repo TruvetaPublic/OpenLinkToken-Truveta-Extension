@@ -8,7 +8,6 @@ import argparse
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from openlinktoken_ext_truveta.auth import AuthError, Credentials
 from openlinktoken_ext_truveta.extension import TruvetaExtension
 
 # ---------------------------------------------------------------------------
@@ -155,9 +154,9 @@ class TestRegisterSubcommand:
     def test_login_accepts_domain_flag(self):
         root = self._build_parser()
         parsed = root.parse_args(
-            ["truveta", "login", "--domain", "https://api.dev.truveta-int.com"]
+            ["truveta", "login", "--domain", "dev.truveta-int.com"]
         )
-        assert parsed.domain == "https://api.dev.truveta-int.com"
+        assert parsed.domain == "dev.truveta-int.com"
 
     def test_initiate_exchange_rejects_domain_override_flags(self):
         root = self._build_parser()
@@ -169,7 +168,7 @@ class TestRegisterSubcommand:
                         "truveta",
                         "initiate-exchange",
                         "--domain",
-                        "https://api.dev.truveta-int.com",
+                        "dev.truveta-int.com",
                     ]
                 )
             except SystemExit as exc:
@@ -190,7 +189,7 @@ class TestRegisterSubcommand:
                         "--file",
                         "input.csv",
                         "--domain",
-                        "https://api.dev.truveta-int.com",
+                        "dev.truveta-int.com",
                     ]
                 )
             except SystemExit as exc:
@@ -215,7 +214,7 @@ class TestRegisterSubcommand:
                         "--domain",
                         "http://localhost:8080",
                         "--auth-domain",
-                        "https://api.dev.truveta-int.com",
+                        "dev.truveta-int.com",
                     ]
                 )
             except SystemExit as exc:
@@ -254,6 +253,9 @@ class TestRegisterSubcommand:
                 "--local-dev",
             ]
         )
+        assert parsed.local_dev is True
+
+        assert parsed.local_dev is True
 
         assert parsed.local_dev is True
 
@@ -342,88 +344,33 @@ class TestRegisterSubcommand:
         assert callable(parsed.func)
 
 
-# ---------------------------------------------------------------------------
-# Tests: _login dispatch
-# ---------------------------------------------------------------------------
-
-_FAKE_ID_TOKEN = (
-    "eyJhbGciOiJSUzI1NiJ9"
-    ".eyJuYW1lIjoiVGVzdCBVc2VyIiwiZW1haWwiOiJ0ZXN0QGV4YW1wbGUuY29tIiwiZXhwIjo5OTk5OTk5OTk5fQ"
-    ".fakesig"
-)
-_FAKE_CREDS = Credentials(access_token="acc", id_token=_FAKE_ID_TOKEN)
-
-
 class TestLoginDispatch:
     """Tests for TruvetaExtension._login static method."""
 
-    def test_login_returns_zero_on_success(self, capsys):
+    def test_login_dispatches_to_command_handler(self):
         args = MagicMock()
-        args.domain = "https://api.truveta.com"
-        args.force = False
 
         with patch(
-            "openlinktoken_ext_truveta.commands.login.ensure_auth",
-            return_value=_FAKE_CREDS,
-        ):
+            "openlinktoken_ext_truveta.extension._login",
+            return_value=0,
+        ) as mock_login:
             result = TruvetaExtension._login(args)
 
         assert result == 0
-        assert "successfully logged in" in capsys.readouterr().out
-
-    def test_login_returns_one_on_auth_error(self, capsys):
-        args = MagicMock()
-        args.domain = "https://api.truveta.com"
-        args.force = False
-
-        with patch(
-            "openlinktoken_ext_truveta.commands.login.ensure_auth",
-            side_effect=AuthError("boom"),
-        ):
-            result = TruvetaExtension._login(args)
-
-        assert result == 1
-        assert "boom" in capsys.readouterr().err
+        mock_login.assert_called_once_with(args)
 
 
 class TestInitiateExchangeDispatch:
     """Tests for TruvetaExtension._initiate_exchange static method."""
 
-    def test_initiate_exchange_returns_zero_on_success(self, capsys):
+    def test_initiate_exchange_dispatches_to_command_handler(self):
         args = MagicMock()
-        args.domain = "https://api.truveta.com"
-        args.force = False
 
-        with (
-            patch(
-                "openlinktoken_ext_truveta.commands.initiate_exchange.ensure_auth",
-                return_value=_FAKE_CREDS,
-            ),
-            patch(
-                "openlinktoken_ext_truveta.commands.initiate_exchange.load_or_generate_domain_keys",
-                return_value=("private", "public"),
-            ),
-            patch(
-                "openlinktoken_ext_truveta.commands.initiate_exchange.call_exchange_endpoint",
-                return_value={
-                    "exchangeName": "name",
-                    "exchangeId": "id",
-                    "hashingSecret": "secret",
-                    "hashingSecretEncoding": "base64",
-                    "serverPublicKey": "key",
-                },
-            ),
-            patch(
-                "openlinktoken_ext_truveta.commands.initiate_exchange.build_exchange_config",
-                return_value={"payload": {}},
-            ),
-            patch(
-                "openlinktoken_ext_truveta.commands.initiate_exchange.write_exchange_config",
-                return_value="/tmp/exchange.json",
-            ),
-        ):
+        with patch(
+            "openlinktoken_ext_truveta.extension._initiate_exchange",
+            return_value=0,
+        ) as mock_initiate_exchange:
             result = TruvetaExtension._initiate_exchange(args)
 
         assert result == 0
-        out = capsys.readouterr().out
-        assert "Exchange config written to:" in out
+        mock_initiate_exchange.assert_called_once_with(args)

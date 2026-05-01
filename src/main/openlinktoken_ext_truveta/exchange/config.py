@@ -26,6 +26,7 @@ from openlinktoken_ext_truveta.exchange.constants import (
     EC_KEY_TYPE,
     EXCHANGE_ID_KEY,
     EXCHANGE_NAME_KEY,
+    HASHING_SECRET_ENCODING_KEY,
     HASHING_SECRET_KEY,
     JWE_RECIPIENT_ALG,
     KID_SHA256_PREFIX,
@@ -48,20 +49,63 @@ class ExchangeConfigError(Exception):
     """Raised when exchange config operations fail."""
 
 
-def _normalize_hashing_secret_bytes(secret: Any) -> bytes:
-    """Normalize decrypted hashing-secret values into bytes for JWE payload encoding."""
+def _normalize_hashing_secret_bytes(secret: Any, secret_encoding: str) -> bytes:
+    """
+    Normalize decrypted hashing-secret values into raw bytes for JWE payload encoding.
+
+    Inputs:
+        secret: The decrypted hashing secret as bytes or text.
+        secret_encoding: The encoding label describing how the secret should be interpreted.
+
+    Returns:
+        The hashing secret normalized to raw bytes for JWE envelope generation.
+    """
     if isinstance(secret, bytes):
-        return secret
-    if isinstance(secret, str):
-        return secret.encode("utf-8")
+        secret_bytes = secret
+        secret_text = secret.decode("utf-8")
+    elif isinstance(secret, str):
+        secret_text = secret
+        secret_bytes = secret.encode("utf-8")
+    else:
+        raise ExchangeConfigError(
+            "Decrypted hashing secret must be bytes or string. "
+            f"Received type: {type(secret).__name__}"
+        )
+
+    normalized_encoding = secret_encoding.strip().lower()
+    if normalized_encoding == "base64":
+        try:
+            return base64.b64decode(secret_bytes)
+        except Exception as exc:
+            raise ExchangeConfigError(
+                f"Failed to decode base64 hashing secret: {exc}"
+            ) from exc
+    if normalized_encoding == "base64url":
+        try:
+            padding = "=" * (-len(secret_text) % 4)
+            return base64.urlsafe_b64decode(secret_text + padding)
+        except Exception as exc:
+            raise ExchangeConfigError(
+                f"Failed to decode base64url hashing secret: {exc}"
+            ) from exc
+    if normalized_encoding in {"utf-8", "utf8", "text", "plain", "plaintext"}:
+        return secret_bytes
+
     raise ExchangeConfigError(
-        "Decrypted hashing secret must be bytes or string. "
-        f"Received type: {type(secret).__name__}"
+        f"Unsupported hashing secret encoding: {secret_encoding!r}"
     )
 
 
 def _validate_exchange_envelope_shape(config: dict[str, Any]) -> None:
-    """Validate that config matches OpenLinkToken JWE envelope schema."""
+    """
+    Validate that config matches OpenLinkToken JWE envelope schema.
+
+    Inputs:
+        config: The exchange envelope object to validate.
+
+    Returns:
+        None. The function raises when the envelope does not match the expected schema.
+    """
     required_fields = ["version", "protected", "iv", "ciphertext", "tag", "recipients"]
     missing = [field for field in required_fields if field not in config]
     if missing:
@@ -134,7 +178,15 @@ def _validate_exchange_envelope_shape(config: dict[str, Any]) -> None:
 
 
 def _load_build_exchange_envelope():
-    """Load OpenLinkToken's JWE exchange envelope builder."""
+    """
+    Load OpenLinkToken's JWE exchange envelope builder.
+
+    Inputs:
+        None.
+
+    Returns:
+        The callable build_exchange_envelope helper provided by OpenLinkToken core.
+    """
     try:
         module = import_module(OPENLINKTOKEN_EXCHANGE_JWE_MODULE)
     except ModuleNotFoundError as exc:
@@ -154,7 +206,15 @@ def _load_build_exchange_envelope():
 
 
 def _load_resolve_exchange_inputs():
-    """Load OpenLinkToken's exchange-config resolver."""
+    """
+    Load OpenLinkToken's exchange-config resolver.
+
+    Inputs:
+        None.
+
+    Returns:
+        The callable resolve_exchange_config_inputs helper from OpenLinkToken core.
+    """
     try:
         module = import_module(OPENLINKTOKEN_EXCHANGE_CONFIG_MODULE)
     except ModuleNotFoundError as exc:
@@ -174,7 +234,15 @@ def _load_resolve_exchange_inputs():
 
 
 def _to_public_key_pem(public_key_data: str) -> str:
-    """Normalize a public key value to PEM format."""
+    """
+    Normalize a public key value to PEM format.
+
+    Inputs:
+        public_key_data: The server public key in PEM text or base64 DER/SPKI form.
+
+    Returns:
+        The equivalent public key encoded as PEM text.
+    """
     if public_key_data.strip().startswith(PEM_HEADER_PREFIX):
         return public_key_data
 
@@ -188,7 +256,15 @@ def _to_public_key_pem(public_key_data: str) -> str:
 
 
 def _derive_curve_from_public_key(public_key_data: str) -> str:
-    """Derive OpenLinkToken curve name from the server's public key."""
+    """
+    Derive OpenLinkToken curve name from the server's public key.
+
+    Inputs:
+        public_key_data: The server public key in PEM text or base64 DER/SPKI form.
+
+    Returns:
+        The OpenLinkToken curve name corresponding to the public key.
+    """
     try:
         if public_key_data.strip().startswith(PEM_HEADER_PREFIX):
             public_key = load_pem_public_key(public_key_data.encode("utf-8"))
@@ -219,7 +295,18 @@ def build_exchange_config(
     local_public_key_pem: str,
     local_private_key_pem: str,
 ) -> dict[str, Any]:
-    """Build a core-compatible JWE exchange config from server response and local keys."""
+    """
+    Build a core-compatible JWE exchange config from server response and local keys.
+
+    Inputs:
+        domain: The Truveta domain the exchange configuration is associated with.
+        server_response: The parsed exchange API response containing exchange metadata.
+        local_public_key_pem: The caller's PEM-encoded public key.
+        local_private_key_pem: The caller's PEM-encoded private key used to decrypt the secret.
+
+    Returns:
+        The validated exchange configuration envelope ready for persistence or upload use.
+    """
     required_fields = REQUIRED_SERVER_RESPONSE_FIELDS
     for field in required_fields:
         if field not in server_response:
@@ -230,6 +317,7 @@ def build_exchange_config(
     try:
         exchange_name = server_response[EXCHANGE_NAME_KEY]
         exchange_id = server_response[EXCHANGE_ID_KEY]
+        hashing_secret_encoding = server_response[HASHING_SECRET_ENCODING_KEY]
         server_public_key = server_response[SERVER_PUBLIC_KEY_KEY]
         server_public_key_pem = _to_public_key_pem(server_public_key)
         curve = _derive_curve_from_public_key(server_public_key)
@@ -247,7 +335,9 @@ def build_exchange_config(
         build_exchange_envelope = _load_build_exchange_envelope()
         config = build_exchange_envelope(
             exchange_name=exchange_name,
-            hashing_secret=_normalize_hashing_secret_bytes(hashing_secret),
+            hashing_secret=_normalize_hashing_secret_bytes(
+                hashing_secret, hashing_secret_encoding
+            ),
             sender_public_pem=local_public_key_pem.encode("utf-8"),
             recipient_public_pem=server_public_key_pem.encode("utf-8"),
             curve=curve,
@@ -264,7 +354,16 @@ def build_exchange_config(
 
 
 def write_exchange_config(domain: str, config: dict[str, Any]) -> Path:
-    """Persist an exchange config to the current directory as openlinktoken-<YYYY-MM-DD>.exchange.json."""
+    """
+    Persist an exchange config to the current directory as openlinktoken-<YYYY-MM-DD>.exchange.json.
+
+    Inputs:
+        domain: The Truveta domain associated with the exchange configuration.
+        config: The validated exchange configuration envelope to persist.
+
+    Returns:
+        The filesystem path to the written exchange configuration file.
+    """
     try:
         _validate_exchange_envelope_shape(config)
         date_stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -278,7 +377,15 @@ def write_exchange_config(domain: str, config: dict[str, Any]) -> Path:
 
 
 def load_exchange_config(domain: str) -> dict[str, Any]:
-    """Load an exchange config from the current directory only."""
+    """
+    Load an exchange config from the current directory only.
+
+    Inputs:
+        domain: The Truveta domain associated with the expected exchange configuration.
+
+    Returns:
+        The parsed exchange configuration JSON object for the current UTC date.
+    """
     try:
         cwd_configs = sorted(Path.cwd().glob("openlinktoken-*.exchange.json"))
         if not cwd_configs:
@@ -303,17 +410,20 @@ def load_exchange_config(domain: str) -> dict[str, Any]:
 
 
 def resolve_exchange_payload(domain: str) -> dict[str, Any]:
-    """Resolve a decrypted exchange payload from either legacy or JWE config formats."""
-    config = load_exchange_config(domain)
-    legacy_payload = config.get("payload")
-    if isinstance(legacy_payload, dict):
-        return legacy_payload
+    """
+    Resolve a decrypted exchange payload from a JWE config.
 
-    private_key_path_value = private_key_path(domain)
+    Inputs:
+        domain: The Truveta domain associated with the exchange configuration to resolve.
+
+    Returns:
+        The decrypted exchange payload JSON object produced by OpenLinkToken core.
+    """
+    config = load_exchange_config(domain)
+
+    private_key_path_value = private_key_path()
     if not private_key_path_value.exists():
-        raise ExchangeConfigError(
-            f"Private key not found for domain {domain!r}: {private_key_path_value}"
-        )
+        raise ExchangeConfigError(f"Private key not found at {private_key_path_value}")
 
     try:
         resolve_exchange_config_inputs = _load_resolve_exchange_inputs()

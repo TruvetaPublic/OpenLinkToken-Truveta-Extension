@@ -7,10 +7,10 @@ import os
 
 from openlinktoken_cli.extension import OpenLinkTokenExtension
 
-from openlinktoken_ext_truveta.auth import DEFAULT_DOMAIN_URL
 from openlinktoken_ext_truveta.commands.initiate_exchange import _initiate_exchange
 from openlinktoken_ext_truveta.commands.login import _login
 from openlinktoken_ext_truveta.commands.upload import _upload
+from openlinktoken_ext_truveta.domain import DEFAULT_DOMAIN
 
 
 class TruvetaExtension(OpenLinkTokenExtension):
@@ -18,17 +18,41 @@ class TruvetaExtension(OpenLinkTokenExtension):
 
     @property
     def command_name(self) -> str:
-        """Return the top-level subcommand name owned by this extension."""
+        """
+        Return the top-level subcommand name owned by this extension.
+
+        Inputs:
+            None.
+
+        Returns:
+            The root CLI subcommand string implemented by this extension.
+        """
         return "truveta"
 
     @property
     def description(self) -> str:
-        """Return a short human-readable description of this extension."""
+        """
+        Return a short human-readable description of this extension.
+
+        Inputs:
+            None.
+
+        Returns:
+            A concise human-readable description for CLI help text.
+        """
         return "Truveta-specific Open Link Token commands"
 
     @property
     def version(self) -> str:
-        """Return the SemVer version string for this extension."""
+        """
+        Return the SemVer version string for this extension.
+
+        Inputs:
+            None.
+
+        Returns:
+            The semantic version string for the installed extension package.
+        """
         return "0.1.0"
 
     def register_subcommand(self, subparsers: argparse._SubParsersAction) -> None:
@@ -37,12 +61,23 @@ class TruvetaExtension(OpenLinkTokenExtension):
 
         Inputs:
             subparsers: The argparse subparsers action to register against.
+
+        Returns:
+            None. The extension command tree is registered on the parser.
         """
         parser = subparsers.add_parser(self.command_name, help=self.description)
         self._register_truveta_subcommands(parser)
 
     def _register_truveta_subcommands(self, parser: argparse.ArgumentParser) -> None:
-        """Register the Truveta subcommands on a parser instance."""
+        """
+        Register the Truveta subcommands on a parser instance.
+
+        Inputs:
+            parser: The argparse parser representing the top-level truveta command.
+
+        Returns:
+            None. The login, initiate-exchange, and upload subcommands are added.
+        """
         sub = parser.add_subparsers(dest="truveta_subcommand")
 
         for registrar in (
@@ -53,6 +88,15 @@ class TruvetaExtension(OpenLinkTokenExtension):
             registrar.register(sub)
 
         def _print_truveta_help(_args) -> int:
+            """
+            Print help text when no Truveta subcommand is selected.
+
+            Inputs:
+                _args: Parsed CLI arguments, unused by the help handler.
+
+            Returns:
+                Exit code 0 after printing the truveta command help text.
+            """
             parser.print_help()
             return 0
 
@@ -101,14 +145,23 @@ class TruvetaExtension(OpenLinkTokenExtension):
 class _LoginSubcommandRegistrar:
     @staticmethod
     def register(sub: argparse._SubParsersAction) -> None:
+        """
+        Register the login subcommand and its flags.
+
+        Inputs:
+            sub: The argparse subparser collection for truveta subcommands.
+
+        Returns:
+            None. The login subcommand is added to the parser tree.
+        """
         login_parser = sub.add_parser(
             "login", help="Authenticate with Truveta services"
         )
         login_parser.add_argument(
             "--domain",
-            default=os.environ.get("TRV_DOMAIN", DEFAULT_DOMAIN_URL),
-            metavar="URL",
-            help=f"API URL to target (default: {DEFAULT_DOMAIN_URL})",
+            default=os.environ.get("OLT_TRV_DOMAIN", DEFAULT_DOMAIN),
+            metavar="DOMAIN",
+            help=f"Truveta domain to target (default: {DEFAULT_DOMAIN})",
         )
         login_parser.add_argument(
             "--force",
@@ -121,6 +174,15 @@ class _LoginSubcommandRegistrar:
 class _InitiateExchangeSubcommandRegistrar:
     @staticmethod
     def register(sub: argparse._SubParsersAction) -> None:
+        """
+        Register the initiate-exchange subcommand and its flags.
+
+        Inputs:
+            sub: The argparse subparser collection for truveta subcommands.
+
+        Returns:
+            None. The initiate-exchange subcommand is added to the parser tree.
+        """
         initiate_exchange_parser = sub.add_parser(
             "initiate-exchange",
             help="Negotiate exchange config (authenticates first if needed)",
@@ -136,6 +198,15 @@ class _InitiateExchangeSubcommandRegistrar:
 class _UploadSubcommandRegistrar:
     @staticmethod
     def register(sub: argparse._SubParsersAction) -> None:
+        """
+        Register the upload subcommand and its flags.
+
+        Inputs:
+            sub: The argparse subparser collection for truveta subcommands.
+
+        Returns:
+            None. The upload subcommand is added to the parser tree.
+        """
         upload_parser = sub.add_parser(
             "upload",
             help="Upload encrypted token data for self-serve overlap analysis",

@@ -1,20 +1,25 @@
 """
 Copyright (c) Truveta. All rights reserved.
 
-Shared command helpers for resolving API and Auth0 environment URLs.
+Shared command helpers for resolving Truveta domains and API targets.
 """
 
 import argparse
+import os
+from dataclasses import dataclass
+from urllib.parse import urlparse
 
-from openlinktoken_ext_truveta.auth import (
-    DEFAULT_DOMAIN_URL,
-    _extract_domain,
-    get_api_domain_url,
-    get_auth_domain_url,
-    read_session_auth_url,
+from openlinktoken_ext_truveta.auth import AuthError, Credentials, ensure_auth
+from openlinktoken_ext_truveta.domain import (
+    DEFAULT_DOMAIN,
+    LOCAL_DOMAIN,
+    DomainError,
+    get_api_url,
+    validate_domain,
 )
+from openlinktoken_ext_truveta.session import read_session_domain
 
-DEFAULT_LOCAL_DEV_API_URL = "http://localhost:18080"
+LOCAL_API_URL = "http://localhost:18080"
 DEFAULT_TIMEOUT_SECONDS = 30
 LOCAL_DEV_TIMEOUT_SECONDS = 180
 
@@ -23,56 +28,168 @@ class SessionResolutionError(ValueError):
     """Raised when a command requires a login session but none is available."""
 
 
+@dataclass(frozen=True)
+class AuthenticatedCommandContext:
+    """Holds resolved session state for commands that require cached auth."""
+
+    domain: str
+    api_url: str
+    storage_domain: str
+    credentials: Credentials
+
+
 def _is_local_dev(args: argparse.Namespace) -> bool:
+    """
+    Return whether the command targets a local development API instance.
+
+    Inputs:
+        args: Parsed CLI arguments that may include a local_dev flag.
+
+    Returns:
+        True when local development routing is enabled, otherwise False.
+    """
     return getattr(args, "local_dev", False) is True
 
 
 def _get_string_arg(args: argparse.Namespace, name: str) -> str | None:
+    """
+    Read a non-empty string argument from an argparse namespace.
+
+    Inputs:
+        args: Parsed CLI arguments to read from.
+        name: The attribute name to resolve on the namespace.
+
+    Returns:
+        The string value when present and non-empty, otherwise None.
+    """
     value = getattr(args, name, None)
     return value if isinstance(value, str) and value else None
 
 
-def resolve_api_url(args: argparse.Namespace) -> str:
-    """Resolve the target API URL from args, saved login context, or defaults."""
+def resolve_domain(
+    args: argparse.Namespace,
+    *,
+    allow_default: bool = False,
+) -> str:
+    """
+    Resolve the Truveta auth domain from args, env, session, or default.
+
+    Inputs:
+        args: Parsed CLI arguments that may include --domain and --local-dev.
+        allow_default: When True, fall back to the production domain if no other
+            source provides a valid domain.
+
+    Returns:
+        The validated Truveta domain used for authentication.
+    """
     if _is_local_dev(args):
-        return DEFAULT_LOCAL_DEV_API_URL
+        return LOCAL_DOMAIN
 
-    domain_arg = _get_string_arg(args, "domain")
-    if domain_arg:
-        return domain_arg
+    try:
+        domain_arg = _get_string_arg(args, "domain")
+        if domain_arg:
+            return validate_domain(domain_arg)
 
-    auth_url = read_session_auth_url()
-    if auth_url:
-        return get_api_domain_url(_extract_domain(auth_url))
+        env_domain = os.environ.get("OLT_TRV_DOMAIN")
+        if isinstance(env_domain, str) and env_domain:
+            return validate_domain(env_domain)
 
-    return DEFAULT_DOMAIN_URL
+        session_domain = read_session_domain()
+        if session_domain:
+            return session_domain
+    except DomainError as exc:
+        raise SessionResolutionError(str(exc)) from exc
+
+    if allow_default:
+        return DEFAULT_DOMAIN
+
+    raise SessionResolutionError(
+        "No login session found. Please run 'olt truveta login' first."
+    )
 
 
-def resolve_auth_url(args: argparse.Namespace) -> str:
-    """Resolve the Auth0 login domain URL from args, saved login context, or defaults."""
+def resolve_api_base_url(args: argparse.Namespace, domain: str) -> str:
+    """
+    Resolve the API base URL for hosted and local-dev command execution.
+
+    Inputs:
+        args: Parsed CLI arguments that may include --local-dev.
+        domain: The validated Truveta domain for hosted API routing.
+
+    Returns:
+        The localhost API URL for local dev or the hosted API base URL.
+    """
     if _is_local_dev(args):
-        return DEFAULT_LOCAL_DEV_API_URL
+        return LOCAL_API_URL
+    return get_api_url(domain)
 
-    api_domain = _get_string_arg(args, "domain")
-    if api_domain and api_domain.startswith("https://api."):
-        domain = api_domain[len("https://api.") :].rstrip("/")
-        return get_auth_domain_url(domain)
 
-    if api_domain:
-        return api_domain
+def _resolve_storage_domain(domain: str, api_url: str) -> str:
+    """
+    Resolve the storage-key domain used for local and hosted command state.
 
-    saved_auth_url = read_session_auth_url()
-    if saved_auth_url:
-        return saved_auth_url
+    Inputs:
+        domain: The validated Truveta auth domain.
+        api_url: The effective API URL for the current command execution.
 
-    return get_auth_domain_url(_extract_domain(DEFAULT_DOMAIN_URL))
+    Returns:
+        The hosted domain for remote environments or a hostname-port key for
+        local development endpoints.
+    """
+    parsed_url = urlparse(api_url)
+    hostname = parsed_url.hostname
+    if hostname in {"localhost", "127.0.0.1", "::1"}:
+        if parsed_url.port is not None:
+            return f"{hostname}-{parsed_url.port}"
+        return hostname
+    return domain
+
+
+def resolve_authenticated_context(
+    args: argparse.Namespace,
+) -> AuthenticatedCommandContext:
+    """
+    Resolve the shared authenticated context required by session-based commands.
+
+    Inputs:
+        args: Parsed CLI arguments that may include --domain and --local-dev.
+
+    Returns:
+        An authenticated command context containing the auth domain, effective
+        API URL, storage domain key, and cached credentials.
+    """
+    domain = resolve_domain(args)
+    api_url = resolve_api_base_url(args, domain)
+
+    try:
+        credentials = ensure_auth(domain, cached_only=True)
+    except AuthError as exc:
+        raise SessionResolutionError(
+            "Not logged in. Please, run 'olt truveta login' first."
+        ) from exc
+
+    return AuthenticatedCommandContext(
+        domain=domain,
+        api_url=api_url,
+        storage_domain=_resolve_storage_domain(domain, api_url),
+        credentials=credentials,
+    )
 
 
 def resolve_timeout_seconds(
     args: argparse.Namespace,
     timeout_seconds: int | None = None,
 ) -> int:
-    """Resolve request timeout from explicit override and local-dev context."""
+    """
+    Resolve request timeout from explicit override and local-dev context.
+
+    Inputs:
+        args: Parsed CLI arguments that may include --local-dev.
+        timeout_seconds: Optional explicit timeout override in seconds.
+
+    Returns:
+        The effective timeout in seconds for outgoing API requests.
+    """
     if timeout_seconds is not None:
         return timeout_seconds
 

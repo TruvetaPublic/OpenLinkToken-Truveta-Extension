@@ -8,6 +8,7 @@ domain key persistence, and fingerprint behavior.
 import base64
 import hashlib
 import hmac
+from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -33,6 +34,7 @@ from openlinktoken_ext_truveta.exchange.key_management import (
     get_key_fingerprint,
     load_or_generate_domain_keys,
 )
+from openlinktoken_ext_truveta.paths import private_key_path, public_key_path
 
 
 def _generate_test_keypair_pem() -> tuple[str, str]:
@@ -144,19 +146,39 @@ class TestGenerateKeypairFromCore:
 
 
 class TestLoadOrGenerateDomainKeys:
+    def test_uses_date_based_key_paths_under_openlinktoken_root(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        key_date = date(2026, 4, 27)
+
+        assert private_key_path(key_date=key_date) == (
+            tmp_path / ".openlinktoken" / "openlinktoken-2026-04-27.private.pem"
+        )
+        assert public_key_path(key_date=key_date) == (
+            tmp_path / ".openlinktoken" / "openlinktoken-2026-04-27.public.pem"
+        )
+
     def test_loads_existing_keys_without_regeneration(self, tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        domain_dir = tmp_path / ".openlinktoken" / "truveta" / "test.domain.com"
-        domain_dir.mkdir(parents=True)
-        (domain_dir / "private_key.pem").write_text("private-existing")
-        (domain_dir / "public_key.pem").write_text("public-existing")
+        key_date = date(2026, 4, 27)
+        key_dir = tmp_path / ".openlinktoken"
+        key_dir.mkdir(parents=True)
+        (key_dir / "openlinktoken-2026-04-27.private.pem").write_text(
+            "private-existing"
+        )
+        (key_dir / "openlinktoken-2026-04-27.public.pem").write_text("public-existing")
 
-        private_pem, public_pem = load_or_generate_domain_keys("test.domain.com")
+        private_pem, public_pem = load_or_generate_domain_keys(
+            "test.domain.com", key_date=key_date
+        )
         assert private_pem == "private-existing"
         assert public_pem == "public-existing"
 
     def test_generates_and_persists_when_missing(self, tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        key_date = date(2026, 4, 27)
 
         private_pem = (
             "-----BEGIN PRIVATE KEY-----\nnew-private\n-----END PRIVATE KEY-----\n"
@@ -170,18 +192,23 @@ class TestLoadOrGenerateDomainKeys:
         )
 
         generated_private, generated_public = load_or_generate_domain_keys(
-            "test.domain.com"
+            "test.domain.com", key_date=key_date
         )
 
         assert generated_private == private_pem
         assert generated_public == public_pem
 
-        domain_dir = tmp_path / ".openlinktoken" / "truveta" / "test.domain.com"
-        assert (domain_dir / "private_key.pem").read_text() == private_pem
-        assert (domain_dir / "public_key.pem").read_text() == public_pem
+        key_dir = tmp_path / ".openlinktoken"
+        assert (key_dir / "openlinktoken-2026-04-27.private.pem").read_text() == (
+            private_pem
+        )
+        assert (key_dir / "openlinktoken-2026-04-27.public.pem").read_text() == (
+            public_pem
+        )
 
     def test_raises_on_write_failure(self, tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        key_date = date(2026, 4, 27)
         monkeypatch.setattr(
             "openlinktoken_ext_truveta.exchange.key_management._generate_keypair_from_core",
             lambda: ("private", "public"),
@@ -192,8 +219,8 @@ class TestLoadOrGenerateDomainKeys:
 
         monkeypatch.setattr(Path, "write_text", raise_permission_error)
 
-        with pytest.raises(KeyManagementError, match="Failed to persist keys"):
-            load_or_generate_domain_keys("test.domain.com")
+        with pytest.raises(KeyManagementError, match="Failed to persist daily keys"):
+            load_or_generate_domain_keys("test.domain.com", key_date=key_date)
 
 
 class TestDecryptHashingSecret:

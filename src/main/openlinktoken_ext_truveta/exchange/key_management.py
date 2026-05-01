@@ -4,13 +4,14 @@ Copyright (c) Truveta. All rights reserved.
 ECDH P-256 key pair management for OpenToken exchange.
 
 Uses OpenToken core EC key utilities for key generation and fingerprinting,
-and persists domain-scoped keys under ~/.openlinktoken/truveta/<domain>/.
+and persists date-scoped keys under ~/.openlinktoken/.
 """
 
 import base64
 import hashlib
 import hmac
 import inspect
+from datetime import date
 from importlib import import_module
 
 from cryptography.hazmat.backends import default_backend
@@ -26,7 +27,6 @@ from cryptography.hazmat.primitives.serialization import (
 
 from openlinktoken_ext_truveta.exchange.constants import PEM_HEADER_PREFIX
 from openlinktoken_ext_truveta.paths import (
-    domain_dir,
     private_key_path,
     public_key_path,
 )
@@ -41,7 +41,15 @@ class KeyManagementError(Exception):
 
 
 def _load_core_ec_key_utils():
-    """Load OpenToken EC key utilities from core modules."""
+    """
+    Load OpenToken EC key utilities from core modules.
+
+    Inputs:
+        None.
+
+    Returns:
+        The imported openlinktoken.ec_key_utils module.
+    """
     module_name = "openlinktoken.ec_key_utils"
     try:
         return import_module(module_name)
@@ -53,7 +61,15 @@ def _load_core_ec_key_utils():
 
 
 def _generate_keypair_from_core() -> tuple[str, str]:
-    """Generate ECDH P-256 keys using OpenToken core utilities."""
+    """
+    Generate ECDH P-256 keys using OpenToken core utilities.
+
+    Inputs:
+        None.
+
+    Returns:
+        A tuple of PEM-encoded private and public keys.
+    """
     ec_utils = _load_core_ec_key_utils()
     private_pem, public_pem = ec_utils.generate_key_pair("P-256")
 
@@ -65,11 +81,18 @@ def _generate_keypair_from_core() -> tuple[str, str]:
     return private_pem, public_pem
 
 
-def load_or_generate_domain_keys(domain: str) -> tuple[str, str]:
-    """Load existing domain keys or generate and persist new ones."""
-    domain_directory = domain_dir(domain)
-    private_key_file = private_key_path(domain)
-    public_key_file = public_key_path(domain)
+def load_or_generate_daily_keys(key_date: date | None = None) -> tuple[str, str]:
+    """
+    Load existing daily keys or generate and persist new ones.
+
+    Inputs:
+        key_date: An optional explicit UTC date used to scope key lookup and persistence.
+
+    Returns:
+        A tuple of PEM-encoded private and public keys for the resolved day.
+    """
+    private_key_file = private_key_path(key_date=key_date)
+    public_key_file = public_key_path(key_date=key_date)
 
     if private_key_file.exists() and public_key_file.exists():
         try:
@@ -78,7 +101,8 @@ def load_or_generate_domain_keys(domain: str) -> tuple[str, str]:
             return private_pem, public_pem
         except Exception as exc:
             raise KeyManagementError(
-                f"Failed to read existing keys for domain {domain!r}: {exc}"
+                "Failed to read existing daily keys "
+                f"from {private_key_file} and {public_key_file}: {exc}"
             )
 
     try:
@@ -87,17 +111,47 @@ def load_or_generate_domain_keys(domain: str) -> tuple[str, str]:
         raise KeyManagementError(f"Failed to generate ECDH P-256 key pair: {exc}")
 
     try:
-        domain_directory.mkdir(parents=True, exist_ok=True)
+        private_key_file.parent.mkdir(parents=True, exist_ok=True)
         private_key_file.write_text(private_pem)
         public_key_file.write_text(public_pem)
     except Exception as exc:
-        raise KeyManagementError(f"Failed to persist keys for domain {domain!r}: {exc}")
+        raise KeyManagementError(
+            "Failed to persist daily keys "
+            f"to {private_key_file} and {public_key_file}: {exc}"
+        )
 
     return private_pem, public_pem
 
 
+def load_or_generate_domain_keys(
+    _domain: str, key_date: date | None = None
+) -> tuple[str, str]:
+    """
+    Load or generate the date-scoped exchange keys.
+
+    Inputs:
+        _domain: Unused compatibility parameter retained for existing callers.
+        key_date: An optional explicit UTC date used to scope key lookup and persistence.
+
+    Returns:
+        A tuple of PEM-encoded private and public keys for the resolved day.
+
+    The domain parameter is preserved for compatibility with existing callers,
+    but key storage is global per UTC day under ~/.openlinktoken/.
+    """
+    return load_or_generate_daily_keys(key_date=key_date)
+
+
 def get_key_fingerprint(public_key_pem: str) -> str:
-    """Calculate the SHA-256 fingerprint of a public key."""
+    """
+    Calculate the SHA-256 fingerprint of a public key.
+
+    Inputs:
+        public_key_pem: The public key in PEM text or base64 DER/SPKI form.
+
+    Returns:
+        The lowercase SHA-256 fingerprint string for the normalized public key.
+    """
     try:
         ec_utils = _load_core_ec_key_utils()
         if isinstance(public_key_pem, str) and public_key_pem.strip().startswith(
@@ -117,14 +171,30 @@ def get_key_fingerprint(public_key_pem: str) -> str:
 
 
 def _load_public_key_from_pem_or_spki(key_data: str):
-    """Load an EC public key from either PEM or raw DER/SPKI base64 format."""
+    """
+    Load an EC public key from either PEM or raw DER/SPKI base64 format.
+
+    Inputs:
+        key_data: The public key in PEM text or base64 DER/SPKI form.
+
+    Returns:
+        The loaded cryptography public key object.
+    """
     if key_data.strip().startswith(PEM_HEADER_PREFIX):
         return load_pem_public_key(key_data.encode(_UTF8_ENCODING))
     return load_der_public_key(base64.b64decode(key_data))
 
 
 def _load_core_decrypt_hashing_secret():
-    """Load OpenToken's canonical decrypt helper when it exists."""
+    """
+    Load OpenToken's canonical decrypt helper when it exists.
+
+    Inputs:
+        None.
+
+    Returns:
+        The callable decrypt helper from OpenToken core, or None when unavailable.
+    """
     try:
         module = import_module("openlinktoken.ec_key_utils")
     except ModuleNotFoundError:
@@ -143,7 +213,17 @@ def _decrypt_hashing_secret_local(
     server_public_key: str,
     exchange_id: str,
 ) -> str:
-    """Local decryption matching the server's HKDF-based key derivation.
+    """
+    Local decryption matching the server's HKDF-based key derivation.
+
+    Inputs:
+        encrypted_b64: The base64-encoded encrypted hashing secret payload.
+        local_private_key_pem: The caller's PEM-encoded private key.
+        server_public_key: The server public key in PEM or base64 DER/SPKI form.
+        exchange_id: The exchange identifier used as HKDF salt.
+
+    Returns:
+        The decrypted hashing secret as a UTF-8 string.
 
     Server-side derivation (EcdhKeyProvider.EncryptHashingSecret):
       1. sharedSecret = DeriveKeyFromHash(callerPub, SHA256)
@@ -196,7 +276,18 @@ def decrypt_hashing_secret(
     server_public_key: str,
     exchange_id: str,
 ) -> str:
-    """Decrypt the ECDH-encrypted hashing secret received from the server."""
+    """
+    Decrypt the ECDH-encrypted hashing secret received from the server.
+
+    Inputs:
+        encrypted_b64: The base64-encoded encrypted hashing secret payload.
+        local_private_key_pem: The caller's PEM-encoded private key.
+        server_public_key: The server public key in PEM or base64 DER/SPKI form.
+        exchange_id: The exchange identifier associated with the exchange.
+
+    Returns:
+        The decrypted hashing secret as a UTF-8 string.
+    """
     try:
         if not exchange_id:
             raise KeyManagementError(

@@ -13,20 +13,10 @@ from typing import Any
 
 from openlinktoken_ext_truveta.api import upload as upload_api
 from openlinktoken_ext_truveta.api.upload import UploadAPIError, call_upload_endpoint
-from openlinktoken_ext_truveta.auth import (
-    AuthError,
-    Credentials,
-    _extract_domain,
-    _extract_service_domain,
-    ensure_auth,
-    get_api_domain_url,
-)
-from openlinktoken_ext_truveta.commands import common as common_commands
 from openlinktoken_ext_truveta.commands.common import (
+    AuthenticatedCommandContext,
     SessionResolutionError,
-    _is_local_dev,
-    resolve_api_url,
-    resolve_auth_url,
+    resolve_authenticated_context,
     resolve_timeout_seconds,
 )
 from openlinktoken_ext_truveta.exchange.config import (
@@ -59,6 +49,12 @@ def _build_exchange_metadata(domain: str) -> dict[str, Any]:
     Build upload metadata from the cached exchange config.
 
     Extracts exchange fields required for server-side validation of the encrypt/package flow.
+
+    Inputs:
+        domain: The storage domain key used to locate the cached exchange config.
+
+    Returns:
+        The upload metadata payload derived from the cached exchange configuration.
     """
     payload = resolve_exchange_payload(domain)
 
@@ -133,23 +129,12 @@ def _upload(args: argparse.Namespace) -> int:
         metadata_path = _discover_metadata_file(file_path)
 
     try:
-        if _is_local_dev(args):
-            url = resolve_api_url(args)
-            auth_url = resolve_auth_url(args)
-        else:
-            session_auth_url = common_commands.read_session_auth_url()
-            if not session_auth_url:
-                raise SessionResolutionError(
-                    "No login session found. Please run 'olt truveta login' first."
-                )
-
-            auth_url = session_auth_url
-            url = get_api_domain_url(_extract_domain(session_auth_url))
+        context: AuthenticatedCommandContext = resolve_authenticated_context(args)
     except SessionResolutionError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
-    domain = _extract_service_domain(url)
+    domain = context.storage_domain
 
     # Ensure exchange config exists
     try:
@@ -157,16 +142,6 @@ def _upload(args: argparse.Namespace) -> int:
     except ExchangeConfigError as exc:
         print(
             f"Error: Exchange configuration not found. Run 'olt truveta initiate-exchange' first: {exc}",
-            file=sys.stderr,
-        )
-        return 1
-
-    # Authenticate
-    try:
-        credentials: Credentials = ensure_auth(auth_url, cached_only=True)
-    except AuthError as exc:
-        print(
-            f"Authentication failed: {exc} Please run 'olt truveta login' first.",
             file=sys.stderr,
         )
         return 1
@@ -196,8 +171,8 @@ def _upload(args: argparse.Namespace) -> int:
                 )
 
             payload = call_upload_endpoint(
-                url,
-                credentials.access_token,
+                context.api_url,
+                context.credentials.access_token,
                 exchange_metadata["payload"]["exchangeId"],
                 files,
                 timeout_seconds=resolve_timeout_seconds(args),
