@@ -48,7 +48,11 @@ def _is_local_dev(args: argparse.Namespace) -> bool:
     Returns:
         True when local development routing is enabled, otherwise False.
     """
-    return getattr(args, "local_dev", False) is True
+    if getattr(args, "local_dev", False) is True:
+        return True
+
+    env_value = os.environ.get("OLT_TRV_LOCAL_DEV", "")
+    return env_value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def _get_string_arg(args: argparse.Namespace, name: str) -> str | None:

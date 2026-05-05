@@ -9,6 +9,7 @@ from openlinktoken_cli.extension import OpenLinkTokenExtension
 
 from openlinktoken_ext_truveta.commands.initiate_exchange import _initiate_exchange
 from openlinktoken_ext_truveta.commands.login import _login
+from openlinktoken_ext_truveta.commands.logout import _logout
 from openlinktoken_ext_truveta.commands.upload import _upload
 from openlinktoken_ext_truveta.domain import DEFAULT_DOMAIN
 
@@ -81,8 +82,9 @@ class TruvetaExtension(OpenLinkTokenExtension):
         sub = parser.add_subparsers(dest="truveta_subcommand")
 
         for registrar in (
-            _LoginSubcommandRegistrar,
             _InitiateExchangeSubcommandRegistrar,
+            _LoginSubcommandRegistrar,
+            _LogoutSubcommandRegistrar,
             _UploadSubcommandRegistrar,
         ):
             registrar.register(sub)
@@ -127,6 +129,19 @@ class TruvetaExtension(OpenLinkTokenExtension):
             Exit code (0 on success, non-zero on failure).
         """
         return _initiate_exchange(args)
+
+    @staticmethod
+    def _logout(args) -> int:
+        """
+        Revoke tokens and clear cached Truveta session state.
+
+        Inputs:
+            args: Parsed CLI arguments.
+
+        Returns:
+            Exit code (0 on success, non-zero on failure).
+        """
+        return _logout(args)
 
     @staticmethod
     def _upload(args) -> int:
@@ -193,6 +208,24 @@ class _InitiateExchangeSubcommandRegistrar:
             help="Use local Token Service API endpoint (http://localhost:18080)",
         )
         initiate_exchange_parser.set_defaults(func=TruvetaExtension._initiate_exchange)
+
+
+class _LogoutSubcommandRegistrar:
+    @staticmethod
+    def register(sub: argparse._SubParsersAction) -> None:
+        """
+        Register the logout subcommand.
+
+        Inputs:
+            sub: The argparse subparser collection for truveta subcommands.
+
+        Returns:
+            None. The logout subcommand is added to the parser tree.
+        """
+        logout_parser = sub.add_parser(
+            "logout", help="Revoke tokens and clear cached credentials"
+        )
+        logout_parser.set_defaults(func=TruvetaExtension._logout)
 
 
 class _UploadSubcommandRegistrar:

@@ -26,6 +26,10 @@ from openlinktoken_ext_truveta.exchange.key_management import (
     KeyManagementError,
     load_or_generate_domain_keys,
 )
+from openlinktoken_ext_truveta.paths import (
+    private_key_path,
+    public_key_path,
+)
 
 
 def _initiate_exchange(args: argparse.Namespace) -> int:
@@ -69,7 +73,12 @@ def _initiate_exchange(args: argparse.Namespace) -> int:
             context.storage_domain, server_response, local_public_pem, local_private_pem
         )
         config_path = write_exchange_config(context.storage_domain, config)
-        print(f"Exchange config written to: {config_path}")
+
+        priv_key_path = private_key_path()
+        pub_key_path = public_key_path()
+        print(f"Private key:     {priv_key_path}")
+        print(f"Public key:      {pub_key_path}")
+        print(f"Exchange config: {config_path}")
     except ExchangeConfigError as exc:
         print(f"Exchange config build/write failed: {exc}", file=sys.stderr)
         return 1
