@@ -59,16 +59,10 @@ class TestRegisterSubcommand:
         parsed = root.parse_args(["truveta", "login"])
         assert parsed.func == TruvetaExtension._login
 
-    def test_logout_subcommand_removed(self):
+    def test_logout_subcommand_present(self):
         root = self._build_parser()
-        with patch("sys.stderr"):
-            try:
-                root.parse_args(["truveta", "logout"])
-            except SystemExit as exc:
-                assert exc.code == 2
-                return
-
-        raise AssertionError("Expected parse_args to reject removed logout command")
+        parsed = root.parse_args(["truveta", "logout"])
+        assert parsed.func == TruvetaExtension._logout
 
     def test_package_subcommand_removed(self):
         root = self._build_parser()
@@ -374,3 +368,19 @@ class TestInitiateExchangeDispatch:
 
         assert result == 0
         mock_initiate_exchange.assert_called_once_with(args)
+
+
+class TestLogoutDispatch:
+    """Tests for TruvetaExtension._logout static method."""
+
+    def test_logout_dispatches_to_command_handler(self):
+        args = MagicMock()
+
+        with patch(
+            "openlinktoken_ext_truveta.extension._logout",
+            return_value=0,
+        ) as mock_logout:
+            result = TruvetaExtension._logout(args)
+
+        assert result == 0
+        mock_logout.assert_called_once_with(args)

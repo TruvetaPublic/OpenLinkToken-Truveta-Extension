@@ -42,6 +42,13 @@ class TestCommonResolution:
 
         assert resolved == "dev.truveta-int.com"
 
+    def test_resolve_domain_uses_local_dev_env_override(self, monkeypatch):
+        monkeypatch.setenv("OLT_TRV_LOCAL_DEV", "true")
+
+        resolved = resolve_domain(_args())
+
+        assert resolved == "dev.truveta-int.com"
+
     def test_resolve_domain_uses_explicit_domain_arg(self):
         resolved = resolve_domain(_args(domain="truveta-int.com"))
 
@@ -64,7 +71,14 @@ class TestCommonResolution:
 
         assert resolved == "dev.truveta-int.com"
 
-    def test_resolve_domain_defaults_for_login(self):
+    def test_resolve_domain_defaults_for_login(self, monkeypatch):
+        monkeypatch.delenv("OLT_TRV_LOCAL_DEV", raising=False)
+        monkeypatch.delenv("OLT_TRV_DOMAIN", raising=False)
+        monkeypatch.setattr(
+            "openlinktoken_ext_truveta.commands.common.read_session_domain",
+            lambda: None,
+        )
+
         resolved = resolve_domain(_args(), allow_default=True)
 
         assert resolved == DEFAULT_DOMAIN
@@ -83,6 +97,13 @@ class TestCommonResolution:
 
     def test_resolve_api_base_url_uses_local_dev_url(self):
         resolved = resolve_api_base_url(_args(local_dev=True), "dev.truveta-int.com")
+
+        assert resolved == LOCAL_API_URL
+
+    def test_resolve_api_base_url_uses_local_dev_env_override(self, monkeypatch):
+        monkeypatch.setenv("OLT_TRV_LOCAL_DEV", "true")
+
+        resolved = resolve_api_base_url(_args(), "dev.truveta-int.com")
 
         assert resolved == LOCAL_API_URL
 
@@ -138,6 +159,13 @@ class TestCommonResolution:
 
     def test_resolve_timeout_seconds_uses_local_dev_value_when_enabled(self):
         resolved = resolve_timeout_seconds(_args(local_dev=True))
+
+        assert resolved == LOCAL_DEV_TIMEOUT_SECONDS
+
+    def test_resolve_timeout_seconds_uses_local_dev_env_override(self, monkeypatch):
+        monkeypatch.setenv("OLT_TRV_LOCAL_DEV", "true")
+
+        resolved = resolve_timeout_seconds(_args(local_dev=False))
 
         assert resolved == LOCAL_DEV_TIMEOUT_SECONDS
 
