@@ -314,8 +314,212 @@ class TestBuildExchangeConfig:
         ).rstrip(b"=").decode("ascii")
         assert payload["hashingSecretEncoding"] == "base64url"
 
+    def test_includes_rotation_count_bin_width_dimension_bias_from_server_response(
+        self,
+    ):
+        local_private_pem, local_public_pem, _ = _generate_keypair()
+        _, _, server_public_der_b64 = _generate_keypair()
+        server_response = _make_server_response(server_public_der_b64)
+        server_response["rotationCount"] = 50
+        server_response["binWidth"] = 0.1
+        server_response["dimensionBias"] = [0.01, -0.02, 0.03]
 
-class TestWriteExchangeConfig:
+        with _patch_decrypt():
+            config = build_exchange_config(
+                "test.domain.com",
+                server_response,
+                local_public_pem,
+                local_private_pem,
+            )
+
+        assert config["rotationCount"] == 50
+        assert config["binWidth"] == 0.1
+        assert config["dimensionBias"] == [0.01, -0.02, 0.03]
+
+    def test_uses_defaults_for_absent_rotation_count_bin_width_dimension_bias(self):
+        local_private_pem, local_public_pem, _ = _generate_keypair()
+        _, _, server_public_der_b64 = _generate_keypair()
+        server_response = _make_server_response(server_public_der_b64)
+
+        with _patch_decrypt():
+            config = build_exchange_config(
+                "test.domain.com",
+                server_response,
+                local_public_pem,
+                local_private_pem,
+            )
+
+        assert config["rotationCount"] == 30
+        assert config["binWidth"] == 0.05
+        assert config["dimensionBias"] == []
+
+    def test_decrypts_rotation_iv_and_stores_as_base64url(self):
+        local_private_pem, local_public_pem, _ = _generate_keypair()
+        _, _, server_public_der_b64 = _generate_keypair()
+        server_response = _make_server_response(server_public_der_b64)
+        # 16 raw bytes base64-encoded (as the server sends after encryption)
+        raw_iv_bytes = bytes(range(16))
+        decrypted_iv_b64 = base64.b64encode(raw_iv_bytes).decode("ascii")
+        server_response["encryptedRotationIv"] = "some-encrypted-iv-data"
+        expected_rotation_iv = (
+            base64.urlsafe_b64encode(raw_iv_bytes).rstrip(b"=").decode("ascii")
+        )
+
+        hashing_secret_b64 = base64.b64encode(_DECRYPTED_SECRET.encode("utf-8")).decode(
+            "utf-8"
+        )
+        with patch(
+            "openlinktoken_ext_truveta.exchange.config.decrypt_hashing_secret",
+            side_effect=[hashing_secret_b64, decrypted_iv_b64],
+        ):
+            config = build_exchange_config(
+                "test.domain.com",
+                server_response,
+                local_public_pem,
+                local_private_pem,
+            )
+
+        assert config["rotationIv"] == expected_rotation_iv
+        assert config["rotationIvEncoding"] == "base64url"
+
+    def test_decrypts_rotation_iv_base64_with_nonurl_chars(self):
+        """Prove that base64 chars (+/) are properly converted to base64url (-_)."""
+        local_private_pem, local_public_pem, _ = _generate_keypair()
+        _, _, server_public_der_b64 = _generate_keypair()
+        server_response = _make_server_response(server_public_der_b64)
+        # Choose bytes whose base64 encoding contains + and /
+        raw_iv_bytes = (
+            b"\xfb\xff\xfe\xfb\xff\xfe\xfb\xff\xfe\xfb\xff\xfe\xfb\xff\xfe\xfb"
+        )
+        assert (
+            "+" in base64.b64encode(raw_iv_bytes).decode()
+            or "/" in base64.b64encode(raw_iv_bytes).decode()
+        )
+        decrypted_iv_b64 = base64.b64encode(raw_iv_bytes).decode("ascii")
+        server_response["encryptedRotationIv"] = "some-encrypted-iv-data"
+
+        hashing_secret_b64 = base64.b64encode(_DECRYPTED_SECRET.encode("utf-8")).decode(
+            "utf-8"
+        )
+        with patch(
+            "openlinktoken_ext_truveta.exchange.config.decrypt_hashing_secret",
+            side_effect=[hashing_secret_b64, decrypted_iv_b64],
+        ):
+            config = build_exchange_config(
+                "test.domain.com",
+                server_response,
+                local_public_pem,
+                local_private_pem,
+            )
+
+        assert "+" not in config["rotationIv"]
+        assert "/" not in config["rotationIv"]
+        assert "=" not in config["rotationIv"]
+        assert base64.urlsafe_b64decode(config["rotationIv"] + "==") == raw_iv_bytes
+
+    def test_omits_rotation_iv_fields_when_not_in_server_response(self):
+        local_private_pem, local_public_pem, _ = _generate_keypair()
+        _, _, server_public_der_b64 = _generate_keypair()
+        server_response = _make_server_response(server_public_der_b64)
+
+        with _patch_decrypt():
+            config = build_exchange_config(
+                "test.domain.com",
+                server_response,
+                local_public_pem,
+                local_private_pem,
+            )
+
+        assert "rotationIv" not in config
+        assert "rotationIvEncoding" not in config
+
+    def test_raises_when_rotation_iv_decryption_fails(self):
+        from openlinktoken_ext_truveta.exchange.key_management import KeyManagementError
+
+        local_private_pem, local_public_pem, _ = _generate_keypair()
+        _, _, server_public_der_b64 = _generate_keypair()
+        server_response = _make_server_response(server_public_der_b64)
+        server_response["encryptedRotationIv"] = "some-encrypted-iv-data"
+
+        hashing_secret_b64 = base64.b64encode(_DECRYPTED_SECRET.encode("utf-8")).decode(
+            "utf-8"
+        )
+        with (
+            patch(
+                "openlinktoken_ext_truveta.exchange.config.decrypt_hashing_secret",
+                side_effect=[hashing_secret_b64, KeyManagementError("bad iv key")],
+            ),
+            pytest.raises(ExchangeConfigError, match="Failed to decrypt rotation IV"),
+        ):
+            build_exchange_config(
+                "test.domain.com", server_response, local_public_pem, local_private_pem
+            )
+
+
+class TestValidateExchangeExtensionFields:
+    def test_raises_on_non_positive_rotation_count(self):
+        from openlinktoken_ext_truveta.exchange.config import (
+            _validate_exchange_extension_fields,
+        )
+
+        with pytest.raises(ExchangeConfigError, match="rotationCount"):
+            _validate_exchange_extension_fields({"rotationCount": -1})
+
+    def test_raises_on_negative_rotation_count(self):
+        from openlinktoken_ext_truveta.exchange.config import (
+            _validate_exchange_extension_fields,
+        )
+
+        with pytest.raises(ExchangeConfigError, match="rotationCount"):
+            _validate_exchange_extension_fields({"rotationCount": -5})
+
+    def test_allows_zero_rotation_count(self):
+        from openlinktoken_ext_truveta.exchange.config import (
+            _validate_exchange_extension_fields,
+        )
+
+        _validate_exchange_extension_fields({"rotationCount": 0})
+
+    def test_raises_on_non_positive_bin_width(self):
+        from openlinktoken_ext_truveta.exchange.config import (
+            _validate_exchange_extension_fields,
+        )
+
+        with pytest.raises(ExchangeConfigError, match="binWidth"):
+            _validate_exchange_extension_fields({"binWidth": 0.0})
+
+    def test_raises_on_infinite_bin_width(self):
+        from openlinktoken_ext_truveta.exchange.config import (
+            _validate_exchange_extension_fields,
+        )
+
+        with pytest.raises(ExchangeConfigError, match="binWidth"):
+            _validate_exchange_extension_fields({"binWidth": float("inf")})
+
+    def test_raises_when_dimension_bias_not_a_list(self):
+        from openlinktoken_ext_truveta.exchange.config import (
+            _validate_exchange_extension_fields,
+        )
+
+        with pytest.raises(ExchangeConfigError, match="dimensionBias"):
+            _validate_exchange_extension_fields({"dimensionBias": "not-a-list"})
+
+    def test_passes_for_valid_extension_fields(self):
+        from openlinktoken_ext_truveta.exchange.config import (
+            _validate_exchange_extension_fields,
+        )
+
+        _validate_exchange_extension_fields(
+            {"rotationCount": 30, "binWidth": 0.05, "dimensionBias": [0.01, -0.02]}
+        )
+
+    def test_passes_when_extension_fields_absent(self):
+        from openlinktoken_ext_truveta.exchange.config import (
+            _validate_exchange_extension_fields,
+        )
+
+        _validate_exchange_extension_fields({})
+
     def test_writes_config_to_current_dir_with_openlink_date_name(
         self, tmp_path, monkeypatch
     ):

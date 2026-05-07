@@ -129,7 +129,13 @@ def call_exchange_endpoint(
         )
         response.raise_for_status()
         server_data = response.json()
-        return {
+
+        num_rotations = server_data.get("numRotations")
+        bin_width = server_data.get("binWidth")
+        dimension_bias = server_data.get("dimensionBias")
+        encrypted_rotation_iv = server_data.get("encryptedRotationIv")
+
+        normalized: dict = {
             "exchangeName": server_data.get("exchangeName", ""),
             "exchangeId": _resolve_exchange_id(server_data),
             "hashingSecret": server_data.get(
@@ -139,7 +145,13 @@ def call_exchange_endpoint(
             "serverPublicKey": server_data.get(
                 "truvetaPublicKey", server_data.get("serverPublicKey", "")
             ),
+            "rotationCount": num_rotations if num_rotations is not None else 30,
+            "binWidth": bin_width if bin_width is not None else 0.05,
+            "dimensionBias": dimension_bias if dimension_bias is not None else [],
         }
+        if encrypted_rotation_iv:
+            normalized["encryptedRotationIv"] = encrypted_rotation_iv
+        return normalized
     except requests.HTTPError:
         raise
     except Exception as exc:

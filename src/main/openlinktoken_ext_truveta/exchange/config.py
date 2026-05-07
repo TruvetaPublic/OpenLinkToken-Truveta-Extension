@@ -9,6 +9,7 @@ that are compatible with Open Link Token initiate-exchange output.
 
 import base64
 import json
+import math
 from datetime import datetime, timezone
 from importlib import import_module
 from pathlib import Path
@@ -23,7 +24,12 @@ from cryptography.hazmat.primitives.serialization import (
 )
 
 from openlinktoken_ext_truveta.exchange.constants import (
+    BIN_WIDTH_KEY,
+    DEFAULT_BIN_WIDTH,
+    DEFAULT_ROTATION_COUNT,
+    DIMENSION_BIAS_KEY,
     EC_KEY_TYPE,
+    ENCRYPTED_ROTATION_IV_KEY,
     EXCHANGE_ID_KEY,
     EXCHANGE_NAME_KEY,
     HASHING_SECRET_ENCODING_KEY,
@@ -36,6 +42,10 @@ from openlinktoken_ext_truveta.exchange.constants import (
     P256_CURVE,
     PEM_HEADER_PREFIX,
     REQUIRED_SERVER_RESPONSE_FIELDS,
+    ROTATION_COUNT_KEY,
+    ROTATION_IV_ENCODING_KEY,
+    ROTATION_IV_ENCODING_VALUE,
+    ROTATION_IV_KEY,
     SERVER_PUBLIC_KEY_KEY,
 )
 from openlinktoken_ext_truveta.exchange.key_management import (
@@ -175,6 +185,41 @@ def _validate_exchange_envelope_shape(config: dict[str, Any]) -> None:
                 "Invalid exchange envelope: "
                 f"recipient[{index}].header.epk.x and epk.y must be strings"
             )
+
+
+def _validate_exchange_extension_fields(config: dict[str, Any]) -> None:
+    """
+    Validate optional rotation and quantization extension fields in the exchange config.
+
+    Inputs:
+        config: The exchange config dict potentially containing extension fields.
+
+    Returns:
+        None. Raises when any extension field fails type or constraint validation.
+    """
+    rotation_count = config.get(ROTATION_COUNT_KEY)
+    if rotation_count is not None:
+        if not isinstance(rotation_count, int) or rotation_count < 0:
+            raise ExchangeConfigError(
+                f"rotationCount must be a non-negative integer, got {rotation_count!r}"
+            )
+
+    bin_width = config.get(BIN_WIDTH_KEY)
+    if bin_width is not None:
+        if (
+            not isinstance(bin_width, (int, float))
+            or not math.isfinite(bin_width)
+            or bin_width <= 0
+        ):
+            raise ExchangeConfigError(
+                f"binWidth must be a positive finite number, got {bin_width!r}"
+            )
+
+    dimension_bias = config.get(DIMENSION_BIAS_KEY)
+    if dimension_bias is not None and not isinstance(dimension_bias, list):
+        raise ExchangeConfigError(
+            f"dimensionBias must be a list, got {type(dimension_bias).__name__}"
+        )
 
 
 def _load_build_exchange_envelope():
@@ -345,6 +390,38 @@ def build_exchange_config(
             exchange_id=exchange_id,
         )
         _validate_exchange_envelope_shape(config)
+
+        encrypted_rotation_iv = server_response.get(ENCRYPTED_ROTATION_IV_KEY)
+        if encrypted_rotation_iv:
+            try:
+                decrypted_iv_str = decrypt_hashing_secret(
+                    encrypted_rotation_iv,
+                    local_private_key_pem,
+                    server_public_key,
+                    exchange_id,
+                )
+            except KeyManagementError as exc:
+                raise ExchangeConfigError(f"Failed to decrypt rotation IV: {exc}")
+            raw_iv = base64.b64decode(decrypted_iv_str)
+            config[ROTATION_IV_KEY] = (
+                base64.urlsafe_b64encode(raw_iv).rstrip(b"=").decode("ascii")
+            )
+            config[ROTATION_IV_ENCODING_KEY] = ROTATION_IV_ENCODING_VALUE
+
+        rotation_count = server_response.get(ROTATION_COUNT_KEY)
+        bin_width = server_response.get(BIN_WIDTH_KEY)
+        dimension_bias = server_response.get(DIMENSION_BIAS_KEY)
+        config[ROTATION_COUNT_KEY] = (
+            rotation_count if rotation_count is not None else DEFAULT_ROTATION_COUNT
+        )
+        config[BIN_WIDTH_KEY] = (
+            bin_width if bin_width is not None else DEFAULT_BIN_WIDTH
+        )
+        config[DIMENSION_BIAS_KEY] = (
+            dimension_bias if dimension_bias is not None else []
+        )
+
+        _validate_exchange_extension_fields(config)
         return config
 
     except ExchangeConfigError:
