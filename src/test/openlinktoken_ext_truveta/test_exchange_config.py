@@ -66,7 +66,6 @@ def _make_server_response(server_public_key: str) -> dict:
         "exchangeName": "test-exchange",
         "exchangeId": "exch-12345",
         "hashingSecret": "encrypted-secret-data",
-        "hashingSecretEncoding": "base64",
         "serverPublicKey": server_public_key,
     }
 
@@ -168,7 +167,6 @@ class TestBuildExchangeConfig:
             "exchangeName",
             "exchangeId",
             "hashingSecret",
-            "hashingSecretEncoding",
             "serverPublicKey",
         ]:
             server_response = _make_server_response(server_public_der_b64)
