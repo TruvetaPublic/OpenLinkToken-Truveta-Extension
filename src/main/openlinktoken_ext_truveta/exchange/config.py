@@ -32,7 +32,6 @@ from openlinktoken_ext_truveta.exchange.constants import (
     ENCRYPTED_ROTATION_IV_KEY,
     EXCHANGE_ID_KEY,
     EXCHANGE_NAME_KEY,
-    HASHING_SECRET_ENCODING_KEY,
     HASHING_SECRET_KEY,
     JWE_RECIPIENT_ALG,
     KID_SHA256_PREFIX,
@@ -59,51 +58,36 @@ class ExchangeConfigError(Exception):
     """Raised when exchange config operations fail."""
 
 
-def _normalize_hashing_secret_bytes(secret: Any, secret_encoding: str) -> bytes:
+def _decode_hashing_secret(secret: Any) -> bytes:
     """
-    Normalize decrypted hashing-secret values into raw bytes for JWE payload encoding.
+    Decode a decrypted hashing secret into raw key bytes.
+
+    The secret is always a base64url-encoded string (unpadded) produced by
+    the Truveta provisioning pipeline.
 
     Inputs:
-        secret: The decrypted hashing secret as bytes or text.
-        secret_encoding: The encoding label describing how the secret should be interpreted.
+        secret: The decrypted hashing secret as bytes or str.
 
     Returns:
-        The hashing secret normalized to raw bytes for JWE envelope generation.
+        The raw key bytes decoded from the base64url value.
     """
     if isinstance(secret, bytes):
-        secret_bytes = secret
         secret_text = secret.decode("utf-8")
     elif isinstance(secret, str):
         secret_text = secret
-        secret_bytes = secret.encode("utf-8")
     else:
         raise ExchangeConfigError(
             "Decrypted hashing secret must be bytes or string. "
             f"Received type: {type(secret).__name__}"
         )
 
-    normalized_encoding = secret_encoding.strip().lower()
-    if normalized_encoding == "base64":
-        try:
-            return base64.b64decode(secret_bytes)
-        except Exception as exc:
-            raise ExchangeConfigError(
-                f"Failed to decode base64 hashing secret: {exc}"
-            ) from exc
-    if normalized_encoding == "base64url":
-        try:
-            padding = "=" * (-len(secret_text) % 4)
-            return base64.urlsafe_b64decode(secret_text + padding)
-        except Exception as exc:
-            raise ExchangeConfigError(
-                f"Failed to decode base64url hashing secret: {exc}"
-            ) from exc
-    if normalized_encoding in {"utf-8", "utf8", "text", "plain", "plaintext"}:
-        return secret_bytes
-
-    raise ExchangeConfigError(
-        f"Unsupported hashing secret encoding: {secret_encoding!r}"
-    )
+    try:
+        padding = "=" * (-len(secret_text) % 4)
+        return base64.urlsafe_b64decode(secret_text + padding)
+    except Exception as exc:
+        raise ExchangeConfigError(
+            f"Failed to decode base64url hashing secret: {exc}"
+        ) from exc
 
 
 def _validate_exchange_envelope_shape(config: dict[str, Any]) -> None:
@@ -362,7 +346,6 @@ def build_exchange_config(
     try:
         exchange_name = server_response[EXCHANGE_NAME_KEY]
         exchange_id = server_response[EXCHANGE_ID_KEY]
-        hashing_secret_encoding = server_response[HASHING_SECRET_ENCODING_KEY]
         server_public_key = server_response[SERVER_PUBLIC_KEY_KEY]
         server_public_key_pem = _to_public_key_pem(server_public_key)
         curve = _derive_curve_from_public_key(server_public_key)
@@ -380,9 +363,7 @@ def build_exchange_config(
         build_exchange_envelope = _load_build_exchange_envelope()
         config = build_exchange_envelope(
             exchange_name=exchange_name,
-            hashing_secret=_normalize_hashing_secret_bytes(
-                hashing_secret, hashing_secret_encoding
-            ),
+            hashing_secret=_decode_hashing_secret(hashing_secret),
             sender_public_pem=local_public_key_pem.encode("utf-8"),
             recipient_public_pem=server_public_key_pem.encode("utf-8"),
             curve=curve,

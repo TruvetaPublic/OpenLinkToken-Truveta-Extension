@@ -81,7 +81,6 @@ def _make_server_response() -> dict:
         "exchangeName": "test-exchange",
         "exchangeId": "exch-12345",
         "hashingSecret": "encrypted-secret-data",
-        "hashingSecretEncoding": "utf-8",
         "serverPublicKey": _SERVER_PUBLIC_SPKI_B64,
     }
 

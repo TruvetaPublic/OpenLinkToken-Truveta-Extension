@@ -66,7 +66,6 @@ class TestCallExchangeEndpoint:
             "exchangeName": "",
             "exchangeId": "ex-123",
             "hashingSecret": "encrypted-secret",
-            "hashingSecretEncoding": "base64",
             "serverPublicKey": "server-spki-b64",
             "rotationCount": 30,
             "binWidth": 0.05,

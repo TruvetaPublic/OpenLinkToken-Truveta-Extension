@@ -141,7 +141,6 @@ def call_exchange_endpoint(
             "hashingSecret": server_data.get(
                 "encryptedHashingKey", server_data.get("hashingSecret", "")
             ),
-            "hashingSecretEncoding": server_data.get("hashingSecretEncoding", "base64"),
             "serverPublicKey": server_data.get(
                 "truvetaPublicKey", server_data.get("serverPublicKey", "")
             ),
