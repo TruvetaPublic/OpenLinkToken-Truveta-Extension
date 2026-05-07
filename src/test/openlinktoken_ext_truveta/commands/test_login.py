@@ -172,7 +172,8 @@ class TestInitiateExchangeCommand:
             _sample_keypair()[0],
         )
         mock_write.assert_called_once_with("truveta.com", {"payload": {"test": "data"}})
-        assert "Exchange config written to:" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "Exchange config: /path/to/config" in out
 
     def test_uses_localhost_api_in_local_dev(self):
         context = AuthenticatedCommandContext(
