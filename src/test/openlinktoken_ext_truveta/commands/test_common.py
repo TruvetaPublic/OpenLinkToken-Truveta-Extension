@@ -24,11 +24,9 @@ from openlinktoken_ext_truveta.domain import DEFAULT_DOMAIN
 
 def _args(
     *,
-    local_dev: bool = False,
     domain: str | None = None,
 ) -> argparse.Namespace:
     return argparse.Namespace(
-        local_dev=local_dev,
         domain=domain,
     )
 
@@ -37,12 +35,7 @@ class TestCommonResolution:
     def test_local_api_url_is_openlink_service_port(self):
         assert LOCAL_API_URL == "http://localhost:18080"
 
-    def test_resolve_domain_uses_local_dev_auth_domain(self):
-        resolved = resolve_domain(_args(local_dev=True))
-
-        assert resolved == "dev.truveta-int.com"
-
-    def test_resolve_domain_uses_local_dev_env_override(self, monkeypatch):
+    def test_resolve_domain_uses_local_dev_env_var(self, monkeypatch):
         monkeypatch.setenv("OLT_TRV_LOCAL_DEV", "true")
 
         resolved = resolve_domain(_args())
@@ -95,12 +88,7 @@ class TestCommonResolution:
             else:
                 raise AssertionError("Expected SessionResolutionError")
 
-    def test_resolve_api_base_url_uses_local_dev_url(self):
-        resolved = resolve_api_base_url(_args(local_dev=True), "dev.truveta-int.com")
-
-        assert resolved == LOCAL_API_URL
-
-    def test_resolve_api_base_url_uses_local_dev_env_override(self, monkeypatch):
+    def test_resolve_api_base_url_uses_local_dev_env_var(self, monkeypatch):
         monkeypatch.setenv("OLT_TRV_LOCAL_DEV", "true")
 
         resolved = resolve_api_base_url(_args(), "dev.truveta-int.com")
@@ -138,12 +126,13 @@ class TestCommonResolution:
         self, monkeypatch
     ):
         expected_credentials = Credentials(access_token="access", id_token="id")
+        monkeypatch.setenv("OLT_TRV_LOCAL_DEV", "true")
         monkeypatch.setattr(
             "openlinktoken_ext_truveta.commands.common.ensure_auth",
             lambda domain, cached_only: expected_credentials,
         )
 
-        resolved = resolve_authenticated_context(_args(local_dev=True))
+        resolved = resolve_authenticated_context(_args())
 
         assert resolved == AuthenticatedCommandContext(
             domain="dev.truveta-int.com",
@@ -152,24 +141,30 @@ class TestCommonResolution:
             credentials=expected_credentials,
         )
 
-    def test_resolve_timeout_seconds_uses_default_in_non_local_dev(self):
-        resolved = resolve_timeout_seconds(_args(local_dev=False))
+    def test_resolve_timeout_seconds_uses_default_in_non_local_dev(self, monkeypatch):
+        monkeypatch.delenv("OLT_TRV_LOCAL_DEV", raising=False)
+
+        resolved = resolve_timeout_seconds(_args())
 
         assert resolved == DEFAULT_TIMEOUT_SECONDS
 
-    def test_resolve_timeout_seconds_uses_local_dev_value_when_enabled(self):
-        resolved = resolve_timeout_seconds(_args(local_dev=True))
+    def test_resolve_timeout_seconds_uses_local_dev_value_when_enabled(
+        self, monkeypatch
+    ):
+        monkeypatch.setenv("OLT_TRV_LOCAL_DEV", "true")
+
+        resolved = resolve_timeout_seconds(_args())
 
         assert resolved == LOCAL_DEV_TIMEOUT_SECONDS
 
     def test_resolve_timeout_seconds_uses_local_dev_env_override(self, monkeypatch):
         monkeypatch.setenv("OLT_TRV_LOCAL_DEV", "true")
 
-        resolved = resolve_timeout_seconds(_args(local_dev=False))
+        resolved = resolve_timeout_seconds(_args())
 
         assert resolved == LOCAL_DEV_TIMEOUT_SECONDS
 
     def test_resolve_timeout_seconds_honors_explicit_override(self):
-        resolved = resolve_timeout_seconds(_args(local_dev=False), timeout_seconds=90)
+        resolved = resolve_timeout_seconds(_args(), timeout_seconds=90)
 
         assert resolved == 90

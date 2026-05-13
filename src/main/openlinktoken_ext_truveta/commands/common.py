@@ -38,19 +38,17 @@ class AuthenticatedCommandContext:
     credentials: Credentials
 
 
-def _is_local_dev(args: argparse.Namespace) -> bool:
+def _is_local_dev() -> bool:
     """
     Return whether the command targets a local development API instance.
 
-    Inputs:
-        args: Parsed CLI arguments that may include a local_dev flag.
+    Driven by the ``OLT_TRV_LOCAL_DEV`` environment variable. Set it to any
+    truthy value (``1``, ``true``, ``yes``, ``y``, or ``on``) to route calls
+    to the local Token Service endpoint instead of the hosted API.
 
     Returns:
         True when local development routing is enabled, otherwise False.
     """
-    if getattr(args, "local_dev", False) is True:
-        return True
-
     env_value = os.environ.get("OLT_TRV_LOCAL_DEV", "")
     return env_value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
@@ -79,14 +77,14 @@ def resolve_domain(
     Resolve the Truveta auth domain from args, env, session, or default.
 
     Inputs:
-        args: Parsed CLI arguments that may include --domain and --local-dev.
+        args: Parsed CLI arguments that may include --domain.
         allow_default: When True, fall back to the production domain if no other
             source provides a valid domain.
 
     Returns:
         The validated Truveta domain used for authentication.
     """
-    if _is_local_dev(args):
+    if _is_local_dev():
         return LOCAL_DOMAIN
 
     try:
@@ -117,13 +115,14 @@ def resolve_api_base_url(args: argparse.Namespace, domain: str) -> str:
     Resolve the API base URL for hosted and local-dev command execution.
 
     Inputs:
-        args: Parsed CLI arguments that may include --local-dev.
+        args: Parsed CLI arguments.
         domain: The validated Truveta domain for hosted API routing.
 
     Returns:
-        The localhost API URL for local dev or the hosted API base URL.
+        The localhost API URL when ``OLT_TRV_LOCAL_DEV`` is set, otherwise the
+        hosted API base URL.
     """
-    if _is_local_dev(args):
+    if _is_local_dev():
         return LOCAL_API_URL
     return get_api_url(domain)
 
@@ -156,7 +155,7 @@ def resolve_authenticated_context(
     Resolve the shared authenticated context required by session-based commands.
 
     Inputs:
-        args: Parsed CLI arguments that may include --domain and --local-dev.
+        args: Parsed CLI arguments that may include --domain.
 
     Returns:
         An authenticated command context containing the auth domain, effective
@@ -185,10 +184,10 @@ def resolve_timeout_seconds(
     timeout_seconds: int | None = None,
 ) -> int:
     """
-    Resolve request timeout from explicit override and local-dev context.
+    Resolve request timeout from an explicit override or local-dev context.
 
     Inputs:
-        args: Parsed CLI arguments that may include --local-dev.
+        args: Parsed CLI arguments.
         timeout_seconds: Optional explicit timeout override in seconds.
 
     Returns:
@@ -197,7 +196,7 @@ def resolve_timeout_seconds(
     if timeout_seconds is not None:
         return timeout_seconds
 
-    if _is_local_dev(args):
+    if _is_local_dev():
         return LOCAL_DEV_TIMEOUT_SECONDS
 
     return DEFAULT_TIMEOUT_SECONDS

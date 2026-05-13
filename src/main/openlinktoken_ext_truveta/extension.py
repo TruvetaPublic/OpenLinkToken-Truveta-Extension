@@ -202,11 +202,6 @@ class _InitiateExchangeSubcommandRegistrar:
             "initiate-exchange",
             help="Negotiate exchange config (authenticates first if needed)",
         )
-        initiate_exchange_parser.add_argument(
-            "--local-dev",
-            action="store_true",
-            help="Use local Token Service API endpoint (http://localhost:18080)",
-        )
         initiate_exchange_parser.set_defaults(func=TruvetaExtension._initiate_exchange)
 
 
@@ -245,8 +240,8 @@ class _UploadSubcommandRegistrar:
             help="Upload encrypted token data for self-serve overlap analysis",
         )
         upload_parser.add_argument(
-            "--file",
-            "-f",
+            "-i",
+            "--input",
             required=True,
             metavar="FILE",
             help="Tokenized output file (CSV or Parquet) to upload",
@@ -255,10 +250,5 @@ class _UploadSubcommandRegistrar:
             "--metadata",
             metavar="FILE",
             help="Optional metadata JSON file (defaults to auto-discovered <basename>.metadata.json)",
-        )
-        upload_parser.add_argument(
-            "--local-dev",
-            action="store_true",
-            help="Use local Token Service API endpoint (http://localhost:18080)",
         )
         upload_parser.set_defaults(func=TruvetaExtension._upload)

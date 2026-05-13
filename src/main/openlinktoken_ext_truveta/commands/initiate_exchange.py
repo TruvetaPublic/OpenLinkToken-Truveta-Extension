@@ -37,7 +37,7 @@ def _initiate_exchange(args: argparse.Namespace) -> int:
     Authenticate (if needed) and negotiate an initial exchange config.
 
     Inputs:
-        args: Parsed CLI arguments that may include the --local-dev flag.
+        args: Parsed CLI arguments.
 
     Returns:
         Exit code 0 on success or 1 when authentication, exchange negotiation,
