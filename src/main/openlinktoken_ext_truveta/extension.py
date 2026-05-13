@@ -7,6 +7,7 @@ import os
 
 from openlinktoken_cli.extension import OpenLinkTokenExtension
 
+from openlinktoken_ext_truveta.commands.auto_upload import _auto_upload
 from openlinktoken_ext_truveta.commands.initiate_exchange import _initiate_exchange
 from openlinktoken_ext_truveta.commands.login import _login
 from openlinktoken_ext_truveta.commands.logout import _logout
@@ -82,6 +83,7 @@ class TruvetaExtension(OpenLinkTokenExtension):
         sub = parser.add_subparsers(dest="truveta_subcommand")
 
         for registrar in (
+            _AutoUploadSubcommandRegistrar,
             _InitiateExchangeSubcommandRegistrar,
             _LoginSubcommandRegistrar,
             _LogoutSubcommandRegistrar,
@@ -103,6 +105,19 @@ class TruvetaExtension(OpenLinkTokenExtension):
             return 0
 
         parser.set_defaults(func=_print_truveta_help)
+
+    @staticmethod
+    def _auto_upload(args) -> int:
+        """
+        Initiate exchange, package, and upload in one step.
+
+        Inputs:
+            args: Parsed CLI arguments.
+
+        Returns:
+            Exit code (0 on success, non-zero on failure).
+        """
+        return _auto_upload(args)
 
     @staticmethod
     def _login(args) -> int:
@@ -240,15 +255,38 @@ class _UploadSubcommandRegistrar:
             help="Upload encrypted token data for self-serve overlap analysis",
         )
         upload_parser.add_argument(
-            "-i",
             "--input",
+            "-i",
             required=True,
-            metavar="FILE",
             help="Tokenized output file (CSV or Parquet) to upload",
         )
         upload_parser.add_argument(
             "--metadata",
-            metavar="FILE",
             help="Optional metadata JSON file (defaults to auto-discovered <basename>.metadata.json)",
         )
         upload_parser.set_defaults(func=TruvetaExtension._upload)
+
+
+class _AutoUploadSubcommandRegistrar:
+    @staticmethod
+    def register(sub: argparse._SubParsersAction) -> None:
+        """
+        Register the auto-upload subcommand and its flags.
+
+        Inputs:
+            sub: The argparse subparser collection for truveta subcommands.
+
+        Returns:
+            None. The auto-upload subcommand is added to the parser tree.
+        """
+        auto_upload_parser = sub.add_parser(
+            "auto-upload",
+            help="Initiate exchange, package, and upload input data in one step",
+        )
+        auto_upload_parser.add_argument(
+            "--input",
+            "-i",
+            required=True,
+            help="Raw input file (CSV or Parquet) to package and upload",
+        )
+        auto_upload_parser.set_defaults(func=TruvetaExtension._auto_upload)

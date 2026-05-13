@@ -23,16 +23,18 @@ olt truveta <subcommand>
 
 ## Extension Commands
 
-| Command                                     | Description                                              |
-| ------------------------------------------- | -------------------------------------------------------- |
-| `olt truveta login`                         | Authenticate with Truveta via OAuth 2.0 Device Code Flow |
-| `olt truveta login --force`                 | Re-authenticate, discarding any cached credentials       |
-| `olt truveta login --domain DOMAIN`         | Authenticate against a specific Truveta domain           |
-| `olt truveta initiate-exchange --local-dev` | Authenticate against dev and call a local Token Service  |
-| `olt truveta upload -i FILE`                | Upload a tokenized file for overlap analysis             |
-| `olt truveta upload --input FILE`           | Same as `-i`, long form                                  |
-| `olt truveta upload -i FILE (local dev)`    | Set `OLT_TRV_LOCAL_DEV=1` to upload to a local API       |
-| `olt truveta logout`                        | Revoke and clear all cached Truveta credentials          |
+| Command                                  | Description                                                          |
+| ---------------------------------------- | -------------------------------------------------------------------- |
+| `olt truveta login`                      | Authenticate with Truveta via OAuth 2.0 Device Code Flow             |
+| `olt truveta login --force`              | Re-authenticate, discarding any cached credentials                   |
+| `olt truveta login --domain DOMAIN`      | Authenticate against a specific Truveta domain                       |
+| `olt truveta initiate-exchange`          | Negotiate exchange config with the Token Service                     |
+| `olt truveta upload -i FILE`             | Upload a tokenized file for overlap analysis                         |
+| `olt truveta upload --input FILE`        | Same as `-i`, long form                                              |
+| `olt truveta upload -i FILE (local dev)` | Set `OLT_TRV_LOCAL_DEV=1` to upload to a local API                   |
+| `olt truveta auto-upload -i FILE`        | Convenience: runs initiate-exchange, package, and upload in one step |
+| `olt truveta auto-upload --input FILE`   | Same as `-i`, long form                                              |
+| `olt truveta logout`                     | Revoke and clear all cached Truveta credentials                      |
 
 ### Environment Configuration
 
@@ -40,6 +42,23 @@ olt truveta <subcommand>
 | ------------------- | -------------------------------------------------------------------------------------------------- | ------------- |
 | `OLT_TRV_DOMAIN`    | Override the target Truveta domain for `olt truveta login`                                         | `truveta.com` |
 | `OLT_TRV_LOCAL_DEV` | Route exchange and upload calls to `http://localhost:18080` (any truthy value: `1`, `true`, `yes`) | unset         |
+
+**Example — full upload flow (recommended):**
+
+```bash
+olt truveta login --domain dev.truveta-int.com
+olt truveta auto-upload -i raw_data.csv
+# Runs initiate-exchange, packages to parquet in a temp dir, uploads, and cleans up automatically.
+```
+
+**Example — manual step-by-step upload:**
+
+```bash
+olt truveta login
+olt truveta initiate-exchange
+olt package --input raw_data.csv --output packaged.parquet --exchange-config openlinktoken-YYYY-MM-DD.exchange.json
+olt truveta upload -i packaged.parquet
+```
 
 **Example — target the local Token Service:**
 
