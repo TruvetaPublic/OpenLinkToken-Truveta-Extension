@@ -7,7 +7,10 @@ Unit tests for upload API client behavior.
 from unittest.mock import MagicMock, patch
 
 import pytest
-from openlinktoken_ext_truveta.api.upload import UploadAPIError, call_upload_endpoint
+from openlinktoken_ext_truveta.api.upload import (
+    UploadAPIError,
+    call_upload_endpoint,
+)
 
 
 def _make_response(status_code: int, json_payload=None, json_side_effect=None, text=""):
@@ -52,6 +55,25 @@ class TestCallUploadEndpoint:
             )
 
         assert result == {}
+
+    def test_ssl_error_triggers_probe_and_uses_ssl_drop_message(self):
+        import requests as req
+
+        ssl_error = req.exceptions.SSLError("EOF occurred in violation of protocol")
+        probe_response = _make_response(
+            400, text="File is required and cannot be empty"
+        )
+
+        with patch("openlinktoken_ext_truveta.api.upload.requests.post") as mock_post:
+            mock_post.side_effect = [ssl_error, probe_response]
+
+            with pytest.raises(UploadAPIError, match="initiate-exchange"):
+                call_upload_endpoint(
+                    "https://api.truveta.com/openlink",
+                    "token",
+                    "ex-123",
+                    {"dataFile": ("f.csv", b"x", "application/octet-stream")},
+                )
 
     def test_non_202_error_includes_resolved_upload_url(self):
         with patch("openlinktoken_ext_truveta.api.upload.requests.post") as mock_post:

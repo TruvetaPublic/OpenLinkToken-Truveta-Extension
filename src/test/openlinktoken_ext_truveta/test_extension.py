@@ -91,7 +91,7 @@ class TestRegisterSubcommand:
 
     def test_upload_subcommand_present(self):
         root = self._build_parser()
-        parsed = root.parse_args(["truveta", "upload", "--file", "input.csv"])
+        parsed = root.parse_args(["truveta", "upload", "--input", "input.csv"])
         assert parsed.func == TruvetaExtension._upload
 
     def test_upload_accepts_optional_metadata_flag(self):
@@ -100,13 +100,13 @@ class TestRegisterSubcommand:
             [
                 "truveta",
                 "upload",
-                "--file",
+                "--input",
                 "input.csv",
                 "--metadata",
                 "input.metadata.json",
             ]
         )
-        assert parsed.file == "input.csv"
+        assert parsed.input == "input.csv"
         assert parsed.metadata == "input.metadata.json"
 
     def test_upload_does_not_accept_removed_optional_flags(self):
@@ -117,7 +117,7 @@ class TestRegisterSubcommand:
                     [
                         "truveta",
                         "upload",
-                        "--file",
+                        "--input",
                         "input.csv",
                         "--embassy",
                         "pro",
@@ -135,14 +135,14 @@ class TestRegisterSubcommand:
             [
                 "truveta",
                 "upload",
-                "--file",
+                "--input",
                 "input.csv",
                 "--metadata",
                 "input.metadata.json",
             ]
         )
 
-        assert parsed.file == "input.csv"
+        assert parsed.input == "input.csv"
         assert parsed.metadata == "input.metadata.json"
 
     def test_login_accepts_domain_flag(self):
@@ -180,7 +180,7 @@ class TestRegisterSubcommand:
                     [
                         "truveta",
                         "upload",
-                        "--file",
+                        "--input",
                         "input.csv",
                         "--domain",
                         "dev.truveta-int.com",
@@ -238,20 +238,25 @@ class TestRegisterSubcommand:
             "Expected parse_args to reject initiate-exchange --api-domain"
         )
 
-    def test_initiate_exchange_accepts_local_dev_flag(self):
+    def test_initiate_exchange_rejects_local_dev_flag(self):
         root = self._build_parser()
-        parsed = root.parse_args(
-            [
-                "truveta",
-                "initiate-exchange",
-                "--local-dev",
-            ]
+
+        with patch("sys.stderr"):
+            try:
+                root.parse_args(
+                    [
+                        "truveta",
+                        "initiate-exchange",
+                        "--local-dev",
+                    ]
+                )
+            except SystemExit as exc:
+                assert exc.code == 2
+                return
+
+        raise AssertionError(
+            "Expected parse_args to reject initiate-exchange --local-dev"
         )
-        assert parsed.local_dev is True
-
-        assert parsed.local_dev is True
-
-        assert parsed.local_dev is True
 
     def test_initiate_exchange_rejects_force_flag(self):
         root = self._build_parser()
@@ -280,7 +285,7 @@ class TestRegisterSubcommand:
                     [
                         "truveta",
                         "upload",
-                        "--file",
+                        "--input",
                         "input.csv",
                         "--api-domain",
                         "http://localhost:8080",
@@ -292,18 +297,25 @@ class TestRegisterSubcommand:
 
         raise AssertionError("Expected parse_args to reject upload --api-domain")
 
-    def test_upload_accepts_local_dev_flag(self):
+    def test_upload_rejects_local_dev_flag(self):
         root = self._build_parser()
-        parsed = root.parse_args(
-            [
-                "truveta",
-                "upload",
-                "--file",
-                "input.csv",
-                "--local-dev",
-            ]
-        )
-        assert parsed.local_dev is True
+
+        with patch("sys.stderr"):
+            try:
+                root.parse_args(
+                    [
+                        "truveta",
+                        "upload",
+                        "--input",
+                        "input.csv",
+                        "--local-dev",
+                    ]
+                )
+            except SystemExit as exc:
+                assert exc.code == 2
+                return
+
+        raise AssertionError("Expected parse_args to reject upload --local-dev")
 
     def test_upload_rejects_auth_domain_flag(self):
         root = self._build_parser()
@@ -313,7 +325,7 @@ class TestRegisterSubcommand:
                     [
                         "truveta",
                         "upload",
-                        "--file",
+                        "--input",
                         "input.csv",
                         "--auth-domain",
                         "https://api.dev.truveta-int.com",

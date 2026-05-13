@@ -14,7 +14,12 @@ from cryptography.hazmat.primitives.serialization import (
     load_pem_public_key,
 )
 
-from openlinktoken_ext_truveta.api.common import resolve_timeout_seconds
+from openlinktoken_ext_truveta.api.common import (
+    format_api_error,
+    probe_for_http_status,
+    resolve_timeout_seconds,
+    ssl_drop_message,
+)
 
 
 class ExchangeAPIError(Exception):
@@ -153,5 +158,25 @@ def call_exchange_endpoint(
         return normalized
     except requests.HTTPError:
         raise
+    except requests.exceptions.SSLError as exc:
+        probe_detail = probe_for_http_status(
+            url,
+            access_token,
+            request_timeout,
+            probe_json={},
+        )
+        raise ExchangeAPIError(
+            format_api_error(
+                url,
+                ssl_drop_message(
+                    probe_detail,
+                    generic_hint=(
+                        "Server dropped the connection during exchange negotiation. "
+                        "Try again or check your network connectivity."
+                    ),
+                ),
+                operation="Exchange",
+            )
+        ) from exc
     except Exception as exc:
         raise ExchangeAPIError(f"Failed to call exchange endpoint at {url}: {exc}")

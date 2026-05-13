@@ -30,16 +30,14 @@ class _Response:
 def _args(
     file_path: str,
     metadata: str | None = None,
-    local_dev: bool = False,
     domain: str | None = "https://api.truveta.com",
     api_domain: str | None = None,
 ) -> argparse.Namespace:
     return argparse.Namespace(
-        file=file_path,
+        input=file_path,
         metadata=metadata,
         domain=domain,
         api_domain=api_domain,
-        local_dev=local_dev,
     )
 
 
@@ -325,7 +323,10 @@ class TestUploadCommand:
         assert result == 1
         assert "olt truveta login" in capsys.readouterr().err
 
-    def test_upload_local_dev_uses_localhost_endpoint_and_timeout(self, tmp_path):
+    def test_upload_local_dev_uses_localhost_endpoint_and_timeout(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("OLT_TRV_LOCAL_DEV", "true")
         data_file = tmp_path / "tokenized.csv"
         data_file.write_text("token\nabc")
 
@@ -359,7 +360,7 @@ class TestUploadCommand:
                 side_effect=_post,
             ),
         ):
-            result = _upload(_args(str(data_file), local_dev=True))
+            result = _upload(_args(str(data_file)))
 
         assert result == 0
         assert captured["url"] == "http://localhost:18080/v1/uploads/x"

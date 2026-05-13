@@ -8,46 +8,23 @@ from typing import Any
 
 import requests
 
-from openlinktoken_ext_truveta.api.common import resolve_timeout_seconds
+from openlinktoken_ext_truveta.api.common import (
+    extract_error_body,
+    format_api_error,
+    probe_for_http_status,
+    resolve_timeout_seconds,
+    ssl_drop_message,
+)
 
 
 class UploadAPIError(Exception):
     """Raised when upload API calls fail."""
 
 
-def _extract_error(response: requests.Response) -> str:
-    """
-    Extract a useful error message from an API response.
-
-    Inputs:
-        response: The HTTP response returned by the upload endpoint.
-
-    Returns:
-        A human-readable error string extracted from JSON payloads or raw text.
-    """
-    try:
-        error_json = response.json()
-    except Exception:
-        return response.text
-
-    if isinstance(error_json, dict):
-        return error_json.get("error", response.text)
-
-    return response.text
-
-
-def _format_upload_error(upload_url: str, message: str) -> str:
-    """
-    Format upload failures with the resolved target URL for easier diagnosis.
-
-    Inputs:
-        upload_url: The fully resolved upload endpoint URL.
-        message: The underlying failure message to surface.
-
-    Returns:
-        A formatted error string that includes the target URL and failure detail.
-    """
-    return f"Upload failed for {upload_url}: {message}"
+_UPLOAD_SSL_HINT = (
+    "Server dropped the connection while uploading. "
+    "The exchange may have expired — try 'olt truveta initiate-exchange'."
+)
 
 
 def call_upload_endpoint(
@@ -84,9 +61,10 @@ def call_upload_endpoint(
 
         if response.status_code != 202:
             raise UploadAPIError(
-                _format_upload_error(
+                format_api_error(
                     upload_url,
-                    f"{response.status_code} - {_extract_error(response)}",
+                    f"{response.status_code} - {extract_error_body(response)}",
+                    operation="Upload",
                 )
             )
 
@@ -96,5 +74,19 @@ def call_upload_endpoint(
             return {}
     except UploadAPIError:
         raise
+    except requests.exceptions.SSLError as exc:
+        probe_detail = probe_for_http_status(
+            upload_url,
+            access_token,
+            request_timeout,
+            probe_files={"dataFile": ("probe.csv", b"", "application/octet-stream")},
+        )
+        raise UploadAPIError(
+            format_api_error(
+                upload_url,
+                ssl_drop_message(probe_detail, generic_hint=_UPLOAD_SSL_HINT),
+                operation="Upload",
+            )
+        ) from exc
     except requests.RequestException as exc:
-        raise UploadAPIError(_format_upload_error(upload_url, str(exc)))
+        raise UploadAPIError(format_api_error(upload_url, str(exc), operation="Upload"))

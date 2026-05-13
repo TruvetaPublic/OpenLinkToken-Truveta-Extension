@@ -72,8 +72,8 @@ def _login_args(
     return argparse.Namespace(domain=domain, force=force)
 
 
-def _exchange_args(local_dev: bool = False) -> argparse.Namespace:
-    return argparse.Namespace(local_dev=local_dev)
+def _exchange_args() -> argparse.Namespace:
+    return argparse.Namespace()
 
 
 def _make_server_response() -> dict:
@@ -174,7 +174,8 @@ class TestInitiateExchangeCommand:
         out = capsys.readouterr().out
         assert "Exchange config: /path/to/config" in out
 
-    def test_uses_localhost_api_in_local_dev(self):
+    def test_uses_localhost_api_in_local_dev(self, monkeypatch):
+        monkeypatch.setenv("OLT_TRV_LOCAL_DEV", "true")
         context = AuthenticatedCommandContext(
             domain="dev.truveta-int.com",
             api_url=LOCAL_API_URL,
@@ -204,7 +205,7 @@ class TestInitiateExchangeCommand:
                 return_value=Path("/path/to/config"),
             ) as mock_write,
         ):
-            result = _initiate_exchange(_exchange_args(local_dev=True))
+            result = _initiate_exchange(_exchange_args())
 
         assert result == 0
         mock_exchange.assert_called_once_with(

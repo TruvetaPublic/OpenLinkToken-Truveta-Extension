@@ -29,14 +29,25 @@ olt truveta <subcommand>
 | `olt truveta login --force`                 | Re-authenticate, discarding any cached credentials       |
 | `olt truveta login --domain DOMAIN`         | Authenticate against a specific Truveta domain           |
 | `olt truveta initiate-exchange --local-dev` | Authenticate against dev and call a local Token Service  |
-| `olt truveta upload --local-dev`            | Authenticate against dev and upload to a local API       |
+| `olt truveta upload -i FILE`                | Upload a tokenized file for overlap analysis             |
+| `olt truveta upload --input FILE`           | Same as `-i`, long form                                  |
+| `olt truveta upload -i FILE (local dev)`    | Set `OLT_TRV_LOCAL_DEV=1` to upload to a local API       |
 | `olt truveta logout`                        | Revoke and clear all cached Truveta credentials          |
 
 ### Environment Configuration
 
-| Variable         | Description                                                | Default       |
-| ---------------- | ---------------------------------------------------------- | ------------- |
-| `OLT_TRV_DOMAIN` | Override the target Truveta domain for `olt truveta login` | `truveta.com` |
+| Variable            | Description                                                                                        | Default       |
+| ------------------- | -------------------------------------------------------------------------------------------------- | ------------- |
+| `OLT_TRV_DOMAIN`    | Override the target Truveta domain for `olt truveta login`                                         | `truveta.com` |
+| `OLT_TRV_LOCAL_DEV` | Route exchange and upload calls to `http://localhost:18080` (any truthy value: `1`, `true`, `yes`) | unset         |
+
+**Example — target the local Token Service:**
+
+```bash
+export OLT_TRV_LOCAL_DEV=1
+olt truveta initiate-exchange
+olt truveta upload -i tokenized.csv
+```
 
 **Example — target the dev environment:**
 
@@ -55,7 +66,7 @@ Supported domain values are:
 
 Credentials are cached at `~/.openlinktoken/truveta/<domain>/credentials.json` and auto-evicted 5 minutes before expiry. The selected domain is persisted in `~/.openlinktoken/truveta/session.json`, and non-login commands derive their Auth0 and API URLs from that saved domain. The session file is merge-friendly so additional session metadata can be added over time without overwriting existing fields. Exchange keypairs are stored per UTC day at `~/.openlinktoken/openlinktoken-YYYY-MM-DD.private.pem` and `~/.openlinktoken/openlinktoken-YYYY-MM-DD.public.pem`. Run `olt truveta logout` to revoke the access token server-side and clear session files.
 
-When `--local-dev` is supplied, the extension still authenticates against `dev.truveta-int.com`, but it sends exchange and upload API calls to `http://localhost:18080`.
+When `OLT_TRV_LOCAL_DEV` is set to a truthy value (`1`, `true`, `yes`, `y`, or `on`), the extension still authenticates against `dev.truveta-int.com`, but it sends exchange and upload API calls to `http://localhost:18080`.
 
 ## Local Development Setup
 

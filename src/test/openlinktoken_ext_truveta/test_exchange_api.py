@@ -408,3 +408,37 @@ class TestCallExchangeEndpoint:
         assert (
             mock_post.call_args[0][0] == "https://api.truveta.com/openlink/v1/exchange"
         )
+
+    def test_ssl_error_with_auth_probe_result_raises_with_auth_hint(self):
+        ssl_error = requests.exceptions.SSLError(
+            "EOF occurred in violation of protocol"
+        )
+        probe_response = MagicMock()
+        probe_response.status_code = 401
+        probe_response.text = "Unauthorized"
+        probe_response.json.return_value = {}
+
+        with patch("openlinktoken_ext_truveta.api.exchange.requests.post") as mock_post:
+            mock_post.side_effect = [ssl_error, probe_response]
+
+            with pytest.raises(ExchangeAPIError, match="Authentication failed"):
+                call_exchange_endpoint(
+                    "https://api.truveta.com/openlink",
+                    _PUBLIC_KEY_PEM,
+                    "test-token",
+                )
+
+    def test_ssl_error_with_no_probe_result_raises_with_generic_hint(self):
+        ssl_error = requests.exceptions.SSLError(
+            "EOF occurred in violation of protocol"
+        )
+
+        with patch("openlinktoken_ext_truveta.api.exchange.requests.post") as mock_post:
+            mock_post.side_effect = [ssl_error, Exception("probe failed")]
+
+            with pytest.raises(ExchangeAPIError, match="network connectivity"):
+                call_exchange_endpoint(
+                    "https://api.truveta.com/openlink",
+                    _PUBLIC_KEY_PEM,
+                    "test-token",
+                )

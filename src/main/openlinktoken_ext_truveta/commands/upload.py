@@ -95,16 +95,16 @@ def _upload(args: argparse.Namespace) -> int:
     6. Return upload result
 
     Inputs:
-        args: Parsed CLI arguments containing --file and optional --metadata.
+        args: Parsed CLI arguments containing --input and optional --metadata.
 
     Returns:
         Exit code (0 on success, 1 on failure).
     """
-    input_file = getattr(args, "file", None)
+    input_file = getattr(args, "input", None)
     metadata_arg = getattr(args, "metadata", None)
 
     if not input_file:
-        print("Error: --file is required", file=sys.stderr)
+        print("Error: --input is required", file=sys.stderr)
         return 1
 
     file_path = Path(input_file)
