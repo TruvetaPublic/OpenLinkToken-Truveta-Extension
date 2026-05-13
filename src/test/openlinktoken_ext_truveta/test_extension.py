@@ -350,6 +350,107 @@ class TestRegisterSubcommand:
         assert callable(parsed.func)
 
 
+class TestAutoUploadSubcommand:
+    """Tests for the auto-upload subcommand parser and flags."""
+
+    def _build_parser(self):
+        root = argparse.ArgumentParser()
+        subparsers = root.add_subparsers(dest="command")
+        TruvetaExtension().register_subcommand(subparsers)
+        return root
+
+    def test_auto_upload_subcommand_present(self):
+        root = self._build_parser()
+        parsed = root.parse_args(["truveta", "auto-upload", "--input", "input.csv"])
+        assert parsed.func == TruvetaExtension._auto_upload
+
+    def test_auto_upload_short_input_flag(self):
+        root = self._build_parser()
+        parsed = root.parse_args(["truveta", "auto-upload", "-i", "input.csv"])
+        assert parsed.input == "input.csv"
+
+    def test_auto_upload_requires_input_flag(self):
+        root = self._build_parser()
+        with patch("sys.stderr"):
+            try:
+                root.parse_args(["truveta", "auto-upload"])
+            except SystemExit as exc:
+                assert exc.code == 2
+                return
+        raise AssertionError("Expected parse_args to reject missing --input")
+
+    def test_auto_upload_accepts_format_flag_rejected(self):
+        root = self._build_parser()
+        with patch("sys.stderr"):
+            try:
+                root.parse_args(
+                    [
+                        "truveta",
+                        "auto-upload",
+                        "--input",
+                        "input.csv",
+                        "--format",
+                        "parquet",
+                    ]
+                )
+            except SystemExit as exc:
+                assert exc.code == 2
+                return
+        raise AssertionError("Expected parse_args to reject removed --format flag")
+
+    def test_auto_upload_has_no_format_attribute(self):
+        root = self._build_parser()
+        parsed = root.parse_args(["truveta", "auto-upload", "--input", "input.csv"])
+        assert not hasattr(parsed, "format")
+
+    def test_auto_upload_rejects_local_dev_flag(self):
+        root = self._build_parser()
+        with patch("sys.stderr"):
+            try:
+                root.parse_args(
+                    ["truveta", "auto-upload", "--input", "input.csv", "--local-dev"]
+                )
+            except SystemExit as exc:
+                assert exc.code == 2
+                return
+        raise AssertionError("Expected parse_args to reject auto-upload --local-dev")
+
+    def test_auto_upload_rejects_domain_override_flag(self):
+        root = self._build_parser()
+        with patch("sys.stderr"):
+            try:
+                root.parse_args(
+                    [
+                        "truveta",
+                        "auto-upload",
+                        "--input",
+                        "input.csv",
+                        "--domain",
+                        "dev.truveta-int.com",
+                    ]
+                )
+            except SystemExit as exc:
+                assert exc.code == 2
+                return
+        raise AssertionError("Expected parse_args to reject auto-upload --domain")
+
+
+class TestAutoUploadDispatch:
+    """Tests for TruvetaExtension._auto_upload static method."""
+
+    def test_auto_upload_dispatches_to_command_handler(self):
+        args = MagicMock()
+
+        with patch(
+            "openlinktoken_ext_truveta.extension._auto_upload",
+            return_value=0,
+        ) as mock_auto_upload:
+            result = TruvetaExtension._auto_upload(args)
+
+        assert result == 0
+        mock_auto_upload.assert_called_once_with(args)
+
+
 class TestLoginDispatch:
     """Tests for TruvetaExtension._login static method."""
 
