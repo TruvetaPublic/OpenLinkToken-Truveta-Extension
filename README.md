@@ -3,6 +3,7 @@
 - [openlinktoken-ext-truveta](#openlinktoken-ext-truveta)
   - [Overview](#overview)
   - [Extension Commands](#extension-commands)
+    - [Upload Validation](#upload-validation)
     - [Environment Configuration](#environment-configuration)
     - [Token Storage](#token-storage)
   - [Local Development Setup](#local-development-setup)
@@ -23,18 +24,19 @@ olt truveta <subcommand>
 
 ## Extension Commands
 
-| Command                                  | Description                                                          |
-| ---------------------------------------- | -------------------------------------------------------------------- |
-| `olt truveta login`                      | Authenticate with Truveta via OAuth 2.0 Device Code Flow             |
-| `olt truveta login --force`              | Re-authenticate, discarding any cached credentials                   |
-| `olt truveta login --domain DOMAIN`      | Authenticate against a specific Truveta domain                       |
-| `olt truveta initiate-exchange`          | Negotiate exchange config with the Token Service                     |
-| `olt truveta upload -i FILE`             | Upload a tokenized file for overlap analysis                         |
-| `olt truveta upload --input FILE`        | Same as `-i`, long form                                              |
-| `olt truveta upload -i FILE (local dev)` | Set `OLT_TRV_LOCAL_DEV=1` to upload to a local API                   |
-| `olt truveta auto-upload -i FILE`        | Convenience: runs initiate-exchange, package, and upload in one step |
-| `olt truveta auto-upload --input FILE`   | Same as `-i`, long form                                              |
-| `olt truveta logout`                     | Revoke and clear all cached Truveta credentials                      |
+| Command                                           | Description                                                          |
+| ------------------------------------------------- | -------------------------------------------------------------------- |
+| `olt truveta login`                               | Authenticate with Truveta via OAuth 2.0 Device Code Flow             |
+| `olt truveta login --force`                       | Re-authenticate, discarding any cached credentials                   |
+| `olt truveta login --domain DOMAIN`               | Authenticate against a specific Truveta domain                       |
+| `olt truveta initiate-exchange`                   | Negotiate exchange config with the Token Service                     |
+| `olt truveta upload -i FILE`                      | Upload a tokenized CSV, Parquet, or ZIP file for overlap analysis    |
+| `olt truveta upload --input FILE`                 | Same as `-i`, long form                                              |
+| `olt truveta upload -i FILE --metadata META.json` | Attach a metadata JSON file (non-ZIP uploads only)                   |
+| `olt truveta upload -i FILE (local dev)`          | Set `OLT_TRV_LOCAL_DEV=1` to upload to a local API                   |
+| `olt truveta auto-upload -i FILE`                 | Convenience: runs initiate-exchange, package, and upload in one step |
+| `olt truveta auto-upload --input FILE`            | Same as `-i`, long form                                              |
+| `olt truveta logout`                              | Revoke and clear all cached Truveta credentials                      |
 
 ### Environment Configuration
 
@@ -42,6 +44,16 @@ olt truveta <subcommand>
 | ------------------- | -------------------------------------------------------------------------------------------------- | ------------- |
 | `OLT_TRV_DOMAIN`    | Override the target Truveta domain for `olt truveta login`                                         | `truveta.com` |
 | `OLT_TRV_LOCAL_DEV` | Route exchange and upload calls to `http://localhost:18080` (any truthy value: `1`, `true`, `yes`) | unset         |
+
+### Upload Validation
+
+Before sending any data, `olt truveta upload` performs three local checks:
+
+1. **Format** — only `.csv`, `.parquet`, and `.zip` are accepted.
+2. **Schema** — the file must contain the required columns: `RuleId`, `Token`, and `RecordId`. For ZIP files, the inner data file is inspected without extracting to disk.
+3. **Encryption** — a sample token is decrypted against the transport key derived from the current day's exchange config. If decryption fails, the upload is blocked with an actionable error asking you to re-run `olt package` with the current exchange config.
+
+ZIP files are uploaded as-is. If a `.metadata.json` file is embedded inside the ZIP, it is extracted and sent automatically. Passing `--metadata` alongside a ZIP is not supported and will emit a warning; the flag is ignored.
 
 **Example — full upload flow (recommended):**
 
@@ -58,6 +70,9 @@ olt truveta login
 olt truveta initiate-exchange
 olt package --input raw_data.csv --output packaged.parquet --exchange-config openlinktoken-YYYY-MM-DD.exchange.json
 olt truveta upload -i packaged.parquet
+
+# Or upload as a ZIP with an optional metadata sidecar:
+olt truveta upload -i packaged.zip
 ```
 
 **Example — target the local Token Service:**

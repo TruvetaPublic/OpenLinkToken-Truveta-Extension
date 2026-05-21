@@ -258,7 +258,7 @@ class _UploadSubcommandRegistrar:
             "--input",
             "-i",
             required=True,
-            help="Tokenized output file (CSV or Parquet) to upload",
+            help="Tokenized output file (CSV, Parquet, or ZIP containing one of those) to upload",
         )
         upload_parser.add_argument(
             "--metadata",
