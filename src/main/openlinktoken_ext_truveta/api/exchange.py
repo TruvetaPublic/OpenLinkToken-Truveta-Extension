@@ -4,10 +4,23 @@ Copyright (c) Truveta. All rights reserved.
 Exchange endpoint API client for OpenToken exchange negotiation.
 """
 
+import asyncio
 import base64
+import logging
 from urllib.parse import urlparse
 
-import requests
+import httpx
+
+from openlinktoken_ext_truveta.openlink_token_service_client.client import (
+    OpenLinkTokenServiceClient,
+)
+from openlinktoken_ext_truveta.openlink_token_service_client.types import (
+    ExchangeRequest,
+    ExchangeResponse,
+)
+
+# httpx logs every request/response at INFO by default; suppress to keep CLI output clean.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
     PublicFormat,
@@ -50,9 +63,6 @@ def _resolve_exchange_url(domain_url: str) -> str:
     Returns:
         The fully qualified exchange endpoint URL for hosted or local-dev calls.
     """
-    if _is_local_dev_url(domain_url):
-        return f"{domain_url.rstrip('/')}/v1/exchange"
-
     return f"{domain_url.rstrip('/')}/v1/exchange"
 
 
@@ -71,21 +81,49 @@ def _pem_to_spki_b64(public_key_pem: str) -> str:
     return base64.b64encode(der).decode("utf-8")
 
 
-def _resolve_exchange_id(server_data: dict) -> str:
+def _normalize_response(response: ExchangeResponse) -> dict:
+    result: dict = {
+        "exchangeName": "",
+        "exchangeId": response.exchange_id,
+        "hashingSecret": response.encrypted_hashing_key,
+        "serverPublicKey": response.truveta_public_key,
+        "rotationCount": response.num_rotations,
+        "binWidth": response.bin_width,
+        "dimensionBias": response.dimension_bias or [],
+    }
+    if response.encrypted_rotation_iv:
+        result["encryptedRotationIv"] = response.encrypted_rotation_iv
+    return result
+
+
+async def _call_exchange_async(
+    base_url: str,
+    public_key_pem: str,
+    access_token: str,
+    timeout: float | None,
+    verify_ssl: bool,
+) -> ExchangeResponse:
     """
-    Resolve a non-empty exchange identifier from API response fields.
+    Make an async HTTP call to the exchange endpoint.
 
     Inputs:
-        server_data: The parsed JSON payload returned by the exchange endpoint.
+        base_url: Base URL of the OpenLink Token service (trailing slash stripped).
+        public_key_pem: PEM-encoded public key to send in the exchange request.
+        access_token: Bearer token for authentication.
+        timeout: Request timeout in seconds, or None for no timeout.
+        verify_ssl: Whether to verify the server's SSL certificate.
 
     Returns:
-        The non-empty exchange identifier string extracted from the payload.
+        Parsed ExchangeResponse from the service.
     """
-    exchange_id = str(server_data.get("exchangeId", "")).strip()
-    if exchange_id:
-        return exchange_id
-
-    raise ExchangeAPIError("Exchange response must include a non-empty exchangeId.")
+    request = ExchangeRequest(public_key=_pem_to_spki_b64(public_key_pem))
+    async with httpx.AsyncClient(
+        headers={"Authorization": f"Bearer {access_token}"},
+        verify=verify_ssl,
+        timeout=timeout,
+    ) as client:
+        olt_client = OpenLinkTokenServiceClient(base_url, client)
+        return await olt_client.exchange_exchange("1", request)
 
 
 def call_exchange_endpoint(
@@ -97,11 +135,6 @@ def call_exchange_endpoint(
     """
     Call the exchange endpoint to negotiate a new exchange.
 
-    Hosted environments use ``/openlink/v1/exchange``. Local development
-    targets (for example ``http://localhost:18080``) use ``/v1/exchange``
-    directly. The endpoint returns the server's public key and encrypted
-    hashing secret.
-
     Inputs:
         domain_url: The Truveta API URL, including the /openlink suffix for hosted environments.
         local_public_key_pem: Our generated public key (PEM-encoded).
@@ -109,56 +142,32 @@ def call_exchange_endpoint(
         timeout_seconds: Optional request timeout override in seconds.
 
     Returns:
-        Parsed JSON response from the endpoint.
+        Parsed and normalized response from the endpoint.
 
     Raises:
         ExchangeAPIError: If the request fails (network error, HTTP error).
-        requests.HTTPError: For 4xx/5xx responses (propagated as-is for
-                          caller control over error handling).
+        httpx.HTTPStatusError: For 4xx/5xx responses (propagated as-is for
+                              caller control over error handling).
     """
+    base_url = domain_url.rstrip("/")
     url = _resolve_exchange_url(domain_url)
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-    }
-
-    body = {"publicKey": _pem_to_spki_b64(local_public_key_pem)}
     request_timeout = resolve_timeout_seconds(timeout_seconds)
+    verify_ssl = not _is_local_dev_url(domain_url)
 
     try:
-        response = requests.post(
-            url,
-            json=body,
-            headers=headers,
-            timeout=request_timeout,
+        response = asyncio.run(
+            _call_exchange_async(
+                base_url,
+                local_public_key_pem,
+                access_token,
+                request_timeout,
+                verify_ssl,
+            )
         )
-        response.raise_for_status()
-        server_data = response.json()
-
-        num_rotations = server_data.get("numRotations")
-        bin_width = server_data.get("binWidth")
-        dimension_bias = server_data.get("dimensionBias")
-        encrypted_rotation_iv = server_data.get("encryptedRotationIv")
-
-        normalized: dict = {
-            "exchangeName": server_data.get("exchangeName", ""),
-            "exchangeId": _resolve_exchange_id(server_data),
-            "hashingSecret": server_data.get(
-                "encryptedHashingKey", server_data.get("hashingSecret", "")
-            ),
-            "serverPublicKey": server_data.get(
-                "truvetaPublicKey", server_data.get("serverPublicKey", "")
-            ),
-            "rotationCount": num_rotations if num_rotations is not None else 30,
-            "binWidth": bin_width if bin_width is not None else 0.05,
-            "dimensionBias": dimension_bias if dimension_bias is not None else [],
-        }
-        if encrypted_rotation_iv:
-            normalized["encryptedRotationIv"] = encrypted_rotation_iv
-        return normalized
-    except requests.HTTPError:
+        return _normalize_response(response)
+    except httpx.HTTPStatusError:
         raise
-    except requests.exceptions.SSLError as exc:
+    except httpx.ConnectError as exc:
         probe_detail = probe_for_http_status(
             url,
             access_token,

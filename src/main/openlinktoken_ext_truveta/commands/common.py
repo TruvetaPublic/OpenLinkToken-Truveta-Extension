@@ -196,7 +196,7 @@ def resolve_timeout_seconds(
     if timeout_seconds is not None:
         return timeout_seconds
 
-    if _is_local_dev():
+    if _is_local_dev() or getattr(args, "local_dev", False):
         return LOCAL_DEV_TIMEOUT_SECONDS
 
     return DEFAULT_TIMEOUT_SECONDS
