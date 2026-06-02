@@ -107,19 +107,6 @@ class TruvetaExtension(OpenLinkTokenExtension):
         parser.set_defaults(func=_print_truveta_help)
 
     @staticmethod
-    def _auto_upload(args) -> int:
-        """
-        Initiate exchange, package, and upload in one step.
-
-        Inputs:
-            args: Parsed CLI arguments.
-
-        Returns:
-            Exit code (0 on success, non-zero on failure).
-        """
-        return _auto_upload(args)
-
-    @staticmethod
     def _login(args) -> int:
         """
         Authenticate with Truveta services.
@@ -170,6 +157,19 @@ class TruvetaExtension(OpenLinkTokenExtension):
             Exit code (0 on success, non-zero on failure).
         """
         return _upload(args)
+
+    @staticmethod
+    def _auto_upload(args) -> int:
+        """
+        Run the automated upload workflow.
+
+        Inputs:
+            args: Parsed CLI arguments.
+
+        Returns:
+            Exit code (0 on success, non-zero on failure).
+        """
+        return _auto_upload(args)
 
 
 class _LoginSubcommandRegistrar:
