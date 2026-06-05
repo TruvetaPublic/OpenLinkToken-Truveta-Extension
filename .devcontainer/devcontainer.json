@@ -1,0 +1,28 @@
+{
+  "name": "OpenLinkToken-Truveta-Extension",
+  "build": {
+    "context": ".",
+    "dockerfile": "Dockerfile"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.flake8",
+        "charliermarsh.ruff",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.testing.pytestEnabled": true,
+        "python.testing.pytestArgs": ["src/test"]
+      }
+    }
+  },
+  "postCreateCommand": "pip install -e \".[dev]\"",
+  "remoteUser": "vscode"
+}
