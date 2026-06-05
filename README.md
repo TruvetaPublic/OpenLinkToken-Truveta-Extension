@@ -3,16 +3,18 @@
 - [openlinktoken-ext-truveta](#openlinktoken-ext-truveta)
   - [Overview](#overview)
   - [Extension Commands](#extension-commands)
-    - [Upload Validation](#upload-validation)
     - [Environment Configuration](#environment-configuration)
+    - [Upload Validation](#upload-validation)
     - [Token Storage](#token-storage)
+  - [Installing the Extension](#installing-the-extension)
   - [Local Development Setup](#local-development-setup)
     - [Prerequisites](#prerequisites)
     - [Install Dependencies](#install-dependencies)
     - [Run Tests](#run-tests)
     - [Smoke Test](#smoke-test)
-  - [Installing the Extension](#installing-the-extension)
   - [Building a Wheel](#building-a-wheel)
+  - [Versioning](#versioning)
+  - [Continuous Integration](#continuous-integration)
 
 ## Overview
 
@@ -98,62 +100,13 @@ Supported domain values are:
 
 ### Token Storage
 
-Credentials are cached at `~/.openlinktoken/truveta/<domain>/credentials.json` and auto-evicted 5 minutes before expiry. The selected domain is persisted in `~/.openlinktoken/truveta/session.json`, and non-login commands derive their Auth0 and API URLs from that saved domain. The session file is merge-friendly so additional session metadata can be added over time without overwriting existing fields. Exchange keypairs are stored per UTC day at `~/.openlinktoken/openlinktoken-YYYY-MM-DD.private.pem` and `~/.openlinktoken/openlinktoken-YYYY-MM-DD.public.pem`. Run `olt truveta logout` to revoke the access token server-side and clear session files.
+Credentials are cached at `~/.openlinktoken/truveta/<domain>/credentials.json` and auto-evicted 5 minutes before expiry. The selected domain is persisted in `~/.openlinktoken/truveta/session.json`, and non-login commands derive their Auth0 and API URLs from that saved domain. Exchange keypairs are stored per UTC day at `~/.openlinktoken/openlinktoken-YYYY-MM-DD.private.pem` and `~/.openlinktoken/openlinktoken-YYYY-MM-DD.public.pem`. Run `olt truveta logout` to revoke the access token server-side and clear session files.
 
 When `OLT_TRV_LOCAL_DEV` is set to a truthy value (`1`, `true`, `yes`, `y`, or `on`), the extension still authenticates against `dev.truveta-int.com`, but it sends exchange and upload API calls to `http://localhost:18080`.
 
-## Local Development Setup
-
-### Prerequisites
-
-- Python 3.10+
-- `pip` or `uv`
-- Access to [TruvetaPublic/OpenLinkToken](https://github.com/TruvetaPublic/OpenLinkToken) on GitHub
-
-### Install Dependencies
-
-`openlinktoken-cli` is not on PyPI — it is installed from the `TruvetaPublic/OpenLinkToken` GitHub repo as part of `uv sync`.
-
-> **Dev container note:** VS Code sets `GIT_DIR` as a worktree-scoped env var, which confuses uv's git backend. Prefix all uv commands with `(unset GIT_DIR; ...)` to work around this.
-> **VPN/proxy note:** If internal `*.dev.truveta-int.com` endpoints do not resolve from your shell, export the dev HTTP proxy after connecting to VPN.
-
-```bash
-export HTTP_PROXY=http://proxy-http.dev.truveta-int.com:8888
-export HTTPS_PROXY=$HTTP_PROXY
-```
-
-```bash
-# From the repo root (workspace-scoped, avoids unrelated workspace member deps)
-(unset GIT_DIR; uv sync --package openlinktoken-ext-truveta --dev)
-
-# Or from within the package directory
-cd openlinktoken-ext-truveta
-(unset GIT_DIR; uv sync --dev)
-```
-
-### Run Tests
-
-```bash
-# From the repo root
-(unset GIT_DIR; uv run --package openlinktoken-ext-truveta pytest openlinktoken-ext-truveta/src/test/ -v)
-
-# Or from within the package directory
-cd openlinktoken-ext-truveta
-(unset GIT_DIR; uv run pytest -v)
-```
-
-### Smoke Test
-
-After `uv sync --dev`, run:
-
-```bash
-(unset GIT_DIR; uv run olt truveta login --domain dev.truveta-int.com)
-# Opens browser for Auth0 device code login, then prints: Welcome, <name>!
-```
-
 ## Installing the Extension
 
-Once a wheel is built, install it via the `olt` CLI:
+Once a wheel is built (or downloaded from a release), install it via the `olt` CLI:
 
 ```bash
 # From a local build
@@ -163,11 +116,72 @@ olt extension install file:///$(pwd)/dist/openlinktoken_ext_truveta-0.1.0-py3-no
 olt extension install -y file:///$(pwd)/dist/openlinktoken_ext_truveta-0.1.0-py3-none-any.whl
 ```
 
+## Local Development Setup
+
+### Prerequisites
+
+- Python 3.10+
+- `pip` (and recommended: `venv`)
+- Access to [TruvetaPublic/OpenLinkToken](https://github.com/TruvetaPublic/OpenLinkToken) on GitHub (the `openlinktoken-cli` dev dependency is installed from this repo)
+
+> The repository ships with a VS Code dev container under `.devcontainer/` that provisions Python 3.12, installs dev tooling, and runs an editable install automatically.
+
+### Install Dependencies
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -e ".[dev]"
+```
+
+This installs the package in editable mode, pulls `openlinktoken-cli` from the `develop` branch of `TruvetaPublic/OpenLinkToken`, and installs dev tools (`pytest`, `bump2version`, `build`, `autoflake`, `flake8`).
+
+### Run Tests
+
+```bash
+pytest src/test -v
+```
+
+### Smoke Test
+
+```bash
+olt truveta login --domain dev.truveta-int.com
+# Opens browser for Auth0 device code login, then prints: Welcome, <name>!
+```
+
 ## Building a Wheel
 
 ```bash
-pip install build
 python -m build
 ```
 
-This produces `dist/openlinktoken_ext_truveta-0.1.0-py3-none-any.whl`.
+This produces `dist/openlinktoken_ext_truveta-<version>-py3-none-any.whl` and the corresponding source distribution.
+
+## Versioning
+
+This project follows [Semantic Versioning](https://semver.org/). Version bumps are managed with [`bump2version`](https://github.com/c4urself/bump2version) and configured in `.bumpversion.cfg`.
+
+```bash
+# Patch release (0.1.0 -> 0.1.1) — bug fixes
+bump2version patch
+
+# Minor release (0.1.0 -> 0.2.0) — backwards-compatible features
+bump2version minor
+
+# Major release (0.1.0 -> 1.0.0) — breaking changes
+bump2version major
+```
+
+`bump2version` updates the version in `pyproject.toml` and `src/main/openlinktoken_ext_truveta/__init__.py`, creates a commit, and tags the commit as `v<new_version>`.
+
+## Continuous Integration
+
+CI is defined in `.github/workflows/ci.yml` and runs on every push and pull request targeting `main`. The workflow:
+
+1. Checks out the source.
+2. Sets up Python 3.12.
+3. Installs the package with dev extras (`pip install -e ".[dev]"`).
+4. Runs the test suite (`pytest src/test`).
+5. Builds the wheel and sdist (`python -m build`).
+6. Uploads `dist/` as a build artifact (7-day retention).
