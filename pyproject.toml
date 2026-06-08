@@ -3,7 +3,7 @@ name = "openlinktoken-ext-truveta"
 version = "0.1.0"
 requires-python = ">=3.10"
 description = "Open Link Token extension for Truveta-specific CLI commands"
-dependencies = ["requests==2.33.0", "cryptography==46.0.7", "httpx==0.28.1", "pydantic>=2.0,<3.0"]
+dependencies = ["requests==2.33.0", "cryptography==46.0.7", "httpx==0.28.1", "pydantic==2.9.2"]
 
 [project.entry-points."openlinktoken.extensions"]
 truveta = "openlinktoken_ext_truveta.extension:TruvetaExtension"
@@ -12,15 +12,15 @@ truveta = "openlinktoken_ext_truveta.extension:TruvetaExtension"
 dev = [
     "openlinktoken @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@develop#subdirectory=lib/python/openlinktoken",
     "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@develop#subdirectory=lib/python/openlinktoken-cli",
-    "pytest>=8.0.0",
-    "bump2version>=1.0.1",
-    "build>=1.2.0",
-    "autoflake>=2.3.0",
-    "flake8>=7.0.0",
+    "pytest==8.3.3",
+    "bump2version==1.0.1",
+    "build==1.2.2",
+    "autoflake==2.3.1",
+    "flake8==7.1.1",
 ]
 
 [build-system]
-requires = ["setuptools>=40.8.0", "wheel"]
+requires = ["setuptools==75.1.0", "wheel==0.44.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
