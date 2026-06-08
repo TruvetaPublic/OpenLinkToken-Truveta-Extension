@@ -30,7 +30,7 @@ jobs:
                   python-version: "3.12"
 
             - name: Install uv
-              uses: astral-sh/setup-uv@v8.2.0
+              uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
               with:
                   enable-cache: true
 
@@ -54,8 +54,13 @@ jobs:
               run: |
                   git config user.name "github-actions[bot]"
                   git config user.email "github-actions[bot]@users.noreply.github.com"
-                  git tag "${{ steps.tag.outputs.tag }}"
-                  git push origin "${{ steps.tag.outputs.tag }}"
+                  tag="${{ steps.tag.outputs.tag }}"
+                  if git rev-parse "refs/tags/${tag}" >/dev/null 2>&1 || git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+                    echo "Tag ${tag} already exists, skipping tag creation."
+                  else
+                    git tag "${tag}"
+                    git push origin "${tag}"
+                  fi
 
             - name: Upload built distributions as workflow artifacts
               uses: actions/upload-artifact@v4
@@ -66,7 +71,7 @@ jobs:
                       dist/*.tar.gz
 
             - name: Publish to GitHub Releases
-              uses: softprops/action-gh-release@v2
+              uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
               with:
                   tag_name: ${{ steps.tag.outputs.tag }}
                   generate_release_notes: true
@@ -99,13 +104,13 @@ jobs:
                   python-version: "3.12"
 
             - name: Install uv
-              uses: astral-sh/setup-uv@v8.2.0
+              uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
               with:
                   enable-cache: true
 
             - name: Install package and PyInstaller
               run: |
-                  uv pip install --system -e ".[dev]"
+                  uv pip install --system -e ".[release]"
                   uv pip install --system pyinstaller
 
             - name: Resolve release tag
@@ -157,7 +162,7 @@ jobs:
                   path: dist/${{ matrix.artifact_name }}*
 
             - name: Attach standalone to GitHub Release
-              uses: softprops/action-gh-release@v2
+              uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
               with:
                   tag_name: ${{ steps.tag.outputs.tag }}
                   files: dist/${{ matrix.artifact_name }}*

@@ -15,6 +15,7 @@
   - [Building a Wheel](#building-a-wheel)
   - [Versioning](#versioning)
   - [Continuous Integration](#continuous-integration)
+  - [Releases](#releases)
 
 ## Overview
 
