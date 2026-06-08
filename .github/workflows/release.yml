@@ -118,6 +118,13 @@ jobs:
                     echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
                   fi
 
+            - name: Resolve CLI entrypoint
+              id: entrypoint
+              shell: bash
+              run: |
+                  entry="$(python -c "import openlinktoken_cli.__main__ as m, pathlib; print(pathlib.Path(m.__file__).as_posix())")"
+                  echo "path=${entry}" >> "$GITHUB_OUTPUT"
+
             - name: Build standalone executable
               shell: bash
               run: |
@@ -126,8 +133,22 @@ jobs:
                     --collect-submodules openlinktoken_ext_truveta \
                     --collect-submodules openlinktoken \
                     --collect-submodules openlinktoken_cli \
+                    --copy-metadata openlinktoken-ext-truveta \
+                    --copy-metadata openlinktoken \
+                    --copy-metadata openlinktoken-cli \
                     -c -y \
-                    $(python -c "import openlinktoken_cli.__main__; print(openlinktoken_cli.__main__.__file__)")
+                    "${{ steps.entrypoint.outputs.path }}"
+
+            - name: Smoke test standalone executable
+              shell: bash
+              run: |
+                  if [ "${{ matrix.os }}" = "windows-latest" ]; then
+                    binary="dist/${{ matrix.artifact_name }}.exe"
+                  else
+                    binary="dist/${{ matrix.artifact_name }}"
+                  fi
+                  "$binary" --help
+                  "$binary" truveta --help
 
             - name: Upload standalone artifact
               uses: actions/upload-artifact@v4
