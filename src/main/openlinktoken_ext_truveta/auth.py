@@ -141,6 +141,7 @@ def _write_cache(domain: str, credentials: Credentials) -> None:
             }
         )
     )
+    os.chmod(path, 0o600)
 
 
 # ---------------------------------------------------------------------------
