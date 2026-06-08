@@ -10,9 +10,6 @@ RUN apt-get update \
         git \
     && rm -rf /var/lib/apt/lists/*
 
-COPY scripts/detect_zscaler.sh /usr/local/bin/detect_zscaler.sh
-RUN chmod +x /usr/local/bin/detect_zscaler.sh && /usr/local/bin/detect_zscaler.sh || true
-
 RUN pip install --no-cache-dir \
         pytest \
         autoflake \
