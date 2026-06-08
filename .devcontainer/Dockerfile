@@ -9,10 +9,10 @@ RUN rm -f /etc/apt/sources.list.d/yarn.list
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates \
-        openssl \
-        curl \
-        git \
+    ca-certificates \
+    openssl \
+    curl \
+    git \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
@@ -27,8 +27,8 @@ USER vscode
 # preventing permission errors when VS Code tries to install its server on
 # first container start.
 RUN mkdir -p /home/vscode/.vscode-server \
-             /home/vscode/.vscode-server-insiders \
-             /home/vscode/.copilot
+    /home/vscode/.vscode-server-insiders \
+    /home/vscode/.copilot
 
 # Install UV and global Python CLI tools (each in an isolated uv-managed venv)
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \

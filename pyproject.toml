@@ -18,6 +18,12 @@ dev = [
     "autoflake==2.3.1",
     "flake8==7.1.1",
 ]
+# Pinned upstream refs used by the release workflow to produce reproducible standalone binaries.
+# Bump these to the desired OpenLinkToken release tag before cutting a release.
+release = [
+    "openlinktoken @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@v1.13.2#subdirectory=lib/python/openlinktoken",
+    "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@v1.13.2#subdirectory=lib/python/openlinktoken-cli",
+]
 
 [build-system]
 requires = ["setuptools==75.1.0", "wheel==0.44.0"]
@@ -29,4 +35,3 @@ where = ["src/main"]
 [tool.pytest.ini_options]
 pythonpath = ["src/main"]
 testpaths = ["src/test"]
-

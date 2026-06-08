@@ -1,63 +1,63 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
+    push:
+        branches: [main]
+    pull_request:
+        branches: [main]
+    workflow_dispatch:
 
 permissions:
-  contents: read
+    contents: read
 
 jobs:
-  test:
-    name: Lint, Test, and Build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      checks: write
-      pull-requests: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+    test:
+        name: Lint, Test, and Build
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            checks: write
+            pull-requests: write
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+            - name: Set up Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "3.12"
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v8.2.0
-        with:
-          enable-cache: true
+            - name: Install uv
+              uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+              with:
+                  enable-cache: true
 
-      - name: Install package with dev extras
-        run: uv pip install --system -e ".[dev]"
+            - name: Install package with dev extras
+              run: uv pip install --system -e ".[dev]"
 
-      - name: Lint with flake8
-        run: flake8 src/main src/test
+            - name: Lint with flake8
+              run: flake8 src/main src/test
 
-      - name: Check formatting with autoflake
-        run: autoflake --check --recursive --remove-all-unused-imports --remove-unused-variables src/main src/test
+            - name: Check formatting with autoflake
+              run: autoflake --check --recursive --remove-all-unused-imports --remove-unused-variables src/main src/test
 
-      - name: Run tests with pytest
-        run: pytest src/test -v --junitxml=test-results.xml
+            - name: Run tests with pytest
+              run: pytest src/test -v --junitxml=test-results.xml
 
-      - name: Publish unit test results
-        if: always()
-        uses: EnricoMi/publish-unit-test-result-action@v2
-        with:
-          files: test-results.xml
-          check_name: Test Results
-          comment_mode: off
+            - name: Publish unit test results
+              if: always()
+              uses: EnricoMi/publish-unit-test-result-action@c950f6fb443cb5af20a377fd0dfaa78838901040 # v2.23.0
+              with:
+                  files: test-results.xml
+                  check_name: Test Results
+                  comment_mode: off
 
-      - name: Build distribution
-        run: python -m build
+            - name: Build distribution
+              run: python -m build
 
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/
-          retention-days: 7
+            - name: Upload build artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                  name: dist
+                  path: dist/
+                  retention-days: 7
