@@ -5,6 +5,9 @@
     "dockerfile": "Dockerfile"
   },
   "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "configureZshAsDefaultShell": true
+    },
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
   "customizations": {
@@ -17,12 +20,28 @@
         "ms-azuretools.vscode-docker"
       ],
       "settings": {
-        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.defaultInterpreterPath": "/home/vscode/.local/share/openlinktoken-ext-truveta/.venv/bin/python",
+        "python.terminal.activateEnvironment": true,
         "python.testing.pytestEnabled": true,
         "python.testing.pytestArgs": ["src/test"]
       }
     }
   },
-  "postCreateCommand": "pip install -e \".[dev]\"",
+  "mounts": [
+    "type=volume,source=openlinktoken-ext-truveta-local,target=/home/vscode/.local",
+    "type=volume,source=openlinktoken-ext-truveta-cache,target=/home/vscode/.cache",
+    "type=volume,source=openlinktoken-ext-truveta-copilot,target=/home/vscode/.copilot",
+    "type=volume,source=openlinktoken-ext-truveta-vscode-server,target=/home/vscode/.vscode-server",
+    "type=volume,source=openlinktoken-ext-truveta-vscode-insiders,target=/home/vscode/.vscode-server-insiders"
+  ],
+  "containerEnv": {
+    "UV_PROJECT_ENVIRONMENT": "/home/vscode/.local/share/openlinktoken-ext-truveta/.venv"
+  },
+  "updateContentCommand": {
+    "fix-mount-permissions": "for d in /home/vscode/.copilot /home/vscode/.cache /home/vscode/.local /home/vscode/.vscode-server /home/vscode/.vscode-server-insiders; do [ -d \"$d\" ] || continue; sudo chown -R vscode:vscode \"$d\"; done"
+  },
+  "postCreateCommand": "bash -lc '${containerWorkspaceFolder}/.devcontainer/scripts/unified-setup.sh post-create'",
+  "postStartCommand": "bash -lc '${containerWorkspaceFolder}/.devcontainer/scripts/unified-setup.sh post-start'",
+  "postAttachCommand": "bash -lc '${containerWorkspaceFolder}/.devcontainer/scripts/unified-setup.sh post-attach'",
   "remoteUser": "vscode"
 }
