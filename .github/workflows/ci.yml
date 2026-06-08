@@ -5,14 +5,19 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   test:
-    name: Test and Build
+    name: Lint, Test, and Build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,15 +26,31 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
 
       - name: Install package with dev extras
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv pip install --system -e ".[dev]"
 
-      - name: Run tests
-        run: pytest src/test -v
+      - name: Lint with flake8
+        run: flake8 src/main src/test
+
+      - name: Check formatting with autoflake
+        run: autoflake --check --recursive --remove-all-unused-imports --remove-unused-variables src/main src/test
+
+      - name: Run tests with pytest
+        run: pytest src/test -v --junitxml=test-results.xml
+
+      - name: Publish unit test results
+        if: always()
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: test-results.xml
+          check_name: Test Results
+          comment_mode: off
 
       - name: Build distribution
         run: python -m build
