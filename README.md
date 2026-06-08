@@ -120,18 +120,25 @@ olt extension install -y file:///$(pwd)/dist/openlinktoken_ext_truveta-0.1.0-py3
 
 ### Prerequisites
 
-- Python 3.10+
-- `pip` (and recommended: `venv`)
+- Python 3.12
+- [uv](https://docs.astral.sh/uv/) (recommended) or `pip`
 - Access to [TruvetaPublic/OpenLinkToken](https://github.com/TruvetaPublic/OpenLinkToken) on GitHub (the `openlinktoken-cli` dev dependency is installed from this repo)
 
-> The repository ships with a VS Code dev container under `.devcontainer/` that provisions Python 3.12, installs dev tooling, and runs an editable install automatically.
+> The repository ships with a VS Code dev container under `.devcontainer/` that provisions Python 3.12, installs dev tooling, and runs an editable install automatically. This is the recommended development environment.
 
 ### Install Dependencies
 
 ```bash
+uv venv .venv
+source .venv/bin/activate
+uv pip install -e ".[dev]"
+```
+
+Or with pip:
+
+```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install --upgrade pip
 pip install -e ".[dev]"
 ```
 
@@ -180,8 +187,24 @@ bump2version major
 CI is defined in `.github/workflows/ci.yml` and runs on every push and pull request targeting `main`. The workflow:
 
 1. Checks out the source.
-2. Sets up Python 3.12.
-3. Installs the package with dev extras (`pip install -e ".[dev]"`).
-4. Runs the test suite (`pytest src/test`).
-5. Builds the wheel and sdist (`python -m build`).
-6. Uploads `dist/` as a build artifact (7-day retention).
+2. Sets up Python 3.12 and uv.
+3. Installs the package with dev extras.
+4. Lints with flake8 and autoflake (unused import detection).
+5. Runs the test suite (`pytest`).
+6. Builds the wheel and sdist (`python -m build`).
+7. Uploads `dist/` as a build artifact (7-day retention).
+
+## Releases
+
+Releases are defined in `.github/workflows/release.yml` and triggered in two ways:
+
+- **Tag push** — push a `v*` tag (created by `bump2version`) to build and publish.
+- **Manual dispatch** — enter a version number in the GitHub Actions UI.
+
+The release workflow:
+
+1. Builds the wheel and sdist, then publishes them to GitHub Releases.
+2. Builds standalone executables for Linux, Windows, and macOS using PyInstaller.
+3. Attaches all artifacts to the GitHub Release.
+
+The standalone binary bundles both the `openlinktoken` CLI and the Truveta extension into a single file — no Python installation required for end users.
