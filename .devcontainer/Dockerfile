@@ -39,3 +39,5 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
     ~/.local/bin/uv tool install build
 
 ENV PATH="/home/vscode/.local/bin:${PATH}"
+
+ENV PATH="/home/vscode/.local/bin:${PATH}"
