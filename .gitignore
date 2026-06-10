@@ -38,7 +38,6 @@ coverage.xml
 *.cover
 
 # IDE
-.vscode/
 .idea/
 *.swp
 *.swo
@@ -53,3 +52,4 @@ tmp/
 
 # uv (lockfile not maintained in git for this repo)
 uv.lock
+.devcontainer/host-ca-certificates.crt
