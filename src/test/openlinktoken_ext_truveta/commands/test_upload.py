@@ -80,9 +80,11 @@ class TestUploadCommand:
         data_file = tmp_path / "tokenized.csv"
         metadata_file = tmp_path / "tokenized.metadata.json"
         data_file.write_text("token\nabc")
-        metadata_file.write_text(
-            '{"payload":{"exchangeId":"ex-1","senderKeyFingerprint":"sender","recipientKeyFingerprint":"recipient","curve":"P-256"}}'
+        metadata_content = (
+            '{"payload":{"exchangeId":"ex-1","senderKeyFingerprint":"sender",'
+            '"recipientKeyFingerprint":"recipient","curve":"P-256"}}'
         )
+        metadata_file.write_text(metadata_content)
 
         captured = {}
 
