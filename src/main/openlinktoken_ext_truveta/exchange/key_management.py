@@ -11,7 +11,6 @@ import base64
 import hashlib
 import hmac
 import inspect
-import os
 from datetime import date
 from importlib import import_module
 
@@ -114,7 +113,6 @@ def load_or_generate_daily_keys(key_date: date | None = None) -> tuple[str, str]
     try:
         private_key_file.parent.mkdir(parents=True, exist_ok=True)
         private_key_file.write_text(private_pem)
-        os.chmod(private_key_file, 0o600)
         public_key_file.write_text(public_pem)
     except Exception as exc:
         raise KeyManagementError(
