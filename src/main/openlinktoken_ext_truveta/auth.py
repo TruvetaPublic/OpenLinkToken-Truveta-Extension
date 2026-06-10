@@ -8,6 +8,7 @@ authenticated headers for Truveta API requests.
 """
 
 import base64
+import contextlib
 import json
 import os
 import sys
@@ -38,6 +39,21 @@ class Credentials:
 
     access_token: str
     id_token: str
+
+
+@contextlib.contextmanager
+def _temporary_env(var_name: str, value: str):
+    """Temporarily set an environment variable and restore it afterward."""
+    sentinel = object()
+    previous = os.environ.get(var_name, sentinel)
+    os.environ[var_name] = value
+    try:
+        yield
+    finally:
+        if previous is sentinel:
+            os.environ.pop(var_name, None)
+        else:
+            os.environ[var_name] = previous
 
 
 def _cache_path(domain: str) -> Path:
@@ -206,7 +222,10 @@ def _device_code_flow(
     )
     if should_open_browser:
         try:
-            webbrowser.open(verification_uri_complete)
+            # Some browser launchers emit Node deprecation warnings to stderr.
+            # Keep login output clean by suppressing warnings only for this call.
+            with _temporary_env("NODE_NO_WARNINGS", "1"):
+                webbrowser.open(verification_uri_complete)
         except Exception:
             pass  # Non-fatal — user can copy the URL manually
 
