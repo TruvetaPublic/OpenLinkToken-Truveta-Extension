@@ -1,19 +1,18 @@
 # OpenLinkToken Truveta Extension
 
-- [OpenLinkToken Truveta Extension](#openlinktoken-truveta-extension)
-  - [Overview](#overview)
-  - [Extension Commands](#extension-commands)
-    - [Subcommand Overview](#subcommand-overview)
-    - [login](#login)
-    - [initiate-exchange](#initiate-exchange)
-    - [upload](#upload)
-    - [auto-upload](#auto-upload)
-    - [logout](#logout)
-  - [Installing the Extension](#installing-the-extension)
-  - [Building a Wheel](#building-a-wheel)
-  - [Versioning](#versioning)
-  - [Continuous Integration](#continuous-integration)
-  - [Releases](#releases)
+- [Overview](#overview)
+- [Extension Commands](#extension-commands)
+  - [Subcommand Overview](#subcommand-overview)
+  - [login](#login)
+  - [initiate-exchange](#initiate-exchange)
+  - [upload](#upload)
+  - [auto-upload](#auto-upload)
+  - [logout](#logout)
+- [Installing the Extension](#installing-the-extension)
+- [Building a Wheel](#building-a-wheel)
+- [Versioning](#versioning)
+- [Continuous Integration](#continuous-integration)
+- [Releases](#releases)
 
 ## Overview
 
