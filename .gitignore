@@ -35,6 +35,7 @@ htmlcov/
 .tox/
 .nox/
 coverage.xml
+test-output.xml
 *.cover
 
 # IDE
