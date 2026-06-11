@@ -2,6 +2,7 @@
 
 - [openlinktoken-ext-truveta](#openlinktoken-ext-truveta)
   - [Overview](#overview)
+  - [Important: Local Dev Routing](#important-local-dev-routing)
   - [Extension Commands](#extension-commands)
     - [Environment Configuration](#environment-configuration)
     - [Upload Validation](#upload-validation)
@@ -19,6 +20,10 @@
 ```text
 olt truveta <subcommand>
 ```
+
+## Important: Local Dev Routing
+
+When `OLT_TRV_LOCAL_DEV` is set to a truthy value (`1`, `true`, `yes`, `y`, or `on`), the extension still authenticates against the configured Truveta domain (default: `truveta.com`), but it sends exchange and upload API calls to `http://localhost:18080`.
 
 ## Extension Commands
 
@@ -56,7 +61,7 @@ ZIP files are uploaded as-is. If a `.metadata.json` file is embedded inside the 
 **Example — full upload flow (recommended):**
 
 ```bash
-olt truveta login --domain dev.truveta-int.com
+olt truveta login
 olt truveta auto-upload -i raw_data.csv
 # Runs initiate-exchange, packages to parquet in a temp dir, uploads, and cleans up automatically.
 ```
@@ -81,24 +86,22 @@ olt truveta initiate-exchange
 olt truveta upload -i tokenized.csv
 ```
 
-**Example — target the dev environment:**
+**Example — target a non-default domain:**
 
 ```bash
-export OLT_TRV_DOMAIN=dev.truveta-int.com
+export OLT_TRV_DOMAIN=truveta-int.com
 olt truveta login
 ```
 
 Supported domain values are:
 
-- `dev.truveta-int.com`
-- `truveta-int.com`
 - `truveta.com`
+- `truveta-int.com`
+- `dev.truveta-int.com`
 
 ### Token Storage
 
 Credentials are cached at `~/.openlinktoken/truveta/<domain>/credentials.json` and auto-evicted 5 minutes before expiry. The selected domain is persisted in `~/.openlinktoken/truveta/session.json`, and non-login commands derive their Auth0 and API URLs from that saved domain. Exchange keypairs are stored per UTC day at `~/.openlinktoken/openlinktoken-YYYY-MM-DD.private.pem` and `~/.openlinktoken/openlinktoken-YYYY-MM-DD.public.pem`. Run `olt truveta logout` to revoke the access token server-side and clear session files.
-
-When `OLT_TRV_LOCAL_DEV` is set to a truthy value (`1`, `true`, `yes`, `y`, or `on`), the extension still authenticates against `dev.truveta-int.com`, but it sends exchange and upload API calls to `http://localhost:18080`.
 
 ## Installing the Extension
 
