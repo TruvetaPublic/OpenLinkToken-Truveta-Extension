@@ -1,6 +1,6 @@
-# openlinktoken-ext-truveta
+# OpenLinkToken Truveta Extension
 
-- [openlinktoken-ext-truveta](#openlinktoken-ext-truveta)
+- [OpenLinkToken Truveta Extension](#openlinktoken-truveta-extension)
   - [Overview](#overview)
   - [Extension Commands](#extension-commands)
     - [Subcommand Overview](#subcommand-overview)
