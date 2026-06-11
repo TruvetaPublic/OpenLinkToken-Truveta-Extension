@@ -4,6 +4,12 @@
   - [Overview](#overview)
   - [Important: Local Dev Routing](#important-local-dev-routing)
   - [Extension Commands](#extension-commands)
+    - [Subcommand Overview](#subcommand-overview)
+    - [login](#login)
+    - [initiate-exchange](#initiate-exchange)
+    - [upload](#upload)
+    - [auto-upload](#auto-upload)
+    - [logout](#logout)
     - [Environment Configuration](#environment-configuration)
     - [Upload Validation](#upload-validation)
     - [Token Storage](#token-storage)
@@ -27,19 +33,65 @@ When `OLT_TRV_LOCAL_DEV` is set to a truthy value (`1`, `true`, `yes`, `y`, or `
 
 ## Extension Commands
 
-| Command                                           | Description                                                          |
-| ------------------------------------------------- | -------------------------------------------------------------------- |
-| `olt truveta login`                               | Authenticate with Truveta via OAuth 2.0 Device Code Flow             |
-| `olt truveta login --force`                       | Re-authenticate, discarding any cached credentials                   |
-| `olt truveta login --domain DOMAIN`               | Authenticate against a specific Truveta domain                       |
-| `olt truveta initiate-exchange`                   | Negotiate exchange config with the Token Service                     |
-| `olt truveta upload -i FILE`                      | Upload a tokenized CSV, Parquet, or ZIP file for overlap analysis    |
-| `olt truveta upload --input FILE`                 | Same as `-i`, long form                                              |
-| `olt truveta upload -i FILE --metadata META.json` | Attach a metadata JSON file (non-ZIP uploads only)                   |
-| `olt truveta upload -i FILE (local dev)`          | Set `OLT_TRV_LOCAL_DEV=1` to upload to a local API                   |
-| `olt truveta auto-upload -i FILE`                 | Convenience: runs initiate-exchange, package, and upload in one step |
-| `olt truveta auto-upload --input FILE`            | Same as `-i`, long form                                              |
-| `olt truveta logout`                              | Revoke and clear all cached Truveta credentials                      |
+### Subcommand Overview
+
+- login: Authenticate with Truveta via OAuth 2.0 Device Code Flow.
+- initiate-exchange: Negotiate exchange config with the Token Service.
+- upload: Upload a tokenized CSV, Parquet, or ZIP file for overlap analysis.
+- auto-upload: Run initiate-exchange, package, and upload in one step.
+- logout: Revoke and clear cached Truveta credentials.
+
+### login
+
+Parameters:
+- --domain DOMAIN: authenticate against a specific Truveta domain.
+- --force: re-authenticate and discard cached credentials.
+
+Example:
+```bash
+olt truveta login
+```
+
+### initiate-exchange
+
+Parameters:
+- none
+
+Example:
+```bash
+olt truveta initiate-exchange
+```
+
+### upload
+
+Parameters:
+- -i FILE, --input FILE: tokenized CSV, Parquet, or ZIP to upload.
+- --metadata META.json: optional metadata JSON for non-ZIP uploads.
+
+Example:
+```bash
+olt truveta upload -i packaged.parquet
+```
+
+### auto-upload
+
+Parameters:
+- -i FILE, --input FILE: raw CSV or Parquet input file.
+
+Example:
+```bash
+olt truveta auto-upload -i raw_data.csv
+```
+
+### logout
+
+Parameters:
+- none
+
+Example:
+```bash
+olt truveta logout
+```
 
 ### Environment Configuration
 
