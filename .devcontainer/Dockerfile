@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/java:3-${JAVA_VERSION}-trixie
+FROM mcr.microsoft.com/devcontainers/python:3-3.12-trixie
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -42,12 +42,12 @@ RUN mkdir -p /home/vscode/.vscode-server \
     /home/vscode/.vscode-server-insiders \
     /home/vscode/.copilot
 
-# # Install UV and global Python CLI tools (each in an isolated uv-managed venv)
-# RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
-#     ~/.local/bin/uv tool install pytest && \
-#     ~/.local/bin/uv tool install autoflake && \
-#     ~/.local/bin/uv tool install flake8 && \
-#     ~/.local/bin/uv tool install bump2version && \
-#     ~/.local/bin/uv tool install build
+# Install UV and global Python CLI tools (each in an isolated uv-managed venv)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    ~/.local/bin/uv tool install pytest && \
+    ~/.local/bin/uv tool install autoflake && \
+    ~/.local/bin/uv tool install flake8 && \
+    ~/.local/bin/uv tool install bump2version && \
+    ~/.local/bin/uv tool install build
 
 ENV PATH="/home/vscode/.local/bin:${PATH}"
