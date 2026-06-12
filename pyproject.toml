@@ -1,6 +1,6 @@
 [project]
 name = "openlinktoken-ext-truveta"
-version = "0.1.0"
+version = "1.0.0"
 requires-python = ">=3.10"
 description = "Open Link Token extension for Truveta-specific CLI commands"
 dependencies = ["requests==2.33.0", "cryptography==46.0.7", "httpx==0.28.1", "pydantic==2.9.2"]
