@@ -1,0 +1,30 @@
+# CODEOWNERS file for Open Link Token repository
+# This file defines individuals or teams that are responsible for code in this repository.
+# For more information, see: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for everything in the repo
+# These owners will be requested for review when someone opens a pull request.
+* @TruvetaPublic/OpenLinkToken-Maintainers
+
+# Java implementation
+/lib/java/ @TruvetaPublic/OpenLinkToken-Maintainers
+
+# Python implementation
+/lib/python/ @TruvetaPublic/OpenLinkToken-Maintainers
+
+# Documentation
+/docs/ @TruvetaPublic/OpenLinkToken-Maintainers
+README.md @TruvetaPublic/OpenLinkToken-Maintainers
+
+# CI/CD and GitHub workflows
+/.github/ @TruvetaPublic/OpenLinkToken-Maintainers
+
+# Docker configuration
+Dockerfile @TruvetaPublic/OpenLinkToken-Maintainers
+.dockerignore @TruvetaPublic/OpenLinkToken-Maintainers
+
+# Build and configuration files
+pom.xml @TruvetaPublic/OpenLinkToken-Maintainers
+/lib/java/openlinktoken/pom.xml @TruvetaPublic/OpenLinkToken-Maintainers
+/lib/python/**/requirements*.txt @TruvetaPublic/OpenLinkToken-Maintainers
+/lib/python/**/setup.py @TruvetaPublic/OpenLinkToken-Maintainers
