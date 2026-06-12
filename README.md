@@ -1,4 +1,4 @@
-# OpenLinkToken Truveta Extension
+# Open Link Token Truveta Extension
 
 - [Overview](#overview)
 - [Extension Commands](#extension-commands)
@@ -9,10 +9,7 @@
   - [auto-upload](#auto-upload)
   - [logout](#logout)
 - [Installing the Extension](#installing-the-extension)
-- [Building a Wheel](#building-a-wheel)
-- [Versioning](#versioning)
-- [Continuous Integration](#continuous-integration)
-- [Releases](#releases)
+- [Developer Guide](#developer-guide)
 
 ## Overview
 
@@ -105,56 +102,4 @@ olt extension install -y file:///$(pwd)/dist/openlinktoken_ext_truveta-0.1.0-py3
 
 ## Developer Guide
 
-Local development setup now lives in [docs/developer-guide.md](docs/developer-guide.md).
-
-## Building a Wheel
-
-```bash
-python -m build
-```
-
-This produces `dist/openlinktoken_ext_truveta-<version>-py3-none-any.whl` and the corresponding source distribution.
-
-## Versioning
-
-This project follows [Semantic Versioning](https://semver.org/). Version bumps are managed with [`bump2version`](https://github.com/c4urself/bump2version) and configured in `.bumpversion.cfg`.
-
-```bash
-# Patch release (0.1.0 -> 0.1.1) — bug fixes
-bump2version patch
-
-# Minor release (0.1.0 -> 0.2.0) — backwards-compatible features
-bump2version minor
-
-# Major release (0.1.0 -> 1.0.0) — breaking changes
-bump2version major
-```
-
-`bump2version` updates the version in `pyproject.toml` and `src/main/openlinktoken_ext_truveta/__init__.py`, creates a commit, and tags the commit as `v<new_version>`.
-
-## Continuous Integration
-
-CI is defined in `.github/workflows/ci.yml` and runs on every push and pull request targeting `main`. The workflow:
-
-1. Checks out the source.
-2. Sets up Python 3.12 and uv.
-3. Installs the package with dev extras.
-4. Lints with flake8 and autoflake (unused import detection).
-5. Runs the test suite (`pytest`).
-6. Builds the wheel and sdist (`python -m build`).
-7. Uploads `dist/` as a build artifact (7-day retention).
-
-## Releases
-
-Releases are defined in `.github/workflows/release.yml` and triggered in two ways:
-
-- **Tag push** — push a `v*` tag (created by `bump2version`) to build and publish.
-- **Manual dispatch** — enter a version number in the GitHub Actions UI.
-
-The release workflow:
-
-1. Builds the wheel and sdist, then publishes them to GitHub Releases.
-2. Builds standalone executables for Linux, Windows, and macOS using PyInstaller.
-3. Attaches all artifacts to the GitHub Release.
-
-The standalone binary bundles both the `openlinktoken` CLI and the Truveta extension into a single file — no Python installation required for end users.
+Local development setup, build/wheel instructions, versioning, CI, and release workflow details live in [docs/developer-guide.md](docs/developer-guide.md).
