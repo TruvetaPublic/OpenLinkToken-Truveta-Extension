@@ -104,10 +104,10 @@ Once a wheel is built (or downloaded from a release), install it via the `olt` C
 
 ```bash
 # From a local build
-olt extension install file:///$(pwd)/dist/openlinktoken_ext_truveta-0.1.0-py3-none-any.whl
+olt extension install file:///$(pwd)/dist/openlinktoken_ext_truveta-1.0.0-py3-none-any.whl
 
 # Pass --yes / -y to skip the security confirmation prompt
-olt extension install -y file:///$(pwd)/dist/openlinktoken_ext_truveta-0.1.0-py3-none-any.whl
+olt extension install -y file:///$(pwd)/dist/openlinktoken_ext_truveta-1.0.0-py3-none-any.whl
 ```
 
 ## Developer Guide

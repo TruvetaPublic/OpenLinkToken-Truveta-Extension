@@ -55,7 +55,7 @@ class TruvetaExtension(OpenLinkTokenExtension):
         Returns:
             The semantic version string for the installed extension package.
         """
-        return "0.1.0"
+        return "1.0.0"
 
     def register_subcommand(self, subparsers: argparse._SubParsersAction) -> None:
         """
