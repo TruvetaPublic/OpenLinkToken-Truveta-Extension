@@ -1,0 +1,511 @@
+"""
+Copyright (c) Truveta. All rights reserved.
+
+upload command: upload tokenized output data to Truveta for overlap analysis.
+"""
+
+import argparse
+import base64
+import contextlib
+import csv
+import io
+import json
+import sys
+import zipfile
+from pathlib import Path
+from typing import Any
+
+from openlinktoken_ext_truveta.api import upload as upload_api
+from openlinktoken_ext_truveta.api.upload import UploadAPIError, call_upload_endpoint
+from openlinktoken_ext_truveta.commands.common import (
+    AuthenticatedCommandContext,
+    SessionResolutionError,
+    resolve_authenticated_context,
+    resolve_timeout_seconds,
+)
+from openlinktoken_ext_truveta.exchange.config import (
+    ExchangeConfigError,
+    resolve_exchange_payload,
+)
+
+# Preserve test monkeypatch compatibility for requests.post patch targets.
+requests = upload_api.requests
+
+_REQUIRED_COLUMNS = {"RuleId", "Token", "RecordId"}
+_SUPPORTED_DATA_EXTENSIONS = frozenset({".csv", ".parquet"})
+_SUPPORTED_EXTENSIONS = frozenset({".csv", ".parquet", ".zip"})
+_V1_TOKEN_PREFIX = "olt.V1."
+
+
+class UploadValidationError(Exception):
+    """Raised when the data file fails pre-upload validation."""
+
+
+def _validate_csv_columns(file_obj: io.IOBase) -> str | None:
+    """
+    Validate that a CSV stream has the required columns and return one non-blank token value.
+
+    Inputs:
+        file_obj: A readable binary or text stream positioned at the start of the CSV.
+
+    Returns:
+        The first non-blank Token value found, or None if all tokens are blank.
+    """
+    text_stream = (
+        io.TextIOWrapper(file_obj, encoding="utf-8")
+        if isinstance(file_obj, (io.RawIOBase, io.BufferedIOBase))
+        else file_obj
+    )
+    reader = csv.DictReader(text_stream)
+    columns = set(reader.fieldnames or [])
+    missing = _REQUIRED_COLUMNS - columns
+    if missing:
+        raise UploadValidationError(
+            f"File is missing required columns: {', '.join(sorted(missing))}. "
+            f"Expected: {', '.join(sorted(_REQUIRED_COLUMNS))}"
+        )
+    for row in reader:
+        token = row.get("Token", "")
+        if token and token != "0" * 64:
+            return token
+    return None
+
+
+def _validate_parquet_columns(file_bytes: bytes) -> str | None:
+    """
+    Validate that a Parquet byte buffer has the required columns and return one non-blank token.
+
+    Inputs:
+        file_bytes: The raw bytes of the Parquet file.
+
+    Returns:
+        The first non-blank Token value found, or None if all tokens are blank.
+    """
+    try:
+        import pyarrow.parquet as pq
+    except ImportError as exc:
+        raise UploadValidationError(
+            "pyarrow is required for Parquet validation. Install with: uv pip install pyarrow"
+        ) from exc
+
+    try:
+        table = pq.read_table(io.BytesIO(file_bytes))
+    except Exception as exc:
+        raise UploadValidationError(f"Could not read Parquet file: {exc}") from exc
+
+    columns = set(table.column_names)
+    missing = _REQUIRED_COLUMNS - columns
+    if missing:
+        raise UploadValidationError(
+            f"File is missing required columns: {', '.join(sorted(missing))}. "
+            f"Expected: {', '.join(sorted(_REQUIRED_COLUMNS))}"
+        )
+    token_col = table.column("Token")
+    for val in token_col:
+        token = val.as_py()
+        if token and token != "0" * 64:
+            return token
+    return None
+
+
+def _validate_schema_and_extract_sample_token(
+    file_path: Path,
+) -> tuple[str | None, dict | None]:
+    """
+    Validate that the upload file has the required schema and extract a sample token.
+
+    For ZIP files the inner data file is inspected without extracting it to disk.
+    The ZIP itself is what gets uploaded.
+
+    Inputs:
+        file_path: Path to the file being uploaded (CSV, Parquet, or ZIP).
+
+    Returns:
+        A tuple of (sample_token, zip_metadata) where:
+        - sample_token is the first non-blank Token value found (or None if all blank).
+        - zip_metadata is the parsed metadata dict embedded in the ZIP, or None for non-ZIP uploads.
+    """
+    suffix = file_path.suffix.lower()
+
+    if suffix == ".zip":
+        return _validate_zip(file_path)
+
+    if suffix == ".csv":
+        with file_path.open("rb") as f:
+            token = _validate_csv_columns(f)
+        return token, None
+
+    if suffix == ".parquet":
+        token = _validate_parquet_columns(file_path.read_bytes())
+        return token, None
+
+    raise UploadValidationError(f"Unsupported file format: {suffix!r}")
+
+
+def _validate_zip(zip_path: Path) -> tuple[str | None, dict | None]:
+    """
+    Validate the contents of a ZIP and return a sample token and embedded metadata.
+
+    Expects exactly one CSV or Parquet data file inside the ZIP.
+
+    Inputs:
+        zip_path: Path to the ZIP file.
+
+    Returns:
+        A tuple of (sample_token, zip_metadata).
+    """
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            all_names = zf.namelist()
+
+            data_names = [
+                n
+                for n in all_names
+                if Path(n).suffix.lower() in _SUPPORTED_DATA_EXTENSIONS
+            ]
+            if not data_names:
+                raise UploadValidationError(
+                    f"ZIP contains no supported data file. "
+                    f"Expected one file with extension: {', '.join(sorted(_SUPPORTED_DATA_EXTENSIONS))}"
+                )
+            if len(data_names) > 1:
+                raise UploadValidationError(
+                    f"ZIP contains multiple data files: {data_names}. "
+                    "Only one CSV or Parquet file is allowed per ZIP."
+                )
+
+            data_name = data_names[0]
+            data_suffix = Path(data_name).suffix.lower()
+
+            try:
+                data_bytes = zf.read(data_name)
+            except RuntimeError as exc:
+                raise UploadValidationError(
+                    "Could not read ZIP entry (password-protected ZIPs are not supported)."
+                ) from exc
+
+            if data_suffix == ".csv":
+                sample_token = _validate_csv_columns(io.BytesIO(data_bytes))
+            else:
+                sample_token = _validate_parquet_columns(data_bytes)
+
+            metadata_names = [
+                n for n in all_names if Path(n).name.endswith(".metadata.json")
+            ]
+            zip_metadata: dict | None = None
+            if metadata_names:
+                try:
+                    zip_metadata = json.loads(
+                        zf.read(metadata_names[0]).decode("utf-8")
+                    )
+                except Exception:
+                    zip_metadata = None
+
+            return sample_token, zip_metadata
+
+    except zipfile.BadZipFile as exc:
+        raise UploadValidationError(f"File is not a valid ZIP archive: {exc}") from exc
+
+
+def _decrypt_sample_token(token: str, transport_key: bytes) -> None:
+    """
+    Attempt to decrypt a token using the given transport key.
+
+    Inputs:
+        token: The raw token string (may include the 'olt.V1.' prefix).
+        transport_key: The 32-byte AES-GCM key derived from the exchange config.
+
+    Returns:
+        None. Raises UploadValidationError on decryption failure.
+    """
+    try:
+        from jwcrypto import jwe, jwk
+    except ImportError as exc:
+        raise UploadValidationError(
+            "jwcrypto is required for token validation. Install with: uv pip install jwcrypto"
+        ) from exc
+
+    jwe_body = (
+        token[len(_V1_TOKEN_PREFIX) :] if token.startswith(_V1_TOKEN_PREFIX) else token
+    )
+    key_b64 = base64.urlsafe_b64encode(transport_key).decode().rstrip("=")
+    jwk_key = jwk.JWK(kty="oct", k=key_b64)
+    try:
+        jwe_token = jwe.JWE()
+        jwe_token.deserialize(jwe_body)
+        jwe_token.decrypt(jwk_key)
+    except Exception as exc:
+        raise UploadValidationError(
+            "Token decryption failed. The file was not encrypted with the current exchange config. "
+            "Re-package the data using 'olt package --exchange-config <current-config>'."
+        ) from exc
+
+
+def _validate_token_encryption(sample_token: str | None, domain: str) -> None:
+    """
+    Validate that a sample token can be decrypted using the current exchange config.
+
+    Skipped when sample_token is None (all tokens were blank) or when the token
+    does not use the V1 JWE format.
+
+    Inputs:
+        sample_token: A token value from the data file to test decryption against.
+        domain: The storage domain used to locate the cached exchange config.
+
+    Returns:
+        None. Raises UploadValidationError or ExchangeConfigError on failure.
+    """
+    if not sample_token or not sample_token.startswith(_V1_TOKEN_PREFIX):
+        return
+
+    try:
+        from openlinktoken.exchange_config import derive_transport_encryption_key
+
+        from openlinktoken_ext_truveta.exchange.config import (
+            _load_resolve_exchange_inputs,
+        )
+        from openlinktoken_ext_truveta.exchange.config import (
+            load_exchange_config as _load_exchange_config,
+        )
+        from openlinktoken_ext_truveta.paths import (
+            private_key_path as _private_key_path,
+        )
+    except ImportError as exc:
+        raise UploadValidationError(
+            f"Required package for token validation is unavailable: {exc}"
+        ) from exc
+
+    try:
+        exchange_config_raw = _load_exchange_config(domain)
+        private_key_file = _private_key_path()
+        if not private_key_file.exists():
+            raise ExchangeConfigError(f"Private key not found at {private_key_file}")
+        resolve_inputs = _load_resolve_exchange_inputs()
+        resolved = resolve_inputs(
+            exchange_config_value=exchange_config_raw,
+            private_key_value=private_key_file.read_bytes(),
+        )
+        transport_key = derive_transport_encryption_key(resolved)
+    except ExchangeConfigError:
+        raise
+    except Exception as exc:
+        raise UploadValidationError(
+            f"Could not derive transport key from exchange config: {exc}"
+        ) from exc
+
+    _decrypt_sample_token(sample_token, transport_key)
+
+
+def _discover_metadata_file(data_file: Path) -> Path | None:
+    """
+    Find metadata file matching <basename>.metadata.json next to the data file.
+
+    Inputs:
+        data_file: The tokenized data file path.
+
+    Returns:
+        Path to metadata file if present, else None.
+    """
+    candidate = data_file.with_name(f"{data_file.stem}.metadata.json")
+    if candidate.exists() and candidate.is_file():
+        return candidate
+    return None
+
+
+def _build_exchange_metadata(domain: str) -> dict[str, Any]:
+    """
+    Build upload metadata from the cached exchange config.
+
+    Extracts exchange fields required for server-side validation of the encrypt/package flow.
+
+    Inputs:
+        domain: The storage domain key used to locate the cached exchange config.
+
+    Returns:
+        The upload metadata payload derived from the cached exchange configuration.
+    """
+    payload = resolve_exchange_payload(domain)
+
+    required_fields = [
+        "exchangeId",
+        "senderKeyFingerprint",
+        "recipientKeyFingerprint",
+        "curve",
+    ]
+    for required_field in required_fields:
+        if not payload.get(required_field):
+            raise ExchangeConfigError(
+                f"Exchange config is missing required field {required_field!r}"
+            )
+
+    return {
+        "payload": {
+            "exchangeId": payload["exchangeId"],
+            "exchangeName": payload.get("exchangeName"),
+            "senderKeyFingerprint": payload["senderKeyFingerprint"],
+            "recipientKeyFingerprint": payload["recipientKeyFingerprint"],
+            "curve": payload["curve"],
+            "createdAt": payload.get("createdAt"),
+        }
+    }
+
+
+def _upload(args: argparse.Namespace) -> int:
+    """
+    Upload tokenized output data and metadata to Truveta for self-serve overlap analysis.
+
+    Steps:
+    1. Validate the file extension is supported
+    2. Validate schema (required columns: RuleId, Token, RecordId)
+    3. Validate a sample token can be decrypted with the current exchange config
+    4. Resolve metadata (from ZIP, explicit flag, auto-discovery, or generated)
+    5. Authenticate using cached credentials only
+    6. Call POST /v1/upload with multipart form data
+    7. Return upload result
+
+    For ZIP files: the ZIP is uploaded as-is; its contents are only inspected locally
+    for schema and encryption validation. If --metadata is passed with a ZIP, it is
+    ignored with a warning.
+
+    Inputs:
+        args: Parsed CLI arguments containing --file and optional --metadata.
+
+    Returns:
+        Exit code (0 on success, 1 on failure).
+    """
+    input_file = getattr(args, "input", None)
+    metadata_arg = getattr(args, "metadata", None)
+
+    if not input_file:
+        print("Error: --input is required", file=sys.stderr)
+        return 1
+
+    file_path = Path(input_file)
+    if not file_path.exists():
+        print(f"Error: Input file not found: {input_file}", file=sys.stderr)
+        return 1
+
+    if not file_path.is_file():
+        print(f"Error: Input path is not a file: {input_file}", file=sys.stderr)
+        return 1
+
+    suffix = file_path.suffix.lower()
+    if suffix not in _SUPPORTED_EXTENSIONS:
+        supported = ", ".join(sorted(ext.lstrip(".") for ext in _SUPPORTED_EXTENSIONS))
+        print(
+            f"Error: Unsupported file format {suffix!r}. Supported formats: {supported}",
+            file=sys.stderr,
+        )
+        return 1
+
+    is_zip = suffix == ".zip"
+
+    if is_zip and metadata_arg:
+        print(
+            "Warning: --metadata is ignored when uploading a ZIP file. "
+            "Include the metadata file inside the ZIP instead.",
+            file=sys.stderr,
+        )
+
+    # Validate schema and extract a sample token for encryption verification
+    try:
+        sample_token, zip_metadata = _validate_schema_and_extract_sample_token(
+            file_path
+        )
+    except UploadValidationError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    # Resolve metadata path for non-ZIP uploads
+    metadata_path: Path | None
+    if is_zip:
+        metadata_path = None
+    elif metadata_arg:
+        metadata_path = Path(metadata_arg)
+        if not metadata_path.exists() or not metadata_path.is_file():
+            print(
+                f"Error: Metadata file not found: {metadata_arg}",
+                file=sys.stderr,
+            )
+            return 1
+    else:
+        metadata_path = _discover_metadata_file(file_path)
+
+    try:
+        context: AuthenticatedCommandContext = resolve_authenticated_context(args)
+    except SessionResolutionError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    domain = context.storage_domain
+
+    # Ensure exchange config exists and validate token encryption
+    try:
+        exchange_metadata = _build_exchange_metadata(domain)
+    except ExchangeConfigError as exc:
+        print(
+            f"Error: Exchange configuration not found. Run 'olt truveta initiate-exchange' first: {exc}",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        _validate_token_encryption(sample_token, domain)
+    except (UploadValidationError, ExchangeConfigError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    # Upload data and metadata as multipart form data
+    try:
+        with contextlib.ExitStack() as stack:
+            data_handle = stack.enter_context(file_path.open("rb"))
+            files = {
+                "dataFile": (file_path.name, data_handle, "application/octet-stream"),
+            }
+
+            if is_zip and zip_metadata is not None:
+                metadata_json = json.dumps(zip_metadata)
+                files["metadataFile"] = (
+                    f"{file_path.stem}.metadata.json",
+                    metadata_json,
+                    "application/json",
+                )
+            elif not is_zip and metadata_path is not None:
+                metadata_handle = stack.enter_context(metadata_path.open("rb"))
+                files["metadataFile"] = (
+                    metadata_path.name,
+                    metadata_handle,
+                    "application/json",
+                )
+            else:
+                metadata_json = json.dumps(exchange_metadata)
+                files["metadataFile"] = (
+                    f"{file_path.stem}.metadata.json",
+                    metadata_json,
+                    "application/json",
+                )
+
+            payload = call_upload_endpoint(
+                context.api_url,
+                context.credentials.access_token,
+                exchange_metadata["payload"]["exchangeId"],
+                files,
+                timeout_seconds=resolve_timeout_seconds(args),
+            )
+        upload_reference_id = payload.get("uploadReferenceId")
+
+        print("✓ Upload accepted.")
+        if upload_reference_id:
+            print(f"Upload reference ID: {upload_reference_id}")
+
+        return 0
+
+    except FileNotFoundError:
+        print("Error: Could not read input or metadata file", file=sys.stderr)
+        return 1
+    except UploadAPIError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    except Exception as exc:
+        print(f"Upload failed with unexpected error: {exc}", file=sys.stderr)
+        return 1
