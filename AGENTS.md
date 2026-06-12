@@ -1,4 +1,4 @@
-# OpenLinkToken Truveta Extension — Agent Instructions
+# Open Link Token Truveta Extension — Agent Instructions
 
 - [Scope](#scope)
 - [Project Snapshot](#project-snapshot)
