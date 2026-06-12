@@ -1,0 +1,66 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "OLT: Login",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "openlinktoken_cli.main",
+            "args": ["truveta", "login"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "OLT: Initiate Exchange",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "openlinktoken_cli.main",
+            "args": ["truveta", "initiate-exchange"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "OLT: Upload",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "openlinktoken_cli.main",
+            "args": ["truveta", "upload", "--input", "${input:inputFile}"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "OLT: Auto Upload",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "openlinktoken_cli.main",
+            "args": ["truveta", "auto-upload", "--input", "${input:inputFile}"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "OLT: Logout",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "openlinktoken_cli.main",
+            "args": ["truveta", "logout"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Python: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        }
+    ],
+    "inputs": [
+        {
+            "id": "inputFile",
+            "type": "promptString",
+            "description": "Path to input file (CSV or Parquet)",
+            "default": "src/test/resources/launch/sample.csv"
+        }
+    ]
+}
