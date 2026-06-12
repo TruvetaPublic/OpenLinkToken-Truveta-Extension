@@ -1,10 +1,37 @@
 {
-    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
     "python.testing.pytestEnabled": true,
-    "python.testing.pytestArgs": ["src/test"],
-    "python.analysis.extraPaths": ["src/main"],
-    "editor.formatOnSave": true,
+    "python.testing.pytestArgs": [
+        "src/test"
+    ],
+    "python.analysis.extraPaths": [
+        "src/main"
+    ],
+    "python.terminal.activateEnvironment": true,
     "[python]": {
         "editor.defaultFormatter": "ms-python.black-formatter"
-    }
+    },
+    "terminal.integrated.scrollback": 10000,
+    "editor.formatOnPaste": true,
+    "editor.formatOnSave": true,
+    "editor.formatOnType": true,
+    "workbench.colorCustomizations": {
+        "titleBar.activeBackground": "#096ac4",
+        "titleBar.inactiveBackground": "#096ac4"
+    },
+    "files.trimFinalNewlines": true,
+    "files.eol": "\n",
+    "files.exclude": {
+        ".worktrees/**": true
+    },
+    "files.watcherExclude": {
+        ".worktrees/**": true
+    },
+    "python.testing.autoTestDiscoverOnSaveEnabled": true,
+    "python.testing.pytestPath": "pytest",
+    "testing.showInlineOutput": true,
+    "python.analysis.typeCheckingMode": "basic",
+    "[markdown]": {
+        "editor.defaultFormatter": "yzhang.markdown-all-in-one"
+    },
+    "chat.useAgentSkills": true
 }

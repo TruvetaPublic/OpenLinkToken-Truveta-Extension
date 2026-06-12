@@ -7,13 +7,25 @@ ENV DEBIAN_FRONTEND=noninteractive
 # 62D54FD4003F6525 which is no longer in their pubkey.gpg
 RUN rm -f /etc/apt/sources.list.d/yarn.list
 
+# Check for Zscaler certificates and install if found using external script
+COPY .devcontainer/scripts/detect_zscaler.sh /tmp/
+
+# Copy host-provided certificate if it exists (will be skipped if file doesn't exist)
+COPY .devcontainer/scripts/zscaler_root.pem* /tmp/host_zscaler_cert.pem
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
     ca-certificates \
-    openssl \
     curl \
     git \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+    openssl && \
+    # Make the script executable and run it
+    chmod +x /tmp/detect_zscaler.sh && \
+    /tmp/detect_zscaler.sh && \
+    # Clean up temporary files
+    echo "===> Cleaning up temporary files" && \
+    rm -rf /tmp/detect_zscaler.sh /tmp/zscaler_certs /tmp/host_zscaler_cert.pem && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
@@ -30,14 +42,12 @@ RUN mkdir -p /home/vscode/.vscode-server \
     /home/vscode/.vscode-server-insiders \
     /home/vscode/.copilot
 
-# Install UV and global Python CLI tools (each in an isolated uv-managed venv)
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
-    ~/.local/bin/uv tool install pytest && \
-    ~/.local/bin/uv tool install autoflake && \
-    ~/.local/bin/uv tool install flake8 && \
-    ~/.local/bin/uv tool install bump2version && \
-    ~/.local/bin/uv tool install build
-
-ENV PATH="/home/vscode/.local/bin:${PATH}"
+# # Install UV and global Python CLI tools (each in an isolated uv-managed venv)
+# RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+#     ~/.local/bin/uv tool install pytest && \
+#     ~/.local/bin/uv tool install autoflake && \
+#     ~/.local/bin/uv tool install flake8 && \
+#     ~/.local/bin/uv tool install bump2version && \
+#     ~/.local/bin/uv tool install build
 
 ENV PATH="/home/vscode/.local/bin:${PATH}"
