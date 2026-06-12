@@ -25,6 +25,7 @@ from openlinktoken_ext_truveta.commands.common import (
 )
 from openlinktoken_ext_truveta.exchange.config import (
     ExchangeConfigError,
+    resolve_exchange_config_path,
     resolve_exchange_payload,
 )
 
@@ -485,6 +486,23 @@ def _upload(args: argparse.Namespace) -> int:
                     "application/json",
                 )
 
+            exchange_config_file = resolve_exchange_config_path()
+            if not exchange_config_file.exists():
+                print(
+                    f"Error: Exchange config file not found at {exchange_config_file}. "
+                    "Run 'olt truveta initiate-exchange' to generate it.",
+                    file=sys.stderr,
+                )
+                return 1
+            exchange_config_handle = stack.enter_context(
+                exchange_config_file.open("rb")
+            )
+            files["exchangeConfigFile"] = (
+                exchange_config_file.name,
+                exchange_config_handle,
+                "application/json",
+            )
+
             payload = call_upload_endpoint(
                 context.api_url,
                 context.credentials.access_token,
@@ -500,8 +518,11 @@ def _upload(args: argparse.Namespace) -> int:
 
         return 0
 
-    except FileNotFoundError:
-        print("Error: Could not read input or metadata file", file=sys.stderr)
+    except FileNotFoundError as exc:
+        print(
+            f"Error: Could not read input, metadata, or exchange config file: {exc}",
+            file=sys.stderr,
+        )
         return 1
     except UploadAPIError as exc:
         print(str(exc), file=sys.stderr)
