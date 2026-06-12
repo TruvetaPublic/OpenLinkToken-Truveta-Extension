@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/python:1-3.12-bookworm
+FROM mcr.microsoft.com/devcontainers/java:3-${JAVA_VERSION}-trixie
 
 ENV DEBIAN_FRONTEND=noninteractive
 

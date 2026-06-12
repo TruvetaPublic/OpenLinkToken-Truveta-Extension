@@ -10,11 +10,8 @@
 
 ## Affected surfaces
 
-- [ ] Java
 - [ ] Python
-- [ ] CLI
-- [ ] PySpark
-- [ ] Docs / GitHub Pages
+- [ ] Docs
 - [ ] CI / workflows / agent instructions
 - [ ] Release process
 

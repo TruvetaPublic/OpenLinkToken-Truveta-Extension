@@ -98,6 +98,67 @@ step_activate_shell_init() {
   grep -qF "$activation_line" ~/.zshrc 2>/dev/null || echo "$activation_line" >> ~/.zshrc
 }
 
+# ============================================================================
+# Full setup: prek installation (expensive, only on first creation)
+# ============================================================================
+
+step_install_prek() {
+  skip_if_complete "prek-installed" "prek installation" && return 0
+
+  echo "→ Installing prek (this may take a few minutes)"
+  "$VENV_DIR/bin/pip" install prek
+
+  echo "→ Installing prek hooks and environments (long-running operation)"
+  "$VENV_DIR/bin/prek" install --install-hooks || \
+    echo "⚠ Warning: Could not install prek hooks (this is normal if git is not initialized)"
+
+  mark_complete "prek-installed"
+}
+
+# ============================================================================
+# APM setup
+# ============================================================================
+
+step_install_rtk() {
+  skip_if_complete "rtk-installed" "rtk installation" && return 0
+
+  if command -v rtk >/dev/null 2>&1; then
+    echo "⊘ Skipping rtk installation (already installed)"
+    mark_complete "rtk-installed"
+    return 0
+  fi
+
+  echo "→ Installing rtk (Rust Token Killer) for token optimization"
+  curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
+  export PATH="$HOME/.local/bin:$PATH"
+
+  mark_complete "rtk-installed"
+}
+
+step_install_apm_cli() {
+  echo "→ Installing apm CLI"
+  uv pip install apm-cli
+}
+
+step_setup_apm() {
+  echo "→ Setting up SSH known hosts for GitHub"
+  mkdir -p ~/.ssh
+  chmod 700 ~/.ssh
+  touch ~/.ssh/known_hosts
+  chmod 600 ~/.ssh/known_hosts
+  if ! ssh-keygen -F github.com -f ~/.ssh/known_hosts >/dev/null 2>&1; then
+    ssh-keyscan github.com >> ~/.ssh/known_hosts 2>/dev/null || true
+  fi
+
+  git config --global --add safe.directory "$REPO_ROOT" 2>/dev/null || true
+
+  if git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "→ Running apm install"
+    cd "$REPO_ROOT"
+    apm install --target copilot || echo "⚠ Warning: apm install failed (continuing anyway)"
+  fi
+}
+
 run_core_setup() {
   step_install_uv
   step_setup_cache_dir
@@ -110,12 +171,18 @@ run_full_setup() {
   run_core_setup
   step_install_packages
   step_activate_shell_init
+  step_install_prek
+  step_install_apm_cli
+  step_setup_apm
+  step_install_rtk
 }
 
 run_refresh_setup() {
   run_core_setup
   step_refresh_packages
   step_activate_shell_init
+  step_install_apm_cli
+  step_setup_apm
 }
 
 main() {

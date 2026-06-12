@@ -55,3 +55,9 @@ tmp/
 uv.lock
 .devcontainer/host-ca-certificates.crt
 .venv
+
+
+# APM dependencies
+apm_modules/
+.agents/
+apm.lock.yaml
