@@ -499,3 +499,14 @@ def resolve_exchange_payload(domain: str) -> dict[str, Any]:
         raise ExchangeConfigError(
             f"Failed to resolve exchange payload for domain {domain!r}: {exc}"
         )
+
+
+def resolve_exchange_config_path() -> Path:
+    """
+    Return the path for today's exchange config file in the current working directory.
+
+    Returns:
+        The expected filesystem path for the date-stamped exchange config file.
+    """
+    today_stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return Path.cwd() / f"openlinktoken-{today_stamp}.exchange.json"
