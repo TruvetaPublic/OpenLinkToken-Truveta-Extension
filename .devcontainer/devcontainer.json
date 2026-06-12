@@ -1,8 +1,6 @@
 {
   "name": "OpenLinkToken-Truveta-Extension",
-  "dockerComposeFile": [
-    "docker-compose.yml"
-  ],
+  "dockerComposeFile": ["docker-compose.yml"],
   "service": "app",
   "workspaceFolder": "/workspaces/OpenLinkToken-Truveta-Extension",
   "features": {
@@ -39,7 +37,7 @@
         "dbaeumer.vscode-eslint"
       ],
       "settings": {
-        "python.defaultInterpreterPath": "/home/vscode/.local/share/openlinktoken-ext-truveta/.venv/bin/python",
+        "python.defaultInterpreterPath": "/home/vscode/.local/share/openlinktoken-ext-truveta/.venv/bin/python"
       }
     }
   },

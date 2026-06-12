@@ -32,10 +32,12 @@ olt truveta <subcommand>
 ### login
 
 Parameters:
+
 - --domain DOMAIN: authenticate against a specific Truveta domain.
 - --force: re-authenticate and discard cached credentials.
 
 Example:
+
 ```bash
 olt truveta login
 ```
@@ -43,9 +45,11 @@ olt truveta login
 ### initiate-exchange
 
 Parameters:
+
 - none
 
 Example:
+
 ```bash
 olt truveta initiate-exchange
 ```
@@ -53,10 +57,12 @@ olt truveta initiate-exchange
 ### upload
 
 Parameters:
+
 - -i FILE, --input FILE: tokenized CSV, Parquet, or ZIP to upload.
 - --metadata META.json: optional metadata JSON for non-ZIP uploads.
 
 Example:
+
 ```bash
 olt truveta upload -i packaged.parquet
 ```
@@ -64,9 +70,11 @@ olt truveta upload -i packaged.parquet
 ### auto-upload
 
 Parameters:
+
 - -i FILE, --input FILE: raw CSV or Parquet input file.
 
 Example:
+
 ```bash
 olt truveta auto-upload -i raw_data.csv
 ```
@@ -74,9 +82,11 @@ olt truveta auto-upload -i raw_data.csv
 ### logout
 
 Parameters:
+
 - none
 
 Example:
+
 ```bash
 olt truveta logout
 ```

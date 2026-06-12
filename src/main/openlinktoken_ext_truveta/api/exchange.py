@@ -18,9 +18,6 @@ from openlinktoken_ext_truveta.openlink_token_service_client.types import (
     ExchangeRequest,
     ExchangeResponse,
 )
-
-# httpx logs every request/response at INFO by default; suppress to keep CLI output clean.
-logging.getLogger("httpx").setLevel(logging.WARNING)
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
     PublicFormat,
@@ -33,6 +30,9 @@ from openlinktoken_ext_truveta.api.common import (
     resolve_timeout_seconds,
     ssl_drop_message,
 )
+
+# httpx logs every request/response at INFO by default; suppress to keep CLI output clean.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 class ExchangeAPIError(Exception):
