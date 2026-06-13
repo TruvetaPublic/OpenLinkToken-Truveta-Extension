@@ -80,7 +80,13 @@ class TruvetaExtension(OpenLinkTokenExtension):
         Returns:
             None. The login, initiate-exchange, and upload subcommands are added.
         """
-        sub = parser.add_subparsers(dest="truveta_subcommand")
+        sub = parser.add_subparsers(
+            title="commands",
+            description="Available commands",
+            dest="truveta_subcommand",
+            metavar="<command>",
+            help="Use 'olt truveta <command> --help' for command-specific help",
+        )
 
         for registrar in (
             _AutoUploadSubcommandRegistrar,
