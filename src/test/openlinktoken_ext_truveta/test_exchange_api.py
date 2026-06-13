@@ -13,7 +13,9 @@ from cryptography.hazmat.primitives.serialization import (
     Encoding,
     PublicFormat,
 )
-from openlink_token_service_client.types import ExchangeResponse
+from openlinktoken_ext_truveta.openlink_token_service_client.types import (
+    ExchangeResponse,
+)
 from openlinktoken_ext_truveta.api.exchange import (
     ExchangeAPIError,
     call_exchange_endpoint,

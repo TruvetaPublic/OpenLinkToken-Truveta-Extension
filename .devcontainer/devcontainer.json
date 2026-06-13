@@ -34,7 +34,8 @@
         "GitHub.vscode-github-actions",
         "GitHub.copilot-chat",
         "ms-python.python",
-        "dbaeumer.vscode-eslint"
+        "dbaeumer.vscode-eslint",
+        "ms-python.debugpy"
       ],
       "settings": {
         "python.defaultInterpreterPath": "/home/vscode/.local/share/openlinktoken-ext-truveta/.venv/bin/python"
