@@ -28,7 +28,9 @@ class TestTruvetaProperties:
         assert self.ext.description == "Truveta-specific Open Link Token commands"
 
     def test_version(self):
-        assert self.ext.version == "1.0.0"
+        from importlib.metadata import version as _pkg_version
+
+        assert self.ext.version == _pkg_version("openlinktoken-ext-truveta")
 
 
 # ---------------------------------------------------------------------------
