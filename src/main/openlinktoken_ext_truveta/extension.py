@@ -4,6 +4,8 @@ Copyright (c) Truveta. All rights reserved.
 
 import argparse
 import os
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 
 from openlinktoken_cli.extension import OpenLinkTokenExtension
 
@@ -55,7 +57,10 @@ class TruvetaExtension(OpenLinkTokenExtension):
         Returns:
             The semantic version string for the installed extension package.
         """
-        return "1.0.0"
+        try:
+            return _pkg_version("openlinktoken-ext-truveta")
+        except PackageNotFoundError:
+            return "unknown"
 
     def register_subcommand(self, subparsers: argparse._SubParsersAction) -> None:
         """
@@ -97,6 +102,8 @@ class TruvetaExtension(OpenLinkTokenExtension):
         ):
             registrar.register(sub)
 
+        extension_version = self.version
+
         def _print_truveta_help(_args) -> int:
             """
             Print help text when no Truveta subcommand is selected.
@@ -107,6 +114,8 @@ class TruvetaExtension(OpenLinkTokenExtension):
             Returns:
                 Exit code 0 after printing the truveta command help text.
             """
+            print(f"openlinktoken-ext-truveta v{extension_version}")
+            print("Truveta CLI Extension — Truveta-specific Open Link Token commands\n")
             parser.print_help()
             return 0
 
