@@ -170,9 +170,7 @@ class TestLoadOrGenerateDomainKeys:
         )
         (key_dir / "openlinktoken-2026-04-27.public.pem").write_text("public-existing")
 
-        private_pem, public_pem = load_or_generate_domain_keys(
-            "test.domain.com", key_date=key_date
-        )
+        private_pem, public_pem = load_or_generate_domain_keys(key_date=key_date)
         assert private_pem == "private-existing"
         assert public_pem == "public-existing"
 
@@ -192,7 +190,7 @@ class TestLoadOrGenerateDomainKeys:
         )
 
         generated_private, generated_public = load_or_generate_domain_keys(
-            "test.domain.com", key_date=key_date
+            key_date=key_date
         )
 
         assert generated_private == private_pem
@@ -220,7 +218,7 @@ class TestLoadOrGenerateDomainKeys:
         monkeypatch.setattr(Path, "write_text", raise_permission_error)
 
         with pytest.raises(KeyManagementError, match="Failed to persist daily keys"):
-            load_or_generate_domain_keys("test.domain.com", key_date=key_date)
+            load_or_generate_domain_keys(key_date=key_date)
 
 
 class TestDecryptHashingSecret:

@@ -1,4 +1,8 @@
-"""Exchange-related APIs and local config/key management helpers."""
+"""
+Copyright (c) Truveta. All rights reserved.
+
+Exchange-related APIs and local config/key management helpers.
+"""
 
 from openlinktoken_ext_truveta.exchange.config import (
     ExchangeConfigError,
