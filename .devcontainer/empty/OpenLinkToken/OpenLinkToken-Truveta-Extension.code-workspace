@@ -1,0 +1,21 @@
+{
+	"folders": [
+		{
+			"path": "../../.."
+		},
+		{
+			"path": "../../../../OpenLinkToken"
+		}
+	],
+	"settings": {
+		"terminal.integrated.scrollback": 10000,
+		"workbench.colorCustomizations": {
+			"titleBar.activeBackground": "#096ac4",
+			"titleBar.inactiveBackground": "#096ac4"
+		},
+		"chat.useAgentSkills": true,
+		"chat.tools.terminal.autoApprove": {
+			"gh": true
+		}
+	}
+}
