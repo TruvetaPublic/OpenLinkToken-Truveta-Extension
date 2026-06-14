@@ -1,6 +1,10 @@
 # Open Link Token Truveta Extension
 
 - [Overview](#overview)
+- [Installation](#installation)
+  - [Quick Install (recommended)](#quick-install-recommended)
+  - [Standalone Distributables](#standalone-distributables)
+  - [Python Extension Install](#python-extension-install)
 - [Extension Commands](#extension-commands)
   - [Subcommand Overview](#subcommand-overview)
   - [login](#login)
@@ -8,7 +12,6 @@
   - [upload](#upload)
   - [auto-upload](#auto-upload)
   - [logout](#logout)
-- [Installing the Extension](#installing-the-extension)
 - [Developer Guide](#developer-guide)
 
 ## Overview
@@ -19,7 +22,78 @@
 olt truveta <subcommand>
 ```
 
-## Extension Commands
+## Installation
+
+### Quick Install (recommended)
+
+**macOS / Linux** — paste into a terminal:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/main/scripts/install.sh | bash
+```
+
+**Windows** — paste into PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/main/scripts/install.ps1 | iex
+```
+
+Both scripts:
+
+- Auto-detect your platform and download the correct binary from the [latest GitHub Release](https://github.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/releases/latest)
+- Install to `~/.local/bin/olt` (macOS/Linux) or `%USERPROFILE%\.local\bin\olt.exe` (Windows) — no administrator privileges required
+- Add the install directory to your PATH if it isn't already
+
+**Version pinning** — install a specific release instead of the latest:
+
+```bash
+# macOS / Linux
+OLT_TRUVETA_VERSION=1.0.0 curl -fsSL https://raw.githubusercontent.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/main/scripts/install.sh | bash
+
+# Windows
+$env:OLT_TRUVETA_VERSION="1.0.0"; irm https://raw.githubusercontent.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/main/scripts/install.ps1 | iex
+```
+
+### Standalone Distributables
+
+Pre-built single-file executables that bundle the OLT CLI and the Truveta extension together — no Python required.
+
+Download the binary for your platform from the [Releases page](https://github.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/releases/latest):
+
+| Platform | Binary                                      | Notes                                              |
+| -------- | ------------------------------------------- | -------------------------------------------------- |
+| macOS    | `olt-truveta-v{version}-macos-universal`    | Universal binary — runs on Intel and Apple Silicon |
+| Linux    | `olt-truveta-v{version}-linux-x86_64`       | x86_64                                             |
+| Windows  | `olt-truveta-v{version}-windows-x86_64.exe` | x86_64                                             |
+
+Each binary is accompanied by a `.zip` archive and a `.sha256` checksum file.
+
+After downloading, make the binary executable and optionally move it onto your PATH:
+
+```bash
+# macOS / Linux
+chmod +x olt-truveta-v*-macos-universal
+mv olt-truveta-v*-macos-universal ~/.local/bin/olt
+olt --help
+```
+
+```powershell
+# Windows — rename and move to a directory on your PATH
+Move-Item olt-truveta-v*-windows-x86_64.exe "$env:USERPROFILE\.local\bin\olt.exe"
+olt --help
+```
+
+### Python Extension Install
+
+If you already have the OLT CLI installed via Python, you can install just this extension from a release wheel:
+
+```bash
+# From a downloaded release wheel
+olt extension install openlinktoken_ext_truveta-1.0.0-py3-none-any.whl
+
+# Pass --yes / -y to skip the security confirmation prompt
+olt extension install -y openlinktoken_ext_truveta-1.0.0-py3-none-any.whl
+```
 
 ### Subcommand Overview
 
@@ -96,18 +170,6 @@ olt truveta logout
 ```bash
 olt truveta login
 olt truveta auto-upload -i raw_data.csv
-```
-
-## Installing the Extension
-
-Once a wheel is built (or downloaded from a release), install it via the `olt` CLI:
-
-```bash
-# From a local build
-olt extension install file:///$(pwd)/dist/openlinktoken_ext_truveta-1.0.0-py3-none-any.whl
-
-# Pass --yes / -y to skip the security confirmation prompt
-olt extension install -y file:///$(pwd)/dist/openlinktoken_ext_truveta-1.0.0-py3-none-any.whl
 ```
 
 ## Developer Guide
