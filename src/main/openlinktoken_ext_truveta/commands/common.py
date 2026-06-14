@@ -100,7 +100,9 @@ def resolve_domain(
         if session_domain:
             return session_domain
     except DomainError as exc:
-        raise SessionResolutionError(str(exc)) from exc
+        raise SessionResolutionError(
+            f"Domain resolution error: {exc}",
+        ) from exc
 
     if allow_default:
         return DEFAULT_DOMAIN

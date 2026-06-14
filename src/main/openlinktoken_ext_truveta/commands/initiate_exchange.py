@@ -50,9 +50,7 @@ def _initiate_exchange(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        local_private_pem, local_public_pem = load_or_generate_domain_keys(
-            context.storage_domain
-        )
+        local_private_pem, local_public_pem = load_or_generate_domain_keys()
     except KeyManagementError as exc:
         print(f"Key management failed: {exc}", file=sys.stderr)
         return 1
