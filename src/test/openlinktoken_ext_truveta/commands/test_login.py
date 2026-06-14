@@ -165,7 +165,6 @@ class TestInitiateExchangeCommand:
 
         assert result == 0
         mock_build.assert_called_once_with(
-            "truveta.com",
             _make_server_response(),
             _sample_keypair()[1],
             _sample_keypair()[0],

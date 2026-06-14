@@ -148,17 +148,17 @@ class TruvetaExtension(OpenLinkTokenExtension):
         return _initiate_exchange(args)
 
     @staticmethod
-    def _logout(args) -> int:
+    def _logout(_args) -> int:
         """
         Revoke tokens and clear cached Truveta session state.
 
         Inputs:
-            args: Parsed CLI arguments.
+            _args: Parsed CLI arguments.
 
         Returns:
             Exit code (0 on success, non-zero on failure).
         """
-        return _logout(args)
+        return _logout()
 
     @staticmethod
     def _upload(args) -> int:

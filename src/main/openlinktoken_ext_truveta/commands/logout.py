@@ -4,7 +4,6 @@ Copyright (c) Truveta. All rights reserved.
 logout command: clear all cached Truveta credentials from disk.
 """
 
-import argparse
 import json
 import sys
 from pathlib import Path
@@ -39,13 +38,11 @@ def _revoke_token(domain: str, access_token: str) -> None:
     )
 
 
-def _logout(args: argparse.Namespace) -> int:
+def _logout() -> int:
     """
     Revoke cached access tokens and delete credential files under ~/.openlinktoken/truveta/.
 
     Inputs:
-        args: Parsed CLI arguments.
-
     Returns:
         Exit code (0 on success, non-zero on failure).
     """

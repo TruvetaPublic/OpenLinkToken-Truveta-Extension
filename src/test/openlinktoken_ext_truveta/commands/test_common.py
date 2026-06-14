@@ -91,12 +91,12 @@ class TestCommonResolution:
     def test_resolve_api_base_url_uses_local_dev_env_var(self, monkeypatch):
         monkeypatch.setenv("OLT_TRV_LOCAL_DEV", "true")
 
-        resolved = resolve_api_base_url(_args(), "dev.truveta-int.com")
+        resolved = resolve_api_base_url("dev.truveta-int.com")
 
         assert resolved == LOCAL_API_URL
 
     def test_resolve_api_base_url_derives_hosted_url_from_domain(self):
-        resolved = resolve_api_base_url(_args(), "dev.truveta-int.com")
+        resolved = resolve_api_base_url("dev.truveta-int.com")
 
         assert resolved == "https://api.dev.truveta-int.com/openlink"
 

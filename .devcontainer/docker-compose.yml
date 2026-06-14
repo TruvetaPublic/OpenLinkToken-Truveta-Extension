@@ -5,6 +5,13 @@ services:
       dockerfile: .devcontainer/Dockerfile
     volumes:
       - ..:/workspaces/OpenLinkToken-Truveta-Extension:cached
+
+      - type: bind
+        source: "${OPENLINKTOKEN_PATH:-./empty/OpenLinkToken}"
+        target: /workspaces/OpenLinkToken
+        bind:
+          create_host_path: true
+
       - openlinktoken-local:/home/vscode/.local
       - openlinktoken-cache:/home/vscode/.cache
       - openlinktoken-copilot:/home/vscode/.copilot
