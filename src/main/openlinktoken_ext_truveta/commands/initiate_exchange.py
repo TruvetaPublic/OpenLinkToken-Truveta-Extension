@@ -68,7 +68,7 @@ def _initiate_exchange(args: argparse.Namespace) -> int:
 
     try:
         config = build_exchange_config(
-            context.storage_domain, server_response, local_public_pem, local_private_pem
+            server_response, local_public_pem, local_private_pem
         )
         config_path = write_exchange_config(context.storage_domain, config)
 

@@ -319,7 +319,6 @@ def _derive_curve_from_public_key(public_key_data: str) -> str:
 
 
 def build_exchange_config(
-    domain: str,
     server_response: dict[str, Any],
     local_public_key_pem: str,
     local_private_key_pem: str,
@@ -328,7 +327,6 @@ def build_exchange_config(
     Build a core-compatible JWE exchange config from server response and local keys.
 
     Inputs:
-        domain: The Truveta domain the exchange configuration is associated with.
         server_response: The parsed exchange API response containing exchange metadata.
         local_public_key_pem: The caller's PEM-encoded public key.
         local_private_key_pem: The caller's PEM-encoded private key used to decrypt the secret.
