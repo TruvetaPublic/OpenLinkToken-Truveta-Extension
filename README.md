@@ -71,9 +71,16 @@ Each binary is accompanied by a `.zip` archive and a `.sha256` checksum file.
 After downloading, make the binary executable and optionally move it onto your PATH:
 
 ```bash
-# macOS / Linux
+# macOS
 chmod +x olt-truveta-v*-macos-universal
 mv olt-truveta-v*-macos-universal ~/.local/bin/olt
+olt --help
+```
+
+```bash
+# Linux
+chmod +x olt-truveta-v*-linux-x86_64
+mv olt-truveta-v*-linux-x86_64 ~/.local/bin/olt
 olt --help
 ```
 
