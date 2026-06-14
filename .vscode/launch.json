@@ -6,7 +6,7 @@
       "type": "debugpy",
       "request": "launch",
       "module": "openlinktoken_cli.main",
-      "args": ["truveta", "login"],
+      "args": ["truveta", "login", "--domain", "${input:loginDomain}"],
       "console": "integratedTerminal",
       "justMyCode": false
     },
@@ -56,6 +56,12 @@
     }
   ],
   "inputs": [
+    {
+      "id": "loginDomain",
+      "type": "promptString",
+      "description": "Domain for login",
+      "default": "truveta.com"
+    },
     {
       "id": "inputFile",
       "type": "promptString",
