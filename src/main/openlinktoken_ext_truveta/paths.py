@@ -121,12 +121,11 @@ def _dated_key_filename(key_type: str, key_date: date | None = None) -> str:
     return f"{_KEY_FILE_PREFIX}-{stamp}.{key_type}.pem"
 
 
-def private_key_path(_domain: str | None = None, key_date: date | None = None) -> Path:
+def private_key_path(key_date: date | None = None) -> Path:
     """
     Return the date-scoped private key path under ~/.openlinktoken.
 
     Inputs:
-        _domain: Unused compatibility parameter retained for existing callers.
         key_date: An optional explicit date override for deterministic key lookup.
 
     Returns:
@@ -135,12 +134,11 @@ def private_key_path(_domain: str | None = None, key_date: date | None = None) -
     return openlinktoken_root_dir() / _dated_key_filename("private", key_date)
 
 
-def public_key_path(_domain: str | None = None, key_date: date | None = None) -> Path:
+def public_key_path(key_date: date | None = None) -> Path:
     """
     Return the date-scoped public key path under ~/.openlinktoken.
 
     Inputs:
-        _domain: Unused compatibility parameter retained for existing callers.
         key_date: An optional explicit date override for deterministic key lookup.
 
     Returns:

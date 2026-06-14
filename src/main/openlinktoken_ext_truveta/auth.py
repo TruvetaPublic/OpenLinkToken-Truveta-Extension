@@ -105,7 +105,12 @@ def _is_token_valid(token: str) -> bool:
         if exp is None:
             return False
         return time.time() < exp - 300
-    except Exception:
+    except (
+        ValueError,
+        KeyError,
+        TypeError,
+        AssertionError,
+    ):
         return False
 
 
@@ -126,7 +131,7 @@ def _read_cache(domain: str) -> Optional[Credentials]:
         data = json.loads(path.read_text())
         access_token = data["access_token"]
         id_token = data["id_token"]
-    except Exception:
+    except (json.JSONDecodeError, IOError, KeyError, TypeError):
         return None
 
     if not _is_token_valid(access_token) or not _is_token_valid(id_token):
