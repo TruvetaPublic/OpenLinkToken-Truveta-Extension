@@ -7,14 +7,18 @@ Shared filesystem path helpers for the OpenLinkToken Truveta extension.
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+from openlinktoken_cli.util.app_paths import (
+    get_logs_dir,
+    get_openlinktoken_home,
+)
+
 _SESSION_FILE_NAME = "session.json"
-_OPENLINKTOKEN_DIR_NAME = ".openlinktoken"
 _KEY_FILE_PREFIX = "openlinktoken"
 
 
 def openlinktoken_root_dir() -> Path:
     """
-    Return the OpenLinkToken root directory (~/.openlinktoken).
+    Return the OpenLinkToken root directory resolved by the CLI utility.
 
     Inputs:
         None.
@@ -22,7 +26,20 @@ def openlinktoken_root_dir() -> Path:
     Returns:
         The filesystem path to the shared OpenLinkToken home directory.
     """
-    return Path.home() / _OPENLINKTOKEN_DIR_NAME
+    return get_openlinktoken_home()
+
+
+def openlinktoken_logs_dir() -> Path:
+    """
+    Return the OpenLinkToken logs directory resolved by the CLI utility.
+
+    Inputs:
+        None.
+
+    Returns:
+        The filesystem path to the OpenLinkToken logs directory.
+    """
+    return get_logs_dir()
 
 
 def truveta_root_dir() -> Path:
