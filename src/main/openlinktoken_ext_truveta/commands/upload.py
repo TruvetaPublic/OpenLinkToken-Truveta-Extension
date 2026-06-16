@@ -15,6 +15,10 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+from openlinktoken.tokentransformer.match_token_constants import V1_TOKEN_PREFIX
+from openlinktoken_cli.io.file_extension import FileExtension
+from openlinktoken_cli.processor.token_constants import TokenConstants
+
 from openlinktoken_ext_truveta.api import upload as upload_api
 from openlinktoken_ext_truveta.api.upload import UploadAPIError, call_upload_endpoint
 from openlinktoken_ext_truveta.commands.common import (
@@ -25,16 +29,22 @@ from openlinktoken_ext_truveta.commands.common import (
 )
 from openlinktoken_ext_truveta.exchange.config import (
     ExchangeConfigError,
+    resolve_exchange_config_path,
     resolve_exchange_payload,
 )
 
 # Preserve test monkeypatch compatibility for requests.post patch targets.
 requests = upload_api.requests
 
-_REQUIRED_COLUMNS = {"RuleId", "Token", "RecordId"}
-_SUPPORTED_DATA_EXTENSIONS = frozenset({".csv", ".parquet"})
-_SUPPORTED_EXTENSIONS = frozenset({".csv", ".parquet", ".zip"})
-_V1_TOKEN_PREFIX = "olt.V1."
+_REQUIRED_COLUMNS = {
+    TokenConstants.RULE_ID,
+    TokenConstants.TOKEN,
+    TokenConstants.RECORD_ID,
+}
+_SUPPORTED_DATA_EXTENSIONS = frozenset({FileExtension.CSV, FileExtension.PARQUET})
+_SUPPORTED_EXTENSIONS = frozenset(
+    {FileExtension.CSV, FileExtension.PARQUET, FileExtension.ZIP}
+)
 
 
 class UploadValidationError(Exception):
@@ -226,7 +236,7 @@ def _decrypt_sample_token(token: str, transport_key: bytes) -> None:
         ) from exc
 
     jwe_body = (
-        token[len(_V1_TOKEN_PREFIX) :] if token.startswith(_V1_TOKEN_PREFIX) else token
+        token[len(V1_TOKEN_PREFIX) :] if token.startswith(V1_TOKEN_PREFIX) else token
     )
     key_b64 = base64.urlsafe_b64encode(transport_key).decode().rstrip("=")
     jwk_key = jwk.JWK(kty="oct", k=key_b64)
@@ -255,7 +265,7 @@ def _validate_token_encryption(sample_token: str | None, domain: str) -> None:
     Returns:
         None. Raises UploadValidationError or ExchangeConfigError on failure.
     """
-    if not sample_token or not sample_token.startswith(_V1_TOKEN_PREFIX):
+    if not sample_token or not sample_token.startswith(V1_TOKEN_PREFIX):
         return
 
     try:
@@ -485,6 +495,23 @@ def _upload(args: argparse.Namespace) -> int:
                     "application/json",
                 )
 
+            exchange_config_file = resolve_exchange_config_path()
+            if not exchange_config_file.exists():
+                print(
+                    f"Error: Exchange config file not found at {exchange_config_file}. "
+                    "Run 'olt truveta initiate-exchange' to generate it.",
+                    file=sys.stderr,
+                )
+                return 1
+            exchange_config_handle = stack.enter_context(
+                exchange_config_file.open("rb")
+            )
+            files["exchangeConfigFile"] = (
+                exchange_config_file.name,
+                exchange_config_handle,
+                "application/json",
+            )
+
             payload = call_upload_endpoint(
                 context.api_url,
                 context.credentials.access_token,
@@ -500,8 +527,11 @@ def _upload(args: argparse.Namespace) -> int:
 
         return 0
 
-    except FileNotFoundError:
-        print("Error: Could not read input or metadata file", file=sys.stderr)
+    except FileNotFoundError as exc:
+        print(
+            f"Error: Could not read input, metadata, or exchange config file: {exc}",
+            file=sys.stderr,
+        )
         return 1
     except UploadAPIError as exc:
         print(str(exc), file=sys.stderr)
