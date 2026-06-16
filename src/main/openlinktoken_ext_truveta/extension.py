@@ -4,6 +4,8 @@ Copyright (c) Truveta. All rights reserved.
 
 import argparse
 import os
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 
 from openlinktoken_cli.extension import OpenLinkTokenExtension
 
@@ -55,7 +57,10 @@ class TruvetaExtension(OpenLinkTokenExtension):
         Returns:
             The semantic version string for the installed extension package.
         """
-        return "0.1.0"
+        try:
+            return _pkg_version("openlinktoken-ext-truveta")
+        except PackageNotFoundError:
+            return "unknown"
 
     def register_subcommand(self, subparsers: argparse._SubParsersAction) -> None:
         """
@@ -80,7 +85,13 @@ class TruvetaExtension(OpenLinkTokenExtension):
         Returns:
             None. The login, initiate-exchange, and upload subcommands are added.
         """
-        sub = parser.add_subparsers(dest="truveta_subcommand")
+        sub = parser.add_subparsers(
+            title="commands",
+            description="Available commands",
+            dest="truveta_subcommand",
+            metavar="<command>",
+            help="Use 'olt truveta <command> --help' for command-specific help",
+        )
 
         for registrar in (
             _AutoUploadSubcommandRegistrar,
@@ -90,6 +101,8 @@ class TruvetaExtension(OpenLinkTokenExtension):
             _UploadSubcommandRegistrar,
         ):
             registrar.register(sub)
+
+        extension_version = self.version
 
         def _print_truveta_help(_args) -> int:
             """
@@ -101,6 +114,8 @@ class TruvetaExtension(OpenLinkTokenExtension):
             Returns:
                 Exit code 0 after printing the truveta command help text.
             """
+            print(f"openlinktoken-ext-truveta v{extension_version}")
+            print("Truveta CLI Extension — Truveta-specific Open Link Token commands\n")
             parser.print_help()
             return 0
 
@@ -133,17 +148,17 @@ class TruvetaExtension(OpenLinkTokenExtension):
         return _initiate_exchange(args)
 
     @staticmethod
-    def _logout(args) -> int:
+    def _logout(_args) -> int:
         """
         Revoke tokens and clear cached Truveta session state.
 
         Inputs:
-            args: Parsed CLI arguments.
+            _args: Parsed CLI arguments.
 
         Returns:
             Exit code (0 on success, non-zero on failure).
         """
-        return _logout(args)
+        return _logout()
 
     @staticmethod
     def _upload(args) -> int:

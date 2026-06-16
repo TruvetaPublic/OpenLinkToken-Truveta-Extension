@@ -100,7 +100,9 @@ def resolve_domain(
         if session_domain:
             return session_domain
     except DomainError as exc:
-        raise SessionResolutionError(str(exc)) from exc
+        raise SessionResolutionError(
+            f"Domain resolution error: {exc}",
+        ) from exc
 
     if allow_default:
         return DEFAULT_DOMAIN
@@ -110,12 +112,11 @@ def resolve_domain(
     )
 
 
-def resolve_api_base_url(args: argparse.Namespace, domain: str) -> str:
+def resolve_api_base_url(domain: str) -> str:
     """
     Resolve the API base URL for hosted and local-dev command execution.
 
     Inputs:
-        args: Parsed CLI arguments.
         domain: The validated Truveta domain for hosted API routing.
 
     Returns:
@@ -162,7 +163,7 @@ def resolve_authenticated_context(
         API URL, storage domain key, and cached credentials.
     """
     domain = resolve_domain(args)
-    api_url = resolve_api_base_url(args, domain)
+    api_url = resolve_api_base_url(domain)
 
     try:
         credentials = ensure_auth(domain, cached_only=True)

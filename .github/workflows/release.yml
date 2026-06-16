@@ -1,168 +1,220 @@
 name: Release
 
 on:
-    push:
-        tags:
-            - "v*"
-    workflow_dispatch:
-        inputs:
-            version:
-                description: "Version to release (e.g., 0.1.0)"
-                required: true
-                type: string
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g., 1.0.0)"
+        required: false
+        type: string
+  workflow_run:
+    workflows: ["Create Release on Merge"]
+    types: [completed]
 
 permissions:
-    contents: read
+  contents: read
 
 jobs:
-    build-and-release:
-        name: Build wheel and publish to GitHub Releases
-        runs-on: ubuntu-latest
-        permissions:
-            contents: write
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
+  release-info:
+    uses: ./.github/workflows/release-context.yml
+    secrets: inherit
+    with:
+      lookup-release: ${{ github.event_name != 'push' }}
+      release-tag: ${{ github.event_name == 'push' && github.ref_name || github.event.inputs.version && format('v{0}', github.event.inputs.version) || '' }}
 
-            - name: Set up Python
-              uses: actions/setup-python@v5
-              with:
-                  python-version: "3.12"
+  build-and-release:
+    name: Build wheel and publish to GitHub Releases
+    needs: release-info
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.release-info.outputs.version }}
+      TAG: ${{ needs.release-info.outputs.tag }}
+      RELEASE_FOUND: ${{ needs.release-info.outputs['release-found'] }}
+      RELEASE_ID: ${{ needs.release-info.outputs['release-id'] }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-            - name: Install uv
-              uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
-              with:
-                  enable-cache: true
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-            - name: Install package with dev extras
-              run: uv pip install --system -e ".[dev]"
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
 
-            - name: Build wheel and sdist
-              run: uv build
+      - name: Install package with dev extras
+        run: uv pip install --system -e ".[dev]"
 
-            - name: Resolve release tag
-              id: tag
-              run: |
-                  if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-                    echo "tag=v${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
-                  else
-                    echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-                  fi
+      - name: Build wheel and sdist
+        run: uv build
 
-            - name: Create git tag (workflow_dispatch only)
-              if: github.event_name == 'workflow_dispatch'
-              run: |
-                  git config user.name "github-actions[bot]"
-                  git config user.email "github-actions[bot]@users.noreply.github.com"
-                  tag="${{ steps.tag.outputs.tag }}"
-                  if git rev-parse "refs/tags/${tag}" >/dev/null 2>&1 || git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
-                    echo "Tag ${tag} already exists, skipping tag creation."
-                  else
-                    git tag "${tag}"
-                    git push origin "${tag}"
-                  fi
+      - name: Create git tag (workflow_dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          tag="${{ env.TAG }}"
+          if git rev-parse "refs/tags/${tag}" >/dev/null 2>&1 || git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "Tag ${tag} already exists, skipping tag creation."
+          else
+            git tag "${tag}"
+            git push origin "${tag}"
+          fi
 
-            - name: Upload built distributions as workflow artifacts
-              uses: actions/upload-artifact@v4
-              with:
-                  name: openlinktoken-ext-truveta-${{ steps.tag.outputs.tag }}
-                  path: |
-                      dist/*.whl
-                      dist/*.tar.gz
+      - name: Upload built distributions as workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: openlinktoken-ext-truveta-${{ env.TAG }}
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
 
-            - name: Publish to GitHub Releases
-              uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
-              with:
-                  tag_name: ${{ steps.tag.outputs.tag }}
-                  generate_release_notes: true
-                  files: |
-                      dist/*.whl
-                      dist/*.tar.gz
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          tag_name: ${{ env.TAG }}
+          generate_release_notes: true
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
 
-    build-standalone:
-        name: Build standalone executable (${{ matrix.os }})
-        needs: build-and-release
-        runs-on: ${{ matrix.os }}
-        permissions:
-            contents: write
-        strategy:
-            matrix:
-                include:
-                    - os: ubuntu-latest
-                      artifact_name: openlinktoken-truveta-linux-amd64
-                    - os: windows-latest
-                      artifact_name: openlinktoken-truveta-windows-amd64
-                    - os: macos-latest
-                      artifact_name: openlinktoken-truveta-macos-arm64
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
+  build-standalone:
+    name: Build standalone distributable (${{ matrix.os }})
+    needs: [release-info, build-and-release]
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      VERSION: ${{ needs.release-info.outputs.version }}
+      TAG: ${{ needs.release-info.outputs.tag }}
+      RELEASE_FOUND: ${{ needs.release-info.outputs['release-found'] }}
+      RELEASE_ID: ${{ needs.release-info.outputs['release-id'] }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-            - name: Set up Python
-              uses: actions/setup-python@v5
-              with:
-                  python-version: "3.12"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-            - name: Install uv
-              uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
-              with:
-                  enable-cache: true
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
 
-            - name: Install package and PyInstaller
-              run: |
-                  uv pip install --system -e ".[release]"
-                  uv pip install --system pyinstaller
+      - name: Install package and PyInstaller
+        run: |
+          uv pip install --system -e ".[release]"
+          uv pip install --system -r pyinstaller-requirements.txt
 
-            - name: Resolve release tag
-              id: tag
-              shell: bash
-              run: |
-                  if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-                    echo "tag=v${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
-                  else
-                    echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-                  fi
+      - name: Build standalone executable (macOS universal2)
+        if: runner.os == 'macOS'
+        run: pyinstaller --clean --noconfirm --target-arch universal2 openlinktoken-ext-truveta.spec
 
-            - name: Resolve CLI entrypoint
-              id: entrypoint
-              shell: bash
-              run: |
-                  entry="$(python -c "import openlinktoken_cli.__main__ as m, pathlib; print(pathlib.Path(m.__file__).as_posix())")"
-                  echo "path=${entry}" >> "$GITHUB_OUTPUT"
+      - name: Build standalone executable (Linux / Windows)
+        if: runner.os != 'macOS'
+        run: pyinstaller --clean --noconfirm openlinktoken-ext-truveta.spec
 
-            - name: Build standalone executable
-              shell: bash
-              run: |
-                  pyinstaller --onefile --name "${{ matrix.artifact_name }}" \
-                    --hidden-import openlinktoken_ext_truveta \
-                    --collect-submodules openlinktoken_ext_truveta \
-                    --collect-submodules openlinktoken \
-                    --collect-submodules openlinktoken_cli \
-                    --copy-metadata openlinktoken-ext-truveta \
-                    --copy-metadata openlinktoken \
-                    --copy-metadata openlinktoken-cli \
-                    -c -y \
-                    "${{ steps.entrypoint.outputs.path }}"
+      - name: Smoke test (macOS / Linux)
+        if: runner.os != 'Windows'
+        run: |
+          ./dist/olt --help
+          ./dist/olt truveta --help
 
-            - name: Smoke test standalone executable
-              shell: bash
-              run: |
-                  if [ "${{ matrix.os }}" = "windows-latest" ]; then
-                    binary="dist/${{ matrix.artifact_name }}.exe"
-                  else
-                    binary="dist/${{ matrix.artifact_name }}"
-                  fi
-                  "$binary" --help
-                  "$binary" truveta --help
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          .\dist\olt.exe --help
+          .\dist\olt.exe truveta --help
 
-            - name: Upload standalone artifact
-              uses: actions/upload-artifact@v4
-              with:
-                  name: ${{ matrix.artifact_name }}
-                  path: dist/${{ matrix.artifact_name }}*
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          python -m openlinktoken_ext_truveta.util.release_assets \
+            --version "${{ env.VERSION }}" \
+            --runner-os "${{ runner.os }}" \
+            --dist-dir dist \
+            --output-dir release-assets
 
-            - name: Attach standalone to GitHub Release
-              uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
-              with:
-                  tag_name: ${{ steps.tag.outputs.tag }}
-                  files: dist/${{ matrix.artifact_name }}*
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: olt-truveta-${{ env.VERSION }}-${{ matrix.os }}
+          path: release-assets/*
+          if-no-files-found: error
+
+      - name: Upload release assets to GitHub Release
+        if: env.RELEASE_FOUND == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const assetDir = 'release-assets';
+            const tag = '${{ env.TAG }}';
+            let releaseId = '${{ env.RELEASE_ID }}';
+
+            if (!releaseId) {
+              const release = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag,
+              });
+              releaseId = release.data.id;
+            }
+
+            const files = fs.readdirSync(assetDir)
+              .map((name) => path.join(assetDir, name))
+              .filter((filePath) => fs.statSync(filePath).isFile());
+
+            if (files.length === 0) {
+              throw new Error(`No release assets found in ${assetDir}`);
+            }
+
+            const release = await github.rest.repos.getRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: releaseId,
+            });
+            const existingAssets = new Map(release.data.assets.map((asset) => [asset.name, asset.id]));
+
+            for (const filePath of files) {
+              const name = path.basename(filePath);
+              const size = fs.statSync(filePath).size;
+              const existingAssetId = existingAssets.get(name);
+
+              if (existingAssetId) {
+                await github.rest.repos.deleteReleaseAsset({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  asset_id: existingAssetId,
+                });
+              }
+
+              await github.rest.repos.uploadReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: releaseId,
+                name,
+                data: fs.readFileSync(filePath),
+              });
+
+              console.log(`Uploaded ${name} (${size} bytes)`);
+            }

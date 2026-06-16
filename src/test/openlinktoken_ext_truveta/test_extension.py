@@ -28,7 +28,9 @@ class TestTruvetaProperties:
         assert self.ext.description == "Truveta-specific Open Link Token commands"
 
     def test_version(self):
-        assert self.ext.version == "0.1.0"
+        from importlib.metadata import version as _pkg_version
+
+        assert self.ext.version == _pkg_version("openlinktoken-ext-truveta")
 
 
 # ---------------------------------------------------------------------------
@@ -487,13 +489,11 @@ class TestLogoutDispatch:
     """Tests for TruvetaExtension._logout static method."""
 
     def test_logout_dispatches_to_command_handler(self):
-        args = MagicMock()
-
         with patch(
             "openlinktoken_ext_truveta.extension._logout",
             return_value=0,
         ) as mock_logout:
-            result = TruvetaExtension._logout(args)
+            result = TruvetaExtension._logout(MagicMock())
 
         assert result == 0
-        mock_logout.assert_called_once_with(args)
+        mock_logout.assert_called_once_with()

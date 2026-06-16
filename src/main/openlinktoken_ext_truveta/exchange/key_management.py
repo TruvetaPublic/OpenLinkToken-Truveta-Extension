@@ -124,20 +124,17 @@ def load_or_generate_daily_keys(key_date: date | None = None) -> tuple[str, str]
 
 
 def load_or_generate_domain_keys(
-    _domain: str, key_date: date | None = None
+    key_date: date | None = None,
 ) -> tuple[str, str]:
     """
     Load or generate the date-scoped exchange keys.
 
     Inputs:
-        _domain: Unused compatibility parameter retained for existing callers.
         key_date: An optional explicit UTC date used to scope key lookup and persistence.
 
     Returns:
         A tuple of PEM-encoded private and public keys for the resolved day.
 
-    The domain parameter is preserved for compatibility with existing callers,
-    but key storage is global per UTC day under ~/.openlinktoken/.
     """
     return load_or_generate_daily_keys(key_date=key_date)
 

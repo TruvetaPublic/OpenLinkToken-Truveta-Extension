@@ -25,7 +25,7 @@ def read_session_data() -> dict[str, Any]:
     path = session_file_path()
     try:
         session_data = json.loads(path.read_text())
-    except Exception:
+    except (json.JSONDecodeError, IOError, OSError):
         return {}
 
     if not isinstance(session_data, dict):

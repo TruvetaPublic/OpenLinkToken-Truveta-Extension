@@ -91,7 +91,6 @@ def _make_valid_exchange_config() -> dict:
     server_response = _make_server_response(server_public_der_b64)
     with _patch_decrypt():
         return build_exchange_config(
-            "test.domain.com",
             server_response,
             local_public_pem,
             local_private_pem,
@@ -106,7 +105,6 @@ class TestBuildExchangeConfig:
 
         with _patch_decrypt():
             config = build_exchange_config(
-                "test.domain.com",
                 server_response,
                 local_public_pem,
                 local_private_pem,
@@ -172,9 +170,7 @@ class TestBuildExchangeConfig:
             server_response = _make_server_response(server_public_der_b64)
             del server_response[field]
             with _patch_decrypt(), pytest.raises(ExchangeConfigError, match=field):
-                build_exchange_config(
-                    "test.domain.com", server_response, public_pem, _FAKE_PRIVATE_PEM
-                )
+                build_exchange_config(server_response, public_pem, _FAKE_PRIVATE_PEM)
 
     def test_raises_when_decryption_fails(self):
         from openlinktoken_ext_truveta.exchange.key_management import KeyManagementError
@@ -192,9 +188,7 @@ class TestBuildExchangeConfig:
                 ExchangeConfigError, match="Failed to decrypt hashing secret"
             ),
         ):
-            build_exchange_config(
-                "test.domain.com", server_response, public_pem, _FAKE_PRIVATE_PEM
-            )
+            build_exchange_config(server_response, public_pem, _FAKE_PRIVATE_PEM)
 
     def test_decrypt_called_with_correct_arguments(self):
         _, public_pem, _ = _generate_keypair()
@@ -210,9 +204,7 @@ class TestBuildExchangeConfig:
             "openlinktoken_ext_truveta.exchange.config.decrypt_hashing_secret",
             mock_decrypt,
         ):
-            build_exchange_config(
-                "test.domain.com", server_response, public_pem, _FAKE_PRIVATE_PEM
-            )
+            build_exchange_config(server_response, public_pem, _FAKE_PRIVATE_PEM)
 
         mock_decrypt.assert_called_once_with(
             server_response["hashingSecret"],
@@ -277,7 +269,6 @@ class TestBuildExchangeConfig:
             ),
         ):
             build_exchange_config(
-                "test.domain.com",
                 server_response,
                 local_public_pem,
                 local_private_pem,
@@ -294,7 +285,6 @@ class TestBuildExchangeConfig:
 
         with _patch_decrypt(return_value=decrypted_secret, already_encoded=True):
             config = build_exchange_config(
-                "test.domain.com",
                 server_response,
                 local_public_pem,
                 local_private_pem,
@@ -324,7 +314,6 @@ class TestBuildExchangeConfig:
 
         with _patch_decrypt():
             config = build_exchange_config(
-                "test.domain.com",
                 server_response,
                 local_public_pem,
                 local_private_pem,
@@ -341,7 +330,6 @@ class TestBuildExchangeConfig:
 
         with _patch_decrypt():
             config = build_exchange_config(
-                "test.domain.com",
                 server_response,
                 local_public_pem,
                 local_private_pem,
@@ -371,7 +359,6 @@ class TestBuildExchangeConfig:
             side_effect=[hashing_secret_b64, decrypted_iv_b64],
         ):
             config = build_exchange_config(
-                "test.domain.com",
                 server_response,
                 local_public_pem,
                 local_private_pem,
@@ -404,7 +391,6 @@ class TestBuildExchangeConfig:
             side_effect=[hashing_secret_b64, decrypted_iv_b64],
         ):
             config = build_exchange_config(
-                "test.domain.com",
                 server_response,
                 local_public_pem,
                 local_private_pem,
@@ -422,7 +408,6 @@ class TestBuildExchangeConfig:
 
         with _patch_decrypt():
             config = build_exchange_config(
-                "test.domain.com",
                 server_response,
                 local_public_pem,
                 local_private_pem,
@@ -449,9 +434,7 @@ class TestBuildExchangeConfig:
             ),
             pytest.raises(ExchangeConfigError, match="Failed to decrypt rotation IV"),
         ):
-            build_exchange_config(
-                "test.domain.com", server_response, local_public_pem, local_private_pem
-            )
+            build_exchange_config(server_response, local_public_pem, local_private_pem)
 
 
 class TestValidateExchangeExtensionFields:
@@ -599,7 +582,7 @@ class TestLoadExchangeConfig:
 
         with _patch_decrypt():
             config = build_exchange_config(
-                "test.domain.com", server_response, public_pem, _FAKE_PRIVATE_PEM
+                server_response, public_pem, _FAKE_PRIVATE_PEM
             )
 
         write_exchange_config("test.domain.com", config)
@@ -675,7 +658,6 @@ class TestResolveExchangePayload:
 
         with _patch_decrypt():
             config = build_exchange_config(
-                "test.domain.com",
                 server_response,
                 local_public_pem,
                 local_private_pem,
