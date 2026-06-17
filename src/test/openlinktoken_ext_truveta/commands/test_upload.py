@@ -468,7 +468,7 @@ class TestUploadCommand:
                 return_value=exchange_config,
             ),
             patch(
-                "openlinktoken_ext_truveta.commands.upload.requests.post",
+                "openlinktoken_ext_truveta.api.upload.requests.post",
                 side_effect=_post,
             ),
         ):

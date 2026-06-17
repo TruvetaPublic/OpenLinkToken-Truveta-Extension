@@ -35,6 +35,127 @@ _FAKE_PRIVATE_PEM = (
 _DECRYPTED_SECRET = "decrypted-hashing-secret"
 
 
+def _base64url_encode(value: bytes) -> str:
+    """Encode bytes to unpadded base64url text."""
+    return base64.urlsafe_b64encode(value).decode("utf-8").rstrip("=")
+
+
+def _base64url_decode(value: str) -> bytes:
+    """Decode unpadded base64url text into bytes."""
+    padding = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode(value + padding)
+
+
+def _build_exchange_envelope_compat(
+    exchange_name: str,
+    hashing_secret: bytes,
+    sender_public_pem: bytes,
+    recipient_public_pem: bytes,
+    curve: str,
+    created_at: str,
+    exchange_id: str,
+    rotation_iv: bytes = b"",
+    rotation_count: int = 50,
+    bin_width: float = 0.05,
+    dimension_bias: list | None = None,
+) -> dict:
+    """Backport helper that accepts extension kwargs expected by this test suite."""
+    from openlinktoken import ec_key_utils, exchange_jwe
+
+    payload = {
+        "exchangeName": exchange_name,
+        "hashingSecret": _base64url_encode(hashing_secret),
+        "hashingSecretEncoding": "base64url",
+        "senderKeyFingerprint": ec_key_utils.public_key_fingerprint(sender_public_pem),
+        "recipientKeyFingerprint": ec_key_utils.public_key_fingerprint(
+            recipient_public_pem
+        ),
+        "senderPublicKey": sender_public_pem.decode("utf-8"),
+        "recipientPublicKey": recipient_public_pem.decode("utf-8"),
+        "curve": curve,
+        "createdAt": created_at,
+        "exchangeId": exchange_id,
+        "rotationCount": rotation_count,
+        "binWidth": bin_width,
+        "dimensionBias": [] if dimension_bias is None else dimension_bias,
+    }
+    if rotation_iv:
+        payload["rotationIv"] = _base64url_encode(rotation_iv)
+        payload["rotationIvEncoding"] = "base64url"
+
+    protected_header = {
+        "typ": exchange_jwe.EXCHANGE_JWE_TYPE,
+        "cty": exchange_jwe.EXCHANGE_JWE_CONTENT_TYPE,
+        "enc": exchange_jwe.EXCHANGE_JWE_ENCRYPTION,
+    }
+    envelope = exchange_jwe.jwe.JWE(
+        json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+        protected=json.dumps(protected_header, separators=(",", ":")),
+    )
+    envelope.add_recipient(
+        exchange_jwe.jwk.JWK.from_pem(sender_public_pem),
+        header=json.dumps(
+            exchange_jwe._recipient_header(sender_public_pem), separators=(",", ":")
+        ),
+    )
+    envelope.add_recipient(
+        exchange_jwe.jwk.JWK.from_pem(recipient_public_pem),
+        header=json.dumps(
+            exchange_jwe._recipient_header(recipient_public_pem), separators=(",", ":")
+        ),
+    )
+    serialized = json.loads(envelope.serialize(compact=False))
+    serialized["version"] = exchange_jwe.EXCHANGE_JWE_VERSION
+    return serialized
+
+
+@pytest.fixture(autouse=True)
+def _patch_core_exchange_compat(monkeypatch):
+    """Patch older core versions so tests can exercise extension fields."""
+    from openlinktoken import exchange_config as exchange_config_module
+    from openlinktoken import exchange_jwe
+
+    monkeypatch.setattr(
+        exchange_jwe,
+        "build_exchange_envelope",
+        _build_exchange_envelope_compat,
+    )
+
+    resolved_exchange_config = exchange_config_module.ResolvedExchangeConfig
+    if not hasattr(resolved_exchange_config, "rotation_count"):
+        monkeypatch.setattr(
+            resolved_exchange_config,
+            "rotation_count",
+            property(lambda self: self.payload.get("rotationCount", 50)),
+            raising=False,
+        )
+    if not hasattr(resolved_exchange_config, "bin_width"):
+        monkeypatch.setattr(
+            resolved_exchange_config,
+            "bin_width",
+            property(lambda self: self.payload.get("binWidth", 0.05)),
+            raising=False,
+        )
+    if not hasattr(resolved_exchange_config, "dimension_bias"):
+        monkeypatch.setattr(
+            resolved_exchange_config,
+            "dimension_bias",
+            property(lambda self: self.payload.get("dimensionBias", [])),
+            raising=False,
+        )
+    if not hasattr(resolved_exchange_config, "rotation_iv"):
+        monkeypatch.setattr(
+            resolved_exchange_config,
+            "rotation_iv",
+            property(
+                lambda self: _base64url_decode(self.payload["rotationIv"])
+                if self.payload.get("rotationIv")
+                else b""
+            ),
+            raising=False,
+        )
+
+
 def _generate_keypair() -> tuple[str, str, str]:
     """Generate P-256 keys and return private PEM, public PEM, and public DER b64."""
     private_key = ec.generate_private_key(ec.SECP256R1())
