@@ -15,6 +15,28 @@ from openlinktoken_cli.commands.package_command import PackageCommand
 from openlinktoken_ext_truveta.commands.initiate_exchange import _initiate_exchange
 from openlinktoken_ext_truveta.commands.upload import _upload
 
+_STEP_WIDTH = 72
+_GRAY = "\033[90m"
+_RESET = "\033[0m"
+
+
+def _print_step_banner(
+    step: int, total: int, label: str, command: str | None = None
+) -> None:
+    """
+    Print a visual separator that announces a numbered pipeline step.
+
+    Inputs:
+        step: 1-based step number.
+        total: Total number of steps in the pipeline.
+        label: Short human-readable name for the step.
+        command: Optional equivalent CLI command shown in gray under the banner.
+    """
+    prefix = f"── Step {step}/{total}: {label} "
+    print(f"\n{prefix}{('─' * max(0, _STEP_WIDTH - len(prefix)))}")
+    if command:
+        print(f"{_GRAY}   $ {command}{_RESET}")
+
 
 def _auto_upload(args: argparse.Namespace) -> int:
     """
@@ -41,6 +63,7 @@ def _auto_upload(args: argparse.Namespace) -> int:
         print(f"Error: Input path is not a file: {args.input}", file=sys.stderr)
         return 1
 
+    _print_step_banner(1, 3, "Initiate Exchange", "olt truveta initiate-exchange")
     rc = _initiate_exchange(args)
     if rc != 0:
         return rc
@@ -48,12 +71,18 @@ def _auto_upload(args: argparse.Namespace) -> int:
     date_stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     config_path = Path.cwd() / f"openlinktoken-{date_stamp}.exchange.json"
 
-    input_type = input_path.suffix.lstrip(".") or "csv"
-    parquet_name = f"{input_path.stem}_packaged.parquet"
+    zip_name = f"{input_path.stem}_packaged.zip"
+
+    _print_step_banner(
+        2,
+        3,
+        "Package",
+        f"olt package --input {input_path} --output {zip_name}"
+        f" --exchange-config {config_path}",
+    )
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        parquet_path = Path(tmp_dir) / parquet_name
-        metadata_path = parquet_path.with_suffix(".metadata.json")
+        zip_path = Path(tmp_dir) / zip_name
 
         pkg_parser = argparse.ArgumentParser()
         PackageCommand.register_subcommand(pkg_parser.add_subparsers())
@@ -63,24 +92,25 @@ def _auto_upload(args: argparse.Namespace) -> int:
                 "--input",
                 str(input_path),
                 "--output",
-                str(parquet_path),
+                str(zip_path),
                 "--exchange-config",
                 str(config_path),
-                "--input-type",
-                input_type,
-                "--output-type",
-                "parquet",
             ]
         )
-        package_args.input_type = input_type
-        package_args.output_type = "parquet"
         rc = PackageCommand.execute(package_args)
         if rc != 0:
             print("Error: package step failed", file=sys.stderr)
             return 1
 
+        _print_step_banner(
+            3,
+            3,
+            "Upload",
+            f"olt truveta upload --input {zip_path}",
+        )
+
         upload_args = argparse.Namespace(
-            input=str(parquet_path),
-            metadata=str(metadata_path) if metadata_path.exists() else None,
+            input=str(zip_path),
+            metadata=None,
         )
         return _upload(upload_args)

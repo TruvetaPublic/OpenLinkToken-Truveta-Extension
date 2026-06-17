@@ -5,6 +5,7 @@ Unit tests for the upload command.
 """
 
 import argparse
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,7 +16,9 @@ from openlinktoken_ext_truveta.commands.common import (
     AuthenticatedCommandContext,
     SessionResolutionError,
 )
-from openlinktoken_ext_truveta.commands.upload import _upload
+from openlinktoken_ext_truveta.commands.upload import (
+    _upload,
+)
 
 
 class _Response:
@@ -62,6 +65,48 @@ def _context(
     )
 
 
+def _patch_validation(sample_token: str):
+    return patch(
+        "openlinktoken_ext_truveta.commands.upload._validate_schema_and_extract_sample_token",
+        return_value=(sample_token, None),
+    )
+
+
+def _patch_token_encryption():
+    return patch(
+        "openlinktoken_ext_truveta.commands.upload._validate_token_encryption",
+        return_value=None,
+    )
+
+
+def _patch_exchange_payload():
+    return patch(
+        "openlinktoken_ext_truveta.commands.upload.resolve_exchange_payload",
+        return_value={
+            "exchangeId": "ex-1",
+            "hashingSecret": "secret",
+            "senderKeyFingerprint": "sender",
+            "recipientKeyFingerprint": "recipient",
+            "curve": "P-256",
+        },
+    )
+
+
+def _make_zip(tmp_path, *, metadata: dict | None = None) -> Path:
+    import json as _json
+
+    zip_path = tmp_path / "tokens.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("tokens.csv", _valid_csv_content())
+        if metadata is not None:
+            zf.writestr("output.metadata.json", _json.dumps(metadata))
+    return zip_path
+
+
+def _valid_csv_content() -> str:
+    return "RuleId,Token,RecordId\nT1,olt.V1.abc,R1\n"
+
+
 class TestUploadCommand:
     @pytest.fixture(autouse=True)
     def _bypass_file_validation(self, tmp_path_factory):
@@ -89,8 +134,7 @@ class TestUploadCommand:
         metadata_file = tmp_path / "tokenized.metadata.json"
         data_file.write_text("token\nabc")
         metadata_file.write_text(
-            '{"payload":{"exchangeId":"ex-1","senderKeyFingerprint":"sender",'
-            '"recipientKeyFingerprint":"recipient","curve":"P-256"}}'
+            '{"payload":{"exchangeId":"ex-1","senderKeyFingerprint":"sender","recipientKeyFingerprint":"recipient","curve":"P-256"}}'
         )
 
         captured = {}
@@ -123,7 +167,7 @@ class TestUploadCommand:
                 return_value=_context(),
             ),
             patch(
-                "openlinktoken_ext_truveta.commands.upload.requests.post",
+                "openlinktoken_ext_truveta.api.upload.requests.post",
                 side_effect=_post,
             ),
         ):
@@ -134,7 +178,10 @@ class TestUploadCommand:
         assert captured["keys"] == {"dataFile", "metadataFile", "exchangeConfigFile"}
         assert captured["auth"] == "Bearer access-token"
         assert captured["timeout"] == 30
-        assert "Upload accepted" in capsys.readouterr().out
+
+        out_lines = capsys.readouterr().out.splitlines()
+        assert out_lines[0] == "\x1b[32m✓ Upload accepted.\x1b[0m"
+        assert out_lines[1] == "Upload reference ID: upload-123"
 
     def test_missing_credentials_returns_friendly_message(self, tmp_path, capsys):
         data_file = tmp_path / "tokenized.csv"
@@ -187,7 +234,7 @@ class TestUploadCommand:
                 return_value=_context(),
             ),
             patch(
-                "openlinktoken_ext_truveta.commands.upload.requests.post",
+                "openlinktoken_ext_truveta.api.upload.requests.post",
                 return_value=_Response(500, {"error": "server exploded"}, text="boom"),
             ),
         ):
@@ -235,7 +282,7 @@ class TestUploadCommand:
                 return_value=_context(),
             ),
             patch(
-                "openlinktoken_ext_truveta.commands.upload.requests.post",
+                "openlinktoken_ext_truveta.api.upload.requests.post",
                 side_effect=_post,
             ),
         ):
@@ -280,7 +327,7 @@ class TestUploadCommand:
                 return_value=_context(),
             ),
             patch(
-                "openlinktoken_ext_truveta.commands.upload.requests.post",
+                "openlinktoken_ext_truveta.api.upload.requests.post",
                 side_effect=_post,
             ),
         ):
@@ -322,7 +369,7 @@ class TestUploadCommand:
                 ),
             ),
             patch(
-                "openlinktoken_ext_truveta.commands.upload.requests.post",
+                "openlinktoken_ext_truveta.api.upload.requests.post",
                 side_effect=_post,
             ),
         ):
@@ -378,7 +425,7 @@ class TestUploadCommand:
                 ),
             ),
             patch(
-                "openlinktoken_ext_truveta.commands.upload.requests.post",
+                "openlinktoken_ext_truveta.api.upload.requests.post",
                 side_effect=_post,
             ),
         ):

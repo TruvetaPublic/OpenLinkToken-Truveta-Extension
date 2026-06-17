@@ -13,12 +13,12 @@ from cryptography.hazmat.primitives.serialization import (
     Encoding,
     PublicFormat,
 )
-from openlinktoken_ext_truveta.openlink_token_service_client.types import (
-    ExchangeResponse,
-)
 from openlinktoken_ext_truveta.api.exchange import (
     ExchangeAPIError,
     call_exchange_endpoint,
+)
+from openlinktoken_ext_truveta.openlink_token_service_client.types import (
+    ExchangeResponse,
 )
 
 _EC_KEY = generate_private_key(SECP256R1())
@@ -30,17 +30,27 @@ _PUBLIC_KEY_PEM = (
 
 
 def _make_exchange_response(**overrides) -> ExchangeResponse:
-    defaults = {
-        "exchangeId": "ex-123",
-        "encryptedHashingKey": "encrypted-secret",
-        "truvetaPublicKey": "server-spki-b64",
-        "encryptedRotationIv": "encrypted-iv",
-        "numRotations": 30,
-        "binWidth": 0.05,
-        "dimensionBias": None,
+    alias_to_field = {
+        "exchangeId": "exchange_id",
+        "encryptedHashingKey": "encrypted_hashing_key",
+        "truvetaPublicKey": "truveta_public_key",
+        "encryptedRotationIv": "encrypted_rotation_iv",
+        "numRotations": "num_rotations",
+        "binWidth": "bin_width",
+        "dimensionBias": "dimension_bias",
     }
-    defaults.update(overrides)
-    return ExchangeResponse.model_validate(defaults)
+    defaults = {
+        "exchange_id": "ex-123",
+        "encrypted_hashing_key": "encrypted-secret",
+        "truveta_public_key": "server-spki-b64",
+        "encrypted_rotation_iv": "encrypted-iv",
+        "num_rotations": None,
+        "bin_width": None,
+        "dimension_bias": None,
+    }
+    for key, value in overrides.items():
+        defaults[alias_to_field.get(key, key)] = value
+    return ExchangeResponse.model_construct(**defaults)
 
 
 def _make_http_error(status_code: int) -> httpx.HTTPStatusError:
@@ -64,7 +74,7 @@ class TestCallExchangeEndpoint:
             "exchangeId": "ex-123",
             "hashingSecret": "encrypted-secret",
             "serverPublicKey": "server-spki-b64",
-            "rotationCount": 30,
+            "rotationCount": 50,
             "binWidth": 0.05,
             "dimensionBias": [],
             "encryptedRotationIv": "encrypted-iv",
@@ -115,7 +125,34 @@ class TestCallExchangeEndpoint:
                 "https://api.test.com/openlink", public_pem, "test-token"
             )
 
+        assert response["rotationCount"] == 50
+        assert response["binWidth"] == 0.05
+        assert response["dimensionBias"] == []
         assert "encryptedRotationIv" not in response
+
+    def test_applies_defaults_for_null_rotation_fields(self):
+        public_pem = _sample_public_key()
+        mock_response = _make_exchange_response(
+            exchangeId="ex-789",
+            encryptedHashingKey="encrypted-secret",
+            truvetaPublicKey="server-spki-b64",
+            numRotations=None,
+            binWidth=None,
+            dimensionBias=None,
+            encryptedRotationIv=None,
+        )
+
+        with patch(
+            "openlinktoken_ext_truveta.api.exchange._call_exchange_async",
+            new=AsyncMock(return_value=mock_response),
+        ):
+            response = call_exchange_endpoint(
+                "https://api.test.com/openlink", public_pem, "test-token"
+            )
+
+        assert response["rotationCount"] == 50
+        assert response["binWidth"] == 0.05
+        assert response["dimensionBias"] == []
 
     def test_preserves_exchange_id_when_server_provides_one(self):
         public_pem = _sample_public_key()

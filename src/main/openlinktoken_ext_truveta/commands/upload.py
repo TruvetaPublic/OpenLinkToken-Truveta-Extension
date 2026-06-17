@@ -19,7 +19,6 @@ from openlinktoken.tokentransformer.match_token_constants import V1_TOKEN_PREFIX
 from openlinktoken_cli.io.file_extension import FileExtension
 from openlinktoken_cli.processor.token_constants import TokenConstants
 
-from openlinktoken_ext_truveta.api import upload as upload_api
 from openlinktoken_ext_truveta.api.upload import UploadAPIError, call_upload_endpoint
 from openlinktoken_ext_truveta.commands.common import (
     AuthenticatedCommandContext,
@@ -33,8 +32,8 @@ from openlinktoken_ext_truveta.exchange.config import (
     resolve_exchange_payload,
 )
 
-# Preserve test monkeypatch compatibility for requests.post patch targets.
-requests = upload_api.requests
+ANSI_GREEN = "\x1b[32m"
+ANSI_RESET = "\x1b[0m"
 
 _REQUIRED_COLUMNS = {
     TokenConstants.RULE_ID,
@@ -251,7 +250,7 @@ def _decrypt_sample_token(token: str, transport_key: bytes) -> None:
         ) from exc
 
 
-def _validate_token_encryption(sample_token: str | None, domain: str) -> None:
+def _validate_token_encryption(sample_token: str | None) -> None:
     """
     Validate that a sample token can be decrypted using the current exchange config.
 
@@ -260,7 +259,6 @@ def _validate_token_encryption(sample_token: str | None, domain: str) -> None:
 
     Inputs:
         sample_token: A token value from the data file to test decryption against.
-        domain: The storage domain used to locate the cached exchange config.
 
     Returns:
         None. Raises UploadValidationError or ExchangeConfigError on failure.
@@ -286,7 +284,7 @@ def _validate_token_encryption(sample_token: str | None, domain: str) -> None:
         ) from exc
 
     try:
-        exchange_config_raw = _load_exchange_config(domain)
+        exchange_config_raw = _load_exchange_config()
         private_key_file = _private_key_path()
         if not private_key_file.exists():
             raise ExchangeConfigError(f"Private key not found at {private_key_file}")
@@ -322,19 +320,19 @@ def _discover_metadata_file(data_file: Path) -> Path | None:
     return None
 
 
-def _build_exchange_metadata(domain: str) -> dict[str, Any]:
+def _build_exchange_metadata() -> dict[str, Any]:
     """
     Build upload metadata from the cached exchange config.
 
     Extracts exchange fields required for server-side validation of the encrypt/package flow.
 
-    Inputs:
-        domain: The storage domain key used to locate the cached exchange config.
-
     Returns:
-        The upload metadata payload derived from the cached exchange configuration.
+        A dict containing the exchange metadata payload required by the upload endpoint.
+
+    Raises:
+        ExchangeConfigError: If any required field is missing from the exchange config.
     """
-    payload = resolve_exchange_payload(domain)
+    payload = resolve_exchange_payload()
 
     required_fields = [
         "exchangeId",
@@ -447,11 +445,9 @@ def _upload(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
-    domain = context.storage_domain
-
     # Ensure exchange config exists and validate token encryption
     try:
-        exchange_metadata = _build_exchange_metadata(domain)
+        exchange_metadata = _build_exchange_metadata()
     except ExchangeConfigError as exc:
         print(
             f"Error: Exchange configuration not found. Run 'olt truveta initiate-exchange' first: {exc}",
@@ -460,7 +456,7 @@ def _upload(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        _validate_token_encryption(sample_token, domain)
+        _validate_token_encryption(sample_token)
     except (UploadValidationError, ExchangeConfigError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
@@ -521,7 +517,7 @@ def _upload(args: argparse.Namespace) -> int:
             )
         upload_reference_id = payload.get("uploadReferenceId")
 
-        print("✓ Upload accepted.")
+        print(f"{ANSI_GREEN}✓ Upload accepted.{ANSI_RESET}")
         if upload_reference_id:
             print(f"Upload reference ID: {upload_reference_id}")
 

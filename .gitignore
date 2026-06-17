@@ -37,6 +37,7 @@ htmlcov/
 coverage.xml
 test-output.xml
 *.cover
+.venv
 
 # IDE
 .idea/
@@ -53,8 +54,12 @@ tmp/
 
 # uv (lockfile not maintained in git for this repo)
 uv.lock
+
+# DevContainer
+.devcontainer/.env
 .devcontainer/host-ca-certificates.crt
-.venv
+.worktrees/
+
 target/
 
 
@@ -62,4 +67,6 @@ target/
 apm_modules/
 .agents/
 apm.lock.yaml
-.devcontainer/.env
+
+
+openlinktoken-*.exchange.json

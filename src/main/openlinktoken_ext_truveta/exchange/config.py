@@ -42,9 +42,6 @@ from openlinktoken_ext_truveta.exchange.constants import (
     PEM_HEADER_PREFIX,
     REQUIRED_SERVER_RESPONSE_FIELDS,
     ROTATION_COUNT_KEY,
-    ROTATION_IV_ENCODING_KEY,
-    ROTATION_IV_ENCODING_VALUE,
-    ROTATION_IV_KEY,
     SERVER_PUBLIC_KEY_KEY,
 )
 from openlinktoken_ext_truveta.exchange.key_management import (
@@ -358,18 +355,11 @@ def build_exchange_config(
         except KeyManagementError as exc:
             raise ExchangeConfigError(f"Failed to decrypt hashing secret: {exc}")
 
-        build_exchange_envelope = _load_build_exchange_envelope()
-        config = build_exchange_envelope(
-            exchange_name=exchange_name,
-            hashing_secret=_decode_hashing_secret(hashing_secret),
-            sender_public_pem=local_public_key_pem.encode("utf-8"),
-            recipient_public_pem=server_public_key_pem.encode("utf-8"),
-            curve=curve,
-            created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            exchange_id=exchange_id,
-        )
-        _validate_exchange_envelope_shape(config)
+        rotation_count = server_response.get(ROTATION_COUNT_KEY, DEFAULT_ROTATION_COUNT)
+        bin_width = server_response.get(BIN_WIDTH_KEY, DEFAULT_BIN_WIDTH)
+        dimension_bias = server_response.get(DIMENSION_BIAS_KEY)
 
+        rotation_iv = b""
         encrypted_rotation_iv = server_response.get(ENCRYPTED_ROTATION_IV_KEY)
         if encrypted_rotation_iv:
             try:
@@ -381,26 +371,27 @@ def build_exchange_config(
                 )
             except KeyManagementError as exc:
                 raise ExchangeConfigError(f"Failed to decrypt rotation IV: {exc}")
-            raw_iv = base64.b64decode(decrypted_iv_str)
-            config[ROTATION_IV_KEY] = (
-                base64.urlsafe_b64encode(raw_iv).rstrip(b"=").decode("ascii")
+            rotation_iv = base64.b64decode(
+                decrypted_iv_str
+                if isinstance(decrypted_iv_str, str)
+                else decrypted_iv_str.decode("utf-8")
             )
-            config[ROTATION_IV_ENCODING_KEY] = ROTATION_IV_ENCODING_VALUE
 
-        rotation_count = server_response.get(ROTATION_COUNT_KEY)
-        bin_width = server_response.get(BIN_WIDTH_KEY)
-        dimension_bias = server_response.get(DIMENSION_BIAS_KEY)
-        config[ROTATION_COUNT_KEY] = (
-            rotation_count if rotation_count is not None else DEFAULT_ROTATION_COUNT
+        build_exchange_envelope = _load_build_exchange_envelope()
+        config = build_exchange_envelope(
+            exchange_name=exchange_name,
+            hashing_secret=_decode_hashing_secret(hashing_secret),
+            sender_public_pem=local_public_key_pem.encode("utf-8"),
+            recipient_public_pem=server_public_key_pem.encode("utf-8"),
+            curve=curve,
+            created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            exchange_id=exchange_id,
+            rotation_iv=rotation_iv,
+            rotation_count=rotation_count,
+            bin_width=bin_width,
+            dimension_bias=dimension_bias,
         )
-        config[BIN_WIDTH_KEY] = (
-            bin_width if bin_width is not None else DEFAULT_BIN_WIDTH
-        )
-        config[DIMENSION_BIAS_KEY] = (
-            dimension_bias if dimension_bias is not None else []
-        )
-
-        _validate_exchange_extension_fields(config)
+        _validate_exchange_envelope_shape(config)
         return config
 
     except ExchangeConfigError:
@@ -409,12 +400,11 @@ def build_exchange_config(
         raise ExchangeConfigError(f"Failed to build exchange config: {exc}")
 
 
-def write_exchange_config(domain: str, config: dict[str, Any]) -> Path:
+def write_exchange_config(config: dict[str, Any]) -> Path:
     """
     Persist an exchange config to the current directory as openlinktoken-<YYYY-MM-DD>.exchange.json.
 
     Inputs:
-        domain: The Truveta domain associated with the exchange configuration.
         config: The validated exchange configuration envelope to persist.
 
     Returns:
@@ -427,17 +417,12 @@ def write_exchange_config(domain: str, config: dict[str, Any]) -> Path:
         config_path.write_text(json.dumps(config, indent=2))
         return config_path
     except Exception as exc:
-        raise ExchangeConfigError(
-            f"Failed to write exchange config for domain {domain!r}: {exc}"
-        )
+        raise ExchangeConfigError(f"Failed to write exchange config: {exc}")
 
 
-def load_exchange_config(domain: str) -> dict[str, Any]:
+def load_exchange_config() -> dict[str, Any]:
     """
     Load an exchange config from the current directory only.
-
-    Inputs:
-        domain: The Truveta domain associated with the expected exchange configuration.
 
     Returns:
         The parsed exchange configuration JSON object for the current UTC date.
@@ -460,22 +445,17 @@ def load_exchange_config(domain: str) -> dict[str, Any]:
     except ExchangeConfigError:
         raise
     except Exception as exc:
-        raise ExchangeConfigError(
-            f"Failed to load exchange config for domain {domain!r}: {exc}"
-        )
+        raise ExchangeConfigError(f"Failed to load exchange config: {exc}")
 
 
-def resolve_exchange_payload(domain: str) -> dict[str, Any]:
+def resolve_exchange_payload() -> dict[str, Any]:
     """
     Resolve a decrypted exchange payload from a JWE config.
-
-    Inputs:
-        domain: The Truveta domain associated with the exchange configuration to resolve.
 
     Returns:
         The decrypted exchange payload JSON object produced by OpenLinkToken core.
     """
-    config = load_exchange_config(domain)
+    config = load_exchange_config()
 
     private_key_path_value = private_key_path()
     if not private_key_path_value.exists():
@@ -494,9 +474,7 @@ def resolve_exchange_payload(domain: str) -> dict[str, Any]:
     except ExchangeConfigError:
         raise
     except Exception as exc:
-        raise ExchangeConfigError(
-            f"Failed to resolve exchange payload for domain {domain!r}: {exc}"
-        )
+        raise ExchangeConfigError(f"Failed to resolve exchange payload: {exc}")
 
 
 def resolve_exchange_config_path() -> Path:

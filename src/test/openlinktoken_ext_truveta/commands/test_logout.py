@@ -4,9 +4,14 @@ Copyright (c) Truveta. All rights reserved.
 Unit tests for the logout command.
 """
 
+import argparse
 from unittest.mock import patch
 
 from openlinktoken_ext_truveta.commands.logout import _logout
+
+
+def _args() -> argparse.Namespace:
+    return argparse.Namespace()
 
 
 class TestLogoutCommand:
@@ -14,7 +19,7 @@ class TestLogoutCommand:
         monkeypatch.setattr(
             "openlinktoken_ext_truveta.paths.Path.home", lambda: tmp_path
         )
-        assert _logout() == 0
+        assert _logout(_args()) == 0
 
     def test_reports_no_credentials_when_dir_absent(
         self, tmp_path, monkeypatch, capsys
@@ -22,7 +27,7 @@ class TestLogoutCommand:
         monkeypatch.setattr(
             "openlinktoken_ext_truveta.paths.Path.home", lambda: tmp_path
         )
-        _logout()
+        _logout(_args())
         assert "No credentials found" in capsys.readouterr().out
 
     def test_deletes_single_credentials_file(self, tmp_path, monkeypatch, capsys):
@@ -36,7 +41,7 @@ class TestLogoutCommand:
         cred_file.write_text('{"access_token": "x", "id_token": "y"}')
 
         with patch("openlinktoken_ext_truveta.commands.logout._revoke_token"):
-            _logout()
+            _logout(_args())
 
         assert not cred_file.exists()
         assert "Logged out. Deleted session information." in capsys.readouterr().out
@@ -51,7 +56,7 @@ class TestLogoutCommand:
             f.write_text('{"access_token": "x", "id_token": "y"}')
 
         with patch("openlinktoken_ext_truveta.commands.logout._revoke_token"):
-            _logout()
+            _logout(_args())
 
         out = capsys.readouterr().out
         assert "Logged out. Deleted session information." in out
@@ -64,6 +69,6 @@ class TestLogoutCommand:
         session_file.parent.mkdir(parents=True)
         session_file.write_text('{"domain": "truveta.com"}')
 
-        _logout()
+        _logout(_args())
 
         assert not session_file.exists()

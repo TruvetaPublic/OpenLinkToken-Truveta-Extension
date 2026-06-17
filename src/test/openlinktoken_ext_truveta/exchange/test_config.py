@@ -319,9 +319,13 @@ class TestBuildExchangeConfig:
                 local_private_pem,
             )
 
-        assert config["rotationCount"] == 50
-        assert config["binWidth"] == 0.1
-        assert config["dimensionBias"] == [0.01, -0.02, 0.03]
+        resolved = resolve_exchange_config_inputs(
+            exchange_config_value=config,
+            private_key_value=local_private_pem,
+        )
+        assert resolved.rotation_count == 50
+        assert resolved.bin_width == 0.1
+        assert resolved.dimension_bias == [0.01, -0.02, 0.03]
 
     def test_uses_defaults_for_absent_rotation_count_bin_width_dimension_bias(self):
         local_private_pem, local_public_pem, _ = _generate_keypair()
@@ -335,28 +339,29 @@ class TestBuildExchangeConfig:
                 local_private_pem,
             )
 
-        assert config["rotationCount"] == 30
-        assert config["binWidth"] == 0.05
-        assert config["dimensionBias"] == []
+        resolved = resolve_exchange_config_inputs(
+            exchange_config_value=config,
+            private_key_value=local_private_pem,
+        )
+        assert resolved.rotation_count == 50
+        assert resolved.bin_width == 0.05
+        assert resolved.dimension_bias == []
 
     def test_decrypts_rotation_iv_and_stores_as_base64url(self):
         local_private_pem, local_public_pem, _ = _generate_keypair()
         _, _, server_public_der_b64 = _generate_keypair()
         server_response = _make_server_response(server_public_der_b64)
-        # 16 raw bytes base64-encoded (as the server sends after encryption)
-        raw_iv_bytes = bytes(range(16))
-        decrypted_iv_b64 = base64.b64encode(raw_iv_bytes).decode("ascii")
+        # The server sends the rotation IV as a base64-encoded string after decryption
+        raw_iv_string = "SexhFuS9CUQEIlfnQ4yBcXF5uPIwfcj1"
         server_response["encryptedRotationIv"] = "some-encrypted-iv-data"
-        expected_rotation_iv = (
-            base64.urlsafe_b64encode(raw_iv_bytes).rstrip(b"=").decode("ascii")
-        )
+        expected_iv_bytes = base64.b64decode(raw_iv_string)
 
         hashing_secret_b64 = base64.b64encode(_DECRYPTED_SECRET.encode("utf-8")).decode(
             "utf-8"
         )
         with patch(
             "openlinktoken_ext_truveta.exchange.config.decrypt_hashing_secret",
-            side_effect=[hashing_secret_b64, decrypted_iv_b64],
+            side_effect=[hashing_secret_b64, raw_iv_string],
         ):
             config = build_exchange_config(
                 server_response,
@@ -364,23 +369,19 @@ class TestBuildExchangeConfig:
                 local_private_pem,
             )
 
-        assert config["rotationIv"] == expected_rotation_iv
-        assert config["rotationIvEncoding"] == "base64url"
+        resolved = resolve_exchange_config_inputs(
+            exchange_config_value=config,
+            private_key_value=local_private_pem,
+        )
+        assert resolved.rotation_iv == expected_iv_bytes
+        assert resolved.payload["rotationIvEncoding"] == "base64url"
 
-    def test_decrypts_rotation_iv_base64_with_nonurl_chars(self):
-        """Prove that base64 chars (+/) are properly converted to base64url (-_)."""
+    def test_rotation_iv_stored_as_valid_base64url_and_round_trips(self):
+        """Stored rotationIv is valid base64url (no +/=) and round-trips to the original IV bytes."""
         local_private_pem, local_public_pem, _ = _generate_keypair()
         _, _, server_public_der_b64 = _generate_keypair()
         server_response = _make_server_response(server_public_der_b64)
-        # Choose bytes whose base64 encoding contains + and /
-        raw_iv_bytes = (
-            b"\xfb\xff\xfe\xfb\xff\xfe\xfb\xff\xfe\xfb\xff\xfe\xfb\xff\xfe\xfb"
-        )
-        assert (
-            "+" in base64.b64encode(raw_iv_bytes).decode()
-            or "/" in base64.b64encode(raw_iv_bytes).decode()
-        )
-        decrypted_iv_b64 = base64.b64encode(raw_iv_bytes).decode("ascii")
+        raw_iv_string = "SexhFuS9CUQEIlfnQ4yBcXF5uPIwfcj1"
         server_response["encryptedRotationIv"] = "some-encrypted-iv-data"
 
         hashing_secret_b64 = base64.b64encode(_DECRYPTED_SECRET.encode("utf-8")).decode(
@@ -388,7 +389,7 @@ class TestBuildExchangeConfig:
         )
         with patch(
             "openlinktoken_ext_truveta.exchange.config.decrypt_hashing_secret",
-            side_effect=[hashing_secret_b64, decrypted_iv_b64],
+            side_effect=[hashing_secret_b64, raw_iv_string],
         ):
             config = build_exchange_config(
                 server_response,
@@ -396,10 +397,15 @@ class TestBuildExchangeConfig:
                 local_private_pem,
             )
 
-        assert "+" not in config["rotationIv"]
-        assert "/" not in config["rotationIv"]
-        assert "=" not in config["rotationIv"]
-        assert base64.urlsafe_b64decode(config["rotationIv"] + "==") == raw_iv_bytes
+        resolved = resolve_exchange_config_inputs(
+            exchange_config_value=config,
+            private_key_value=local_private_pem,
+        )
+        stored_iv = resolved.payload["rotationIv"]
+        assert "+" not in stored_iv
+        assert "/" not in stored_iv
+        assert "=" not in stored_iv
+        assert resolved.rotation_iv == base64.b64decode(raw_iv_string)
 
     def test_omits_rotation_iv_fields_when_not_in_server_response(self):
         local_private_pem, local_public_pem, _ = _generate_keypair()
@@ -491,7 +497,7 @@ class TestValidateExchangeExtensionFields:
         )
 
         _validate_exchange_extension_fields(
-            {"rotationCount": 30, "binWidth": 0.05, "dimensionBias": [0.01, -0.02]}
+            {"rotationCount": 50, "binWidth": 0.05, "dimensionBias": [0.01, -0.02]}
         )
 
     def test_passes_when_extension_fields_absent(self):
@@ -507,7 +513,7 @@ class TestValidateExchangeExtensionFields:
         monkeypatch.chdir(tmp_path)
 
         config = _make_valid_exchange_config()
-        config_path = write_exchange_config("test.domain.com", config)
+        config_path = write_exchange_config(config)
 
         assert config_path.parent == tmp_path
         assert re.fullmatch(
@@ -518,7 +524,7 @@ class TestValidateExchangeExtensionFields:
         monkeypatch.chdir(tmp_path)
 
         config = _make_valid_exchange_config()
-        config_path = write_exchange_config("test.domain.com", config)
+        config_path = write_exchange_config(config)
 
         written_config = json.loads(config_path.read_text())
         assert written_config == config
@@ -527,7 +533,7 @@ class TestValidateExchangeExtensionFields:
         monkeypatch.chdir(tmp_path)
 
         with pytest.raises(ExchangeConfigError, match="Invalid exchange envelope"):
-            write_exchange_config("test.domain.com", {"payload": {"test": "data"}})
+            write_exchange_config({"payload": {"test": "data"}})
 
     def test_raises_on_write_permission_error(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -538,7 +544,7 @@ class TestValidateExchangeExtensionFields:
             with pytest.raises(
                 ExchangeConfigError, match="Failed to write exchange config"
             ):
-                write_exchange_config("test.domain.com", config)
+                write_exchange_config(config)
 
 
 class TestLoadExchangeConfig:
@@ -546,16 +552,16 @@ class TestLoadExchangeConfig:
         monkeypatch.chdir(tmp_path)
 
         config = _make_valid_exchange_config()
-        write_exchange_config("test.domain.com", config)
+        write_exchange_config(config)
 
-        loaded = load_exchange_config("test.domain.com")
+        loaded = load_exchange_config()
         assert loaded == config
 
     def test_raises_when_config_missing(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
 
         with pytest.raises(ExchangeConfigError, match="Exchange config not found"):
-            load_exchange_config("nonexistent.domain.com")
+            load_exchange_config()
 
     def test_raises_on_invalid_json(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -565,13 +571,13 @@ class TestLoadExchangeConfig:
         )
 
         with pytest.raises(ExchangeConfigError):
-            load_exchange_config("test.domain.com")
+            load_exchange_config()
 
     def test_does_not_fallback_to_legacy_home_config(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
 
         with pytest.raises(ExchangeConfigError, match="current directory"):
-            load_exchange_config("test.domain.com")
+            load_exchange_config()
 
     def test_round_trip_write_and_load(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -585,8 +591,8 @@ class TestLoadExchangeConfig:
                 server_response, public_pem, _FAKE_PRIVATE_PEM
             )
 
-        write_exchange_config("test.domain.com", config)
-        loaded = load_exchange_config("test.domain.com")
+        write_exchange_config(config)
+        loaded = load_exchange_config()
 
         assert loaded == config
 
@@ -605,7 +611,7 @@ class TestLoadExchangeConfig:
             json.dumps(today_config)
         )
 
-        loaded = load_exchange_config("test.domain.com")
+        loaded = load_exchange_config()
         assert loaded["protected"] == "today-config"
 
     def test_raises_when_multiple_configs_exist_without_todays_file(
@@ -627,7 +633,7 @@ class TestLoadExchangeConfig:
             ExchangeConfigError,
             match="today's date",
         ):
-            load_exchange_config("test.domain.com")
+            load_exchange_config()
 
     def test_raises_when_single_config_exists_but_not_todays(
         self, tmp_path, monkeypatch
@@ -643,7 +649,7 @@ class TestLoadExchangeConfig:
             ExchangeConfigError,
             match="today's date",
         ):
-            load_exchange_config("test.domain.com")
+            load_exchange_config()
 
 
 class TestResolveExchangePayload:
@@ -672,7 +678,7 @@ class TestResolveExchangePayload:
         key_path.parent.mkdir(parents=True)
         key_path.write_text(local_private_pem)
 
-        payload = resolve_exchange_payload("test.domain.com")
+        payload = resolve_exchange_payload()
 
         assert payload["exchangeId"] == server_response["exchangeId"]
 

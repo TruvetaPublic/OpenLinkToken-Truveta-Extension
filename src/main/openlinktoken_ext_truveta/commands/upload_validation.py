@@ -218,7 +218,7 @@ def _decrypt_sample_token(token: str, transport_key: bytes) -> str | None:
         )
 
 
-def validate_token_encryption(sample_token: str | None, domain: str) -> str | None:
+def validate_token_encryption(sample_token: str | None) -> str | None:
     """
     Validate that a sample token can be decrypted using the current exchange config.
 
@@ -227,16 +227,22 @@ def validate_token_encryption(sample_token: str | None, domain: str) -> str | No
 
     Inputs:
         sample_token: A token value from the data file to test decryption against.
-        domain: The storage domain used to locate the cached exchange config.
 
     Returns:
         None on success, or an error message string on failure.
     """
-    if not sample_token or not is_supported_v1_token(sample_token):
+    if not sample_token:
         return None
 
+    if not is_supported_v1_token(sample_token):
+        return (
+            "Upload requires JWE-packaged tokens (produced by 'olt package'), "
+            "but the file contains plain hashed tokens. "
+            "Run 'olt package' on the tokenized output before uploading."
+        )
+
     try:
-        exchange_config_raw = _load_exchange_config(domain)
+        exchange_config_raw = _load_exchange_config()
         private_key_file = _private_key_path()
         if not private_key_file.exists():
             return f"Private key not found at {private_key_file}"
