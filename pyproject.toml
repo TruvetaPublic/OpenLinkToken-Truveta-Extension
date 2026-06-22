@@ -18,9 +18,9 @@ dev = [
     "flake8==7.1.1",
 ]
 # Pinned upstream refs used by the release workflow to produce reproducible standalone binaries.
-# Bump these to the desired OpenLinkToken release tag or commit SHA before cutting a release.
+# Bump these to the desired OpenLinkToken release tag before cutting a release.
 release = [
-    "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@3483894c6ff63b0c6584bbc5bc3eee4fa4c57a08#subdirectory=lib/python/openlinktoken-cli",
+    "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@main#subdirectory=lib/python/openlinktoken-cli",
 ]
 
 [build-system]
