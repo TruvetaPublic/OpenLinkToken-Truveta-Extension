@@ -63,3 +63,6 @@ apm_modules/
 .agents/
 apm.lock.yaml
 .devcontainer/.env
+
+# temp files
+openlinktoken-*.exchange.json
