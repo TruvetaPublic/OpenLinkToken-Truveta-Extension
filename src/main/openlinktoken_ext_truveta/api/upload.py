@@ -4,6 +4,7 @@ Copyright (c) Truveta. All rights reserved.
 Upload endpoint API client for tokenized payload submission.
 """
 
+import hashlib
 from typing import Any
 
 import requests
@@ -25,6 +26,185 @@ _UPLOAD_SSL_HINT = (
     "Server dropped the connection while uploading. "
     "The exchange may have expired — try 'olt truveta initiate-exchange'."
 )
+
+
+def initialize_session(
+    api_url: str,
+    access_token: str,
+    exchange_id: str,
+    file_name: str,
+    total_chunk_count: int,
+    files: dict[str, Any] | None = None,
+    timeout_seconds: int | None = None,
+) -> tuple[str, int]:
+    """
+    POST /v1/uploads/{exchangeId}/sessions to create a new chunked upload session.
+
+    Validates the exchange upfront so the client fails fast before sending any data.
+    The server returns a session ID and the maximum chunk size to use for this session.
+
+    Args:
+        api_url: Base API URL including the /openlink path when hosted.
+        access_token: OAuth access token for authorization.
+        exchange_id: Exchange transaction ID.
+        file_name: Name of the file being uploaded.
+        total_chunk_count: Total number of chunks the client will send.
+        files: Optional additional multipart files (metadataFile, exchangeConfigFile).
+        timeout_seconds: Optional request timeout override in seconds.
+
+    Returns:
+        Tuple of (session_id, max_chunk_size_bytes).
+
+    Raises:
+        UploadAPIError: On non-201 response.
+    """
+    session_url = f"{api_url.rstrip('/')}/v1/uploads/{exchange_id}/sessions"
+    request_timeout = resolve_timeout_seconds(timeout_seconds)
+
+    form_data = {
+        "fileName": file_name,
+        "totalChunkCount": str(total_chunk_count),
+    }
+    multipart_files = files or {}
+
+    try:
+        response = requests.post(
+            session_url,
+            data=form_data,
+            files=multipart_files,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=request_timeout,
+        )
+
+        if response.status_code != 201:
+            raise UploadAPIError(
+                format_api_error(
+                    session_url,
+                    f"{response.status_code} - {extract_error_body(response)}",
+                    operation="Initialize session",
+                )
+            )
+
+        payload = response.json()
+        return payload["sessionId"], payload["maxChunkSizeBytes"]
+
+    except UploadAPIError:
+        raise
+    except requests.RequestException as exc:
+        raise UploadAPIError(
+            format_api_error(session_url, str(exc), operation="Initialize session")
+        ) from exc
+
+
+def upload_chunk(
+    api_url: str,
+    access_token: str,
+    exchange_id: str,
+    session_id: str,
+    chunk_index: int,
+    chunk_data: bytes,
+    timeout_seconds: int | None = None,
+) -> None:
+    """
+    POST /v1/uploads/{exchangeId}/sessions/{sessionId}/chunks to send one chunk.
+
+    Computes a SHA-256 checksum of the chunk bytes and includes it in the request
+    so the server can verify data integrity before storing the chunk.
+
+    Args:
+        api_url: Base API URL including the /openlink path when hosted.
+        access_token: OAuth access token for authorization.
+        exchange_id: Exchange transaction ID.
+        session_id: Session ID returned by initialize_session.
+        chunk_index: 0-based index of this chunk within the session.
+        chunk_data: Raw bytes of this chunk.
+        timeout_seconds: Optional request timeout override in seconds.
+
+    Raises:
+        UploadAPIError: On non-200 response, including checksum mismatch detail.
+    """
+    chunk_url = f"{api_url.rstrip('/')}/v1/uploads/{exchange_id}/sessions/{session_id}/chunks"
+    request_timeout = resolve_timeout_seconds(timeout_seconds)
+    checksum = hashlib.sha256(chunk_data).hexdigest()
+
+    try:
+        response = requests.post(
+            chunk_url,
+            data={
+                "chunkIndex": str(chunk_index),
+                "chunkChecksum": checksum,
+            },
+            files={"dataChunk": ("chunk", chunk_data, "application/octet-stream")},
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=request_timeout,
+        )
+
+        if response.status_code != 200:
+            raise UploadAPIError(
+                format_api_error(
+                    chunk_url,
+                    f"{response.status_code} - {extract_error_body(response)}",
+                    operation=f"Upload chunk {chunk_index}",
+                )
+            )
+
+    except UploadAPIError:
+        raise
+    except requests.RequestException as exc:
+        raise UploadAPIError(
+            format_api_error(chunk_url, str(exc), operation=f"Upload chunk {chunk_index}")
+        ) from exc
+
+
+def finalize_session(
+    api_url: str,
+    access_token: str,
+    exchange_id: str,
+    session_id: str,
+    timeout_seconds: int | None = None,
+) -> None:
+    """
+    POST /v1/uploads/{exchangeId}/sessions/{sessionId}/complete to finalize the upload.
+
+    Signals the server that all chunks have been sent. The server verifies completeness,
+    reassembles the file, and triggers downstream processing. Processing only starts
+    after this call returns successfully.
+
+    Args:
+        api_url: Base API URL including the /openlink path when hosted.
+        access_token: OAuth access token for authorization.
+        exchange_id: Exchange transaction ID.
+        session_id: Session ID returned by initialize_session.
+        timeout_seconds: Optional request timeout override in seconds.
+
+    Raises:
+        UploadAPIError: On non-202 response, including incomplete-session detail.
+    """
+    finalize_url = f"{api_url.rstrip('/')}/v1/uploads/{exchange_id}/sessions/{session_id}/complete"
+    request_timeout = resolve_timeout_seconds(timeout_seconds)
+
+    try:
+        response = requests.post(
+            finalize_url,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=request_timeout,
+        )
+
+        if response.status_code != 202:
+            raise UploadAPIError(
+                format_api_error(
+                    finalize_url,
+                    f"{response.status_code} - {extract_error_body(response)}",
+                    operation="Finalize session",
+                )
+            )
+
+    except UploadAPIError:
+        raise
+    except requests.RequestException as exc:
+        raise UploadAPIError(
+            format_api_error(finalize_url, str(exc), operation="Finalize session")
+        ) from exc
 
 
 def call_upload_endpoint(

@@ -6,10 +6,10 @@ upload command: upload tokenized output data to Truveta for overlap analysis.
 
 import argparse
 import base64
-import contextlib
 import csv
 import io
 import json
+import math
 import sys
 import zipfile
 from pathlib import Path
@@ -20,7 +20,13 @@ from openlinktoken_cli.io.file_extension import FileExtension
 from openlinktoken_cli.processor.token_constants import TokenConstants
 
 from openlinktoken_ext_truveta.api import upload as upload_api
-from openlinktoken_ext_truveta.api.upload import UploadAPIError, call_upload_endpoint
+from openlinktoken_ext_truveta.api.upload import (
+    UploadAPIError,
+    call_upload_endpoint,
+    finalize_session,
+    initialize_session,
+    upload_chunk,
+)
 from openlinktoken_ext_truveta.commands.common import (
     AuthenticatedCommandContext,
     SessionResolutionError,
@@ -42,6 +48,10 @@ _REQUIRED_COLUMNS = {
     TokenConstants.RECORD_ID,
 }
 _SUPPORTED_DATA_EXTENSIONS = frozenset({FileExtension.CSV, FileExtension.PARQUET})
+
+# Matches the server default; used only for the initial chunk-count estimate before calling
+# initialize_session so that we only need one round-trip in the common case.
+_DEFAULT_CHUNK_SIZE = 8_388_608
 _SUPPORTED_EXTENSIONS = frozenset(
     {FileExtension.CSV, FileExtension.PARQUET, FileExtension.ZIP}
 )
@@ -360,25 +370,88 @@ def _build_exchange_metadata(domain: str) -> dict[str, Any]:
     }
 
 
+def _calculate_chunk_count(file_size: int, max_chunk_size_bytes: int) -> int:
+    """
+    Calculate the number of chunks needed to upload a file.
+
+    Args:
+        file_size: Total file size in bytes.
+        max_chunk_size_bytes: Maximum allowed chunk size in bytes.
+
+    Returns:
+        Number of chunks, always at least 1.
+    """
+    return max(1, math.ceil(file_size / max_chunk_size_bytes))
+
+
+def _build_session_files(
+    is_zip: bool,
+    zip_metadata: dict | None,
+    metadata_path: Path | None,
+    exchange_metadata: dict,
+    file_path: Path,
+    exchange_config_path: Path,
+) -> dict[str, Any]:
+    """
+    Build the optional multipart files (metadataFile, exchangeConfigFile) sent at session init.
+
+    Args:
+        is_zip: Whether the upload file is a ZIP archive.
+        zip_metadata: Metadata extracted from a ZIP, or None.
+        metadata_path: Explicit metadata file path, or None.
+        exchange_metadata: Exchange metadata dict built from exchange config.
+        file_path: Path to the data file being uploaded.
+        exchange_config_path: Path to the exchange config file.
+
+    Returns:
+        Dict of multipart file parts to include in the initialize_session call.
+    """
+    files: dict[str, Any] = {}
+
+    if is_zip and zip_metadata is not None:
+        metadata_json = json.dumps(zip_metadata)
+        files["metadataFile"] = (
+            f"{file_path.stem}.metadata.json",
+            metadata_json,
+            "application/json",
+        )
+    elif not is_zip and metadata_path is not None:
+        files["metadataFile"] = (
+            metadata_path.name,
+            metadata_path.read_bytes(),
+            "application/json",
+        )
+    else:
+        metadata_json = json.dumps(exchange_metadata)
+        files["metadataFile"] = (
+            f"{file_path.stem}.metadata.json",
+            metadata_json,
+            "application/json",
+        )
+
+    files["exchangeConfigFile"] = (
+        exchange_config_path.name,
+        exchange_config_path.read_bytes(),
+        "application/json",
+    )
+
+    return files
+
+
 def _upload(args: argparse.Namespace) -> int:
     """
-    Upload tokenized output data and metadata to Truveta for self-serve overlap analysis.
+    Upload tokenized output data to Truveta for self-serve overlap analysis.
 
-    Steps:
-    1. Validate the file extension is supported
-    2. Validate schema (required columns: RuleId, Token, RecordId)
-    3. Validate a sample token can be decrypted with the current exchange config
-    4. Resolve metadata (from ZIP, explicit flag, auto-discovery, or generated)
-    5. Authenticate using cached credentials only
-    6. Call POST /v1/upload with multipart form data
-    7. Return upload result
+    Uses the 3-step chunked upload flow:
+    1. Initialize session — validates exchange and returns sessionId and maxChunkSizeBytes.
+    2. Upload chunks — file is split into chunks of maxChunkSizeBytes and sent sequentially.
+    3. Finalize session — server reassembles chunks and triggers downstream processing.
 
-    For ZIP files: the ZIP is uploaded as-is; its contents are only inspected locally
-    for schema and encryption validation. If --metadata is passed with a ZIP, it is
-    ignored with a warning.
+    Metadata and exchange config are sent at session initialization (step 1), not per-chunk.
+    Progress is printed to stdout after each chunk.
 
-    Inputs:
-        args: Parsed CLI arguments containing --file and optional --metadata.
+    Args:
+        args: Parsed CLI arguments containing --input and optional --metadata.
 
     Returns:
         Exit code (0 on success, 1 on failure).
@@ -417,26 +490,19 @@ def _upload(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
-    # Validate schema and extract a sample token for encryption verification
     try:
-        sample_token, zip_metadata = _validate_schema_and_extract_sample_token(
-            file_path
-        )
+        sample_token, zip_metadata = _validate_schema_and_extract_sample_token(file_path)
     except UploadValidationError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    # Resolve metadata path for non-ZIP uploads
     metadata_path: Path | None
     if is_zip:
         metadata_path = None
     elif metadata_arg:
         metadata_path = Path(metadata_arg)
         if not metadata_path.exists() or not metadata_path.is_file():
-            print(
-                f"Error: Metadata file not found: {metadata_arg}",
-                file=sys.stderr,
-            )
+            print(f"Error: Metadata file not found: {metadata_arg}", file=sys.stderr)
             return 1
     else:
         metadata_path = _discover_metadata_file(file_path)
@@ -449,7 +515,6 @@ def _upload(args: argparse.Namespace) -> int:
 
     domain = context.storage_domain
 
-    # Ensure exchange config exists and validate token encryption
     try:
         exchange_metadata = _build_exchange_metadata(domain)
     except ExchangeConfigError as exc:
@@ -465,77 +530,103 @@ def _upload(args: argparse.Namespace) -> int:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
-    # Upload data and metadata as multipart form data
-    try:
-        with contextlib.ExitStack() as stack:
-            data_handle = stack.enter_context(file_path.open("rb"))
-            files = {
-                "dataFile": (file_path.name, data_handle, "application/octet-stream"),
-            }
-
-            if is_zip and zip_metadata is not None:
-                metadata_json = json.dumps(zip_metadata)
-                files["metadataFile"] = (
-                    f"{file_path.stem}.metadata.json",
-                    metadata_json,
-                    "application/json",
-                )
-            elif not is_zip and metadata_path is not None:
-                metadata_handle = stack.enter_context(metadata_path.open("rb"))
-                files["metadataFile"] = (
-                    metadata_path.name,
-                    metadata_handle,
-                    "application/json",
-                )
-            else:
-                metadata_json = json.dumps(exchange_metadata)
-                files["metadataFile"] = (
-                    f"{file_path.stem}.metadata.json",
-                    metadata_json,
-                    "application/json",
-                )
-
-            exchange_config_file = resolve_exchange_config_path()
-            if not exchange_config_file.exists():
-                print(
-                    f"Error: Exchange config file not found at {exchange_config_file}. "
-                    "Run 'olt truveta initiate-exchange' to generate it.",
-                    file=sys.stderr,
-                )
-                return 1
-            exchange_config_handle = stack.enter_context(
-                exchange_config_file.open("rb")
-            )
-            files["exchangeConfigFile"] = (
-                exchange_config_file.name,
-                exchange_config_handle,
-                "application/json",
-            )
-
-            payload = call_upload_endpoint(
-                context.api_url,
-                context.credentials.access_token,
-                exchange_metadata["payload"]["exchangeId"],
-                files,
-                timeout_seconds=resolve_timeout_seconds(args),
-            )
-        upload_reference_id = payload.get("uploadReferenceId")
-
-        print("✓ Upload accepted.")
-        if upload_reference_id:
-            print(f"Upload reference ID: {upload_reference_id}")
-
-        return 0
-
-    except FileNotFoundError as exc:
+    exchange_config_file = resolve_exchange_config_path()
+    if not exchange_config_file.exists():
         print(
-            f"Error: Could not read input, metadata, or exchange config file: {exc}",
+            f"Error: Exchange config file not found at {exchange_config_file}. "
+            "Run 'olt truveta initiate-exchange' to generate it.",
             file=sys.stderr,
         )
         return 1
+
+    exchange_id = exchange_metadata["payload"]["exchangeId"]
+    file_size = file_path.stat().st_size
+    timeout_secs = resolve_timeout_seconds(args)
+
+    session_files = _build_session_files(
+        is_zip, zip_metadata, metadata_path, exchange_metadata, file_path, exchange_config_file
+    )
+
+    # Estimate chunk count using the known server default so initialize_session is called
+    # only once in the common case (server returns the same chunk size).
+    initial_chunk_count = _calculate_chunk_count(file_size, _DEFAULT_CHUNK_SIZE)
+
+    try:
+        # Step 1: Initialize session — validates exchange and returns server-authoritative chunk size.
+        session_id, max_chunk_size_bytes = initialize_session(
+            api_url=context.api_url,
+            access_token=context.credentials.access_token,
+            exchange_id=exchange_id,
+            file_name=file_path.name,
+            total_chunk_count=initial_chunk_count,
+            files=session_files,
+            timeout_seconds=timeout_secs,
+        )
     except UploadAPIError as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    except Exception as exc:
-        print(f"Upload failed with unexpected error: {exc}", file=sys.stderr)
+    except FileNotFoundError as exc:
+        print(f"Error: Could not read metadata or exchange config file: {exc}", file=sys.stderr)
         return 1
+
+    # Recalculate with the server-advertised size; re-initialize only if the count changed.
+    total_chunks = _calculate_chunk_count(file_size, max_chunk_size_bytes)
+    if total_chunks != initial_chunk_count:
+        try:
+            session_id, _ = initialize_session(
+                api_url=context.api_url,
+                access_token=context.credentials.access_token,
+                exchange_id=exchange_id,
+                file_name=file_path.name,
+                total_chunk_count=total_chunks,
+                files=session_files,
+                timeout_seconds=timeout_secs,
+            )
+        except UploadAPIError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
+    print(f"Uploading {file_path.name} ({file_size / 1_048_576:.1f} MB, {total_chunks} chunk(s))")
+
+    chunk_index = 0
+    try:
+        # Step 2: Upload chunks sequentially with progress output.
+        with file_path.open("rb") as f:
+            for chunk_index in range(total_chunks):
+                chunk_data = f.read(max_chunk_size_bytes)
+                upload_chunk(
+                    api_url=context.api_url,
+                    access_token=context.credentials.access_token,
+                    exchange_id=exchange_id,
+                    session_id=session_id,
+                    chunk_index=chunk_index,
+                    chunk_data=chunk_data,
+                    timeout_seconds=timeout_secs,
+                )
+                percent = int((chunk_index + 1) / total_chunks * 100)
+                print(f"chunk {chunk_index + 1}/{total_chunks} ({percent}%)")
+    except UploadAPIError as exc:
+        print(
+            f"Upload interrupted at chunk {chunk_index + 1}/{total_chunks}. "
+            "The incomplete session will expire automatically. "
+            "Run the upload command again to retry.",
+            file=sys.stderr,
+        )
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    try:
+        # Step 3: Finalize — server verifies completeness, assembles, and starts processing.
+        finalize_session(
+            api_url=context.api_url,
+            access_token=context.credentials.access_token,
+            exchange_id=exchange_id,
+            session_id=session_id,
+            timeout_seconds=timeout_secs,
+        )
+    except UploadAPIError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    print("\u2713 Upload accepted.")
+    return 0

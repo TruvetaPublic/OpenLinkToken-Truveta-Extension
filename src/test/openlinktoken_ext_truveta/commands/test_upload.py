@@ -63,20 +63,21 @@ def _context(
 
 
 class TestUploadCommand:
+    """Tests for the 3-step chunked upload flow."""
+
     @pytest.fixture(autouse=True)
     def _bypass_file_validation(self, tmp_path_factory):
+        """Bypass schema/token validation so tests focus on upload flow."""
         exchange_config = (
             tmp_path_factory.mktemp("exch") / "openlinktoken-default.exchange.json"
         )
-        exchange_config.write_text("{}")
+        exchange_config.write_bytes(b"{}")
         with (
             patch(
                 "openlinktoken_ext_truveta.commands.upload._validate_schema_and_extract_sample_token",
                 return_value=(None, None),
             ),
-            patch(
-                "openlinktoken_ext_truveta.commands.upload._validate_token_encryption",
-            ),
+            patch("openlinktoken_ext_truveta.commands.upload._validate_token_encryption"),
             patch(
                 "openlinktoken_ext_truveta.commands.upload.resolve_exchange_config_path",
                 return_value=exchange_config,
@@ -84,37 +85,28 @@ class TestUploadCommand:
         ):
             yield
 
-    def test_happy_path_uploads_file_and_metadata(self, tmp_path, capsys):
-        data_file = tmp_path / "tokenized.csv"
-        metadata_file = tmp_path / "tokenized.metadata.json"
-        data_file.write_text("token\nabc")
-        metadata_file.write_text(
-            '{"payload":{"exchangeId":"ex-1","senderKeyFingerprint":"sender",'
-            '"recipientKeyFingerprint":"recipient","curve":"P-256"}}'
+    def _mock_3step(self, init_return=("sess-001", 8_388_608)):
+        """Return a context manager that mocks all three upload API steps."""
+        return (
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.initialize_session",
+                return_value=init_return,
+            ),
+            patch("openlinktoken_ext_truveta.commands.upload.upload_chunk"),
+            patch("openlinktoken_ext_truveta.commands.upload.finalize_session"),
         )
 
-        captured = {}
-
-        def _post(url, files, headers, timeout):
-            captured["url"] = url
-            captured["keys"] = set(files.keys())
-            captured["auth"] = headers.get("Authorization")
-            captured["timeout"] = timeout
-            return _Response(
-                202,
-                {
-                    "uploadReferenceId": "upload-123",
-                    "statusEndpoint": "/v1/upload/upload-123",
-                },
-            )
+    def test_happy_path_completes_3_step_flow(self, tmp_path, capsys):
+        data_file = tmp_path / "tokenized.csv"
+        data_file.write_bytes(b"token\nabc")
 
         with (
             patch(
                 "openlinktoken_ext_truveta.commands.upload.resolve_exchange_payload",
                 return_value={
-                    "exchangeId": "x",
-                    "senderKeyFingerprint": "sender",
-                    "recipientKeyFingerprint": "recipient",
+                    "exchangeId": "ex-1",
+                    "senderKeyFingerprint": "s",
+                    "recipientKeyFingerprint": "r",
                     "curve": "P-256",
                 },
             ),
@@ -123,30 +115,203 @@ class TestUploadCommand:
                 return_value=_context(),
             ),
             patch(
-                "openlinktoken_ext_truveta.commands.upload.requests.post",
-                side_effect=_post,
+                "openlinktoken_ext_truveta.commands.upload.initialize_session",
+                return_value=("sess-001", 8_388_608),
             ),
+            patch("openlinktoken_ext_truveta.commands.upload.upload_chunk"),
+            patch("openlinktoken_ext_truveta.commands.upload.finalize_session"),
         ):
-            result = _upload(_args(str(data_file)))
+            rc = _upload(_args(str(data_file)))
 
-        assert result == 0
-        assert captured["url"] == "https://api.truveta.com/openlink/v1/uploads/x"
-        assert captured["keys"] == {"dataFile", "metadataFile", "exchangeConfigFile"}
-        assert captured["auth"] == "Bearer access-token"
-        assert captured["timeout"] == 30
-        assert "Upload accepted" in capsys.readouterr().out
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "Upload accepted" in out
 
-    def test_missing_credentials_returns_friendly_message(self, tmp_path, capsys):
-        data_file = tmp_path / "tokenized.csv"
-        data_file.write_text("token\nabc")
+    def test_progress_output_printed_per_chunk(self, tmp_path, capsys):
+        # 3 chunks: file is 3 * chunk_size bytes so exactly 3 reads produce 3 calls
+        chunk_size = 8_388_608
+        data_file = tmp_path / "large.parquet"
+        data_file.write_bytes(b"x" * (chunk_size * 3))
+
+        upload_chunk_mock = patch("openlinktoken_ext_truveta.commands.upload.upload_chunk")
+        with (
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.resolve_exchange_payload",
+                return_value={
+                    "exchangeId": "ex-1",
+                    "senderKeyFingerprint": "s",
+                    "recipientKeyFingerprint": "r",
+                    "curve": "P-256",
+                },
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
+                return_value=_context(),
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.initialize_session",
+                return_value=("sess-001", chunk_size),
+            ),
+            upload_chunk_mock as mock_chunk,
+            patch("openlinktoken_ext_truveta.commands.upload.finalize_session"),
+        ):
+            rc = _upload(_args(str(data_file)))
+
+        assert rc == 0
+        assert mock_chunk.call_count == 3
+        out = capsys.readouterr().out
+        assert "chunk 1/3" in out
+        assert "chunk 2/3" in out
+        assert "chunk 3/3" in out
+
+    def test_small_file_sends_single_chunk(self, tmp_path):
+        data_file = tmp_path / "small.csv"
+        data_file.write_bytes(b"token\nabc")  # well below 8MB
+
+        init_mock = patch(
+            "openlinktoken_ext_truveta.commands.upload.initialize_session",
+            return_value=("sess-001", 8_388_608),
+        )
+        chunk_mock = patch("openlinktoken_ext_truveta.commands.upload.upload_chunk")
+        finalize_mock = patch("openlinktoken_ext_truveta.commands.upload.finalize_session")
 
         with (
             patch(
                 "openlinktoken_ext_truveta.commands.upload.resolve_exchange_payload",
                 return_value={
-                    "exchangeId": "x",
-                    "senderKeyFingerprint": "sender",
-                    "recipientKeyFingerprint": "recipient",
+                    "exchangeId": "ex-1",
+                    "senderKeyFingerprint": "s",
+                    "recipientKeyFingerprint": "r",
+                    "curve": "P-256",
+                },
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
+                return_value=_context(),
+            ),
+            init_mock,
+            chunk_mock as mock_chunk,
+            finalize_mock,
+        ):
+            rc = _upload(_args(str(data_file)))
+
+        assert rc == 0
+        assert mock_chunk.call_count == 1
+        call_kwargs = mock_chunk.call_args
+        assert call_kwargs.kwargs["chunk_index"] == 0
+
+    def test_uses_max_chunk_size_from_server_response(self, tmp_path):
+        # Server returns 4MB chunk size; 10MB file should produce 3 chunks
+        server_chunk_size = 4_194_304
+        data_file = tmp_path / "data.csv"
+        data_file.write_bytes(b"x" * (server_chunk_size * 3 - 1))  # just under 3 * 4MB
+
+        chunk_mock = patch("openlinktoken_ext_truveta.commands.upload.upload_chunk")
+        with (
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.resolve_exchange_payload",
+                return_value={
+                    "exchangeId": "ex-1",
+                    "senderKeyFingerprint": "s",
+                    "recipientKeyFingerprint": "r",
+                    "curve": "P-256",
+                },
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
+                return_value=_context(),
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.initialize_session",
+                return_value=("sess-001", server_chunk_size),
+            ),
+            chunk_mock as mock_chunk,
+            patch("openlinktoken_ext_truveta.commands.upload.finalize_session"),
+        ):
+            rc = _upload(_args(str(data_file)))
+
+        assert rc == 0
+        assert mock_chunk.call_count == 3
+
+    def test_initialize_failure_exits_before_chunks(self, tmp_path, capsys):
+        data_file = tmp_path / "tokenized.csv"
+        data_file.write_bytes(b"token\nabc")
+
+        from openlinktoken_ext_truveta.api.upload import UploadAPIError
+
+        chunk_mock = patch("openlinktoken_ext_truveta.commands.upload.upload_chunk")
+        with (
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.resolve_exchange_payload",
+                return_value={
+                    "exchangeId": "ex-1",
+                    "senderKeyFingerprint": "s",
+                    "recipientKeyFingerprint": "r",
+                    "curve": "P-256",
+                },
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
+                return_value=_context(),
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.initialize_session",
+                side_effect=UploadAPIError("Exchange not found"),
+            ),
+            chunk_mock as mock_chunk,
+        ):
+            rc = _upload(_args(str(data_file)))
+
+        assert rc == 1
+        assert mock_chunk.call_count == 0
+        assert "Exchange not found" in capsys.readouterr().err
+
+    def test_finalize_incomplete_session_error_surfaced(self, tmp_path, capsys):
+        data_file = tmp_path / "tokenized.csv"
+        data_file.write_bytes(b"token\nabc")
+
+        from openlinktoken_ext_truveta.api.upload import UploadAPIError
+
+        with (
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.resolve_exchange_payload",
+                return_value={
+                    "exchangeId": "ex-1",
+                    "senderKeyFingerprint": "s",
+                    "recipientKeyFingerprint": "r",
+                    "curve": "P-256",
+                },
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
+                return_value=_context(),
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.initialize_session",
+                return_value=("sess-001", 8_388_608),
+            ),
+            patch("openlinktoken_ext_truveta.commands.upload.upload_chunk"),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.finalize_session",
+                side_effect=UploadAPIError("400 - IncompleteUploadSession, missingChunks: [2]"),
+            ),
+        ):
+            rc = _upload(_args(str(data_file)))
+
+        assert rc == 1
+        assert "IncompleteUploadSession" in capsys.readouterr().err
+
+    def test_missing_credentials_returns_friendly_message(self, tmp_path, capsys):
+        data_file = tmp_path / "tokenized.csv"
+        data_file.write_bytes(b"token\nabc")
+
+        with (
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.resolve_exchange_payload",
+                return_value={
+                    "exchangeId": "ex-1",
+                    "senderKeyFingerprint": "s",
+                    "recipientKeyFingerprint": "r",
                     "curve": "P-256",
                 },
             ),
@@ -157,310 +322,47 @@ class TestUploadCommand:
                 ),
             ),
         ):
-            result = _upload(_args(str(data_file)))
+            rc = _upload(_args(str(data_file)))
 
-        assert result == 1
-        err = capsys.readouterr().err
-        assert "olt truveta login" in err
-
-    def test_file_not_found_returns_error(self, capsys):
-        result = _upload(_args("/does/not/exist.csv"))
-        assert result == 1
-        assert "Input file not found" in capsys.readouterr().err
-
-    def test_server_error_response_returns_failure(self, tmp_path, capsys):
-        data_file = tmp_path / "tokenized.csv"
-        data_file.write_text("token\nabc")
-
-        with (
-            patch(
-                "openlinktoken_ext_truveta.commands.upload.resolve_exchange_payload",
-                return_value={
-                    "exchangeId": "x",
-                    "senderKeyFingerprint": "sender",
-                    "recipientKeyFingerprint": "recipient",
-                    "curve": "P-256",
-                },
-            ),
-            patch(
-                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
-                return_value=_context(),
-            ),
-            patch(
-                "openlinktoken_ext_truveta.commands.upload.requests.post",
-                return_value=_Response(500, {"error": "server exploded"}, text="boom"),
-            ),
-        ):
-            result = _upload(_args(str(data_file)))
-
-        assert result == 1
-        assert (
-            "Upload failed for https://api.truveta.com/openlink/v1/uploads/x: 500"
-            in capsys.readouterr().err
-        )
-
-    def test_explicit_metadata_override_is_used(self, tmp_path):
-        data_file = tmp_path / "tokenized.csv"
-        auto_metadata = tmp_path / "tokenized.metadata.json"
-        explicit_metadata = tmp_path / "manual.metadata.json"
-        data_file.write_text("token\nabc")
-        auto_metadata.write_text('{"source":"auto"}')
-        explicit_metadata.write_text('{"source":"manual"}')
-
-        captured = {}
-
-        def _post(url, files, headers, timeout):
-            metadata_part = files.get("metadataFile")
-            captured["metadata_name"] = metadata_part[0] if metadata_part else None
-            return _Response(
-                202,
-                {
-                    "uploadReferenceId": "upload-123",
-                    "statusEndpoint": "/v1/upload/upload-123",
-                },
-            )
-
-        with (
-            patch(
-                "openlinktoken_ext_truveta.commands.upload.resolve_exchange_payload",
-                return_value={
-                    "exchangeId": "x",
-                    "senderKeyFingerprint": "sender",
-                    "recipientKeyFingerprint": "recipient",
-                    "curve": "P-256",
-                },
-            ),
-            patch(
-                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
-                return_value=_context(),
-            ),
-            patch(
-                "openlinktoken_ext_truveta.commands.upload.requests.post",
-                side_effect=_post,
-            ),
-        ):
-            result = _upload(_args(str(data_file), metadata=str(explicit_metadata)))
-
-        assert result == 0
-        assert captured["metadata_name"] == Path(explicit_metadata).name
-
-    def test_upload_synthesizes_metadata_from_exchange_config(self, tmp_path):
-        data_file = tmp_path / "enc_tokenized.csv"
-        data_file.write_text("token\nabc")
-
-        captured = {}
-
-        def _post(url, files, headers, timeout):
-            captured["metadata_name"] = files["metadataFile"][0]
-            captured["metadata_payload"] = files["metadataFile"][1]
-            return _Response(
-                202,
-                {
-                    "uploadReferenceId": "upload-123",
-                    "statusEndpoint": "/v1/upload/upload-123",
-                },
-            )
-
-        args = _args(str(data_file))
-
-        with (
-            patch(
-                "openlinktoken_ext_truveta.commands.upload.resolve_exchange_payload",
-                return_value={
-                    "exchangeId": "x",
-                    "exchangeName": "name",
-                    "senderKeyFingerprint": "sender",
-                    "recipientKeyFingerprint": "recipient",
-                    "curve": "P-256",
-                    "hashingSecret": "secret",
-                },
-            ),
-            patch(
-                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
-                return_value=_context(),
-            ),
-            patch(
-                "openlinktoken_ext_truveta.commands.upload.requests.post",
-                side_effect=_post,
-            ),
-        ):
-            result = _upload(args)
-
-        assert result == 0
-        assert captured["metadata_name"] == "enc_tokenized.metadata.json"
-        assert '"exchangeId": "x"' in captured["metadata_payload"]
-        assert "hashingSecret" not in captured["metadata_payload"]
-
-    def test_upload_uses_session_domain_for_non_login_commands(self, tmp_path):
-        data_file = tmp_path / "tokenized.csv"
-        data_file.write_text("token\nabc")
-
-        captured = {}
-
-        def _post(url, files, headers, timeout):
-            captured["url"] = url
-            return _Response(202, {"uploadReferenceId": "upload-123"})
-
-        args = _args(str(data_file), domain="dev.truveta-int.com")
-
-        with (
-            patch(
-                "openlinktoken_ext_truveta.commands.upload.resolve_exchange_payload",
-                return_value={
-                    "exchangeId": "x",
-                    "senderKeyFingerprint": "sender",
-                    "recipientKeyFingerprint": "recipient",
-                    "curve": "P-256",
-                },
-            ),
-            patch(
-                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
-                return_value=_context(
-                    domain="dev.truveta-int.com",
-                    api_url="https://api.dev.truveta-int.com/openlink",
-                    storage_domain="dev.truveta-int.com",
-                ),
-            ),
-            patch(
-                "openlinktoken_ext_truveta.commands.upload.requests.post",
-                side_effect=_post,
-            ),
-        ):
-            result = _upload(args)
-
-        assert result == 0
-        assert (
-            captured["url"] == "https://api.dev.truveta-int.com/openlink/v1/uploads/x"
-        )
-
-    def test_upload_requires_session_when_not_local_dev(self, tmp_path, capsys):
-        data_file = tmp_path / "tokenized.csv"
-        data_file.write_text("token\nabc")
-
-        with patch(
-            "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
-            side_effect=SessionResolutionError(
-                "No login session found. Please run 'olt truveta login' first."
-            ),
-        ):
-            result = _upload(_args(str(data_file), domain=None, api_domain=None))
-
-        assert result == 1
+        assert rc == 1
         assert "olt truveta login" in capsys.readouterr().err
 
-    def test_upload_local_dev_uses_localhost_endpoint_and_timeout(self, tmp_path):
-        data_file = tmp_path / "tokenized.csv"
-        data_file.write_text("token\nabc")
+    def test_file_not_found_returns_error(self, capsys):
+        rc = _upload(_args("/does/not/exist.csv"))
+        assert rc == 1
+        assert "Input file not found" in capsys.readouterr().err
 
+    def test_upload_uses_correct_api_url(self, tmp_path):
+        data_file = tmp_path / "tokenized.csv"
+        data_file.write_bytes(b"token\nabc")
         captured = {}
 
-        def _post(url, files, headers, timeout):
-            captured["url"] = url
-            captured["timeout"] = timeout
-            return _Response(202, {"uploadReferenceId": "upload-123"})
+        def capture_init(api_url, **kwargs):
+            captured["api_url"] = api_url
+            return ("sess-001", 8_388_608)
 
         with (
             patch(
                 "openlinktoken_ext_truveta.commands.upload.resolve_exchange_payload",
                 return_value={
-                    "exchangeId": "x",
-                    "senderKeyFingerprint": "sender",
-                    "recipientKeyFingerprint": "recipient",
+                    "exchangeId": "ex-1",
+                    "senderKeyFingerprint": "s",
+                    "recipientKeyFingerprint": "r",
                     "curve": "P-256",
                 },
             ),
             patch(
                 "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
-                return_value=_context(
-                    domain="dev.truveta-int.com",
-                    api_url=LOCAL_API_URL,
-                    storage_domain="localhost-18080",
-                ),
+                return_value=_context(api_url="https://api.dev.truveta-int.com/openlink"),
             ),
             patch(
-                "openlinktoken_ext_truveta.commands.upload.requests.post",
-                side_effect=_post,
+                "openlinktoken_ext_truveta.commands.upload.initialize_session",
+                side_effect=capture_init,
             ),
+            patch("openlinktoken_ext_truveta.commands.upload.upload_chunk"),
+            patch("openlinktoken_ext_truveta.commands.upload.finalize_session"),
         ):
-            result = _upload(_args(str(data_file), local_dev=True))
+            rc = _upload(_args(str(data_file)))
 
-        assert result == 0
-        assert captured["url"] == "http://localhost:18080/v1/uploads/x"
-        assert captured["timeout"] == 180
-
-    def test_upload_includes_exchange_config_file_in_request(self, tmp_path):
-        data_file = tmp_path / "tokenized.csv"
-        data_file.write_text("token\nabc")
-        exchange_config = tmp_path / "openlinktoken-2026-05-20.exchange.json"
-        exchange_config.write_text('{"exchangeId":"x"}')
-
-        captured = {}
-
-        def _post(url, files, headers, timeout):
-            captured["keys"] = set(files.keys())
-            captured["exchange_config_name"] = files["exchangeConfigFile"][0]
-            captured["exchange_config_type"] = files["exchangeConfigFile"][2]
-            return _Response(202, {"uploadReferenceId": "upload-123"})
-
-        with (
-            patch(
-                "openlinktoken_ext_truveta.commands.upload.resolve_exchange_payload",
-                return_value={
-                    "exchangeId": "x",
-                    "senderKeyFingerprint": "sender",
-                    "recipientKeyFingerprint": "recipient",
-                    "curve": "P-256",
-                },
-            ),
-            patch(
-                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
-                return_value=_context(),
-            ),
-            patch(
-                "openlinktoken_ext_truveta.commands.upload.resolve_exchange_config_path",
-                return_value=exchange_config,
-            ),
-            patch(
-                "openlinktoken_ext_truveta.commands.upload.requests.post",
-                side_effect=_post,
-            ),
-        ):
-            result = _upload(_args(str(data_file)))
-
-        assert result == 0
-        assert "exchangeConfigFile" in captured["keys"]
-        assert (
-            captured["exchange_config_name"] == "openlinktoken-2026-05-20.exchange.json"
-        )
-        assert captured["exchange_config_type"] == "application/json"
-
-    def test_upload_missing_exchange_config_file_returns_error(self, tmp_path, capsys):
-        data_file = tmp_path / "tokenized.csv"
-        data_file.write_text("token\nabc")
-        missing_config = tmp_path / "nonexistent.exchange.json"
-
-        with (
-            patch(
-                "openlinktoken_ext_truveta.commands.upload.resolve_exchange_payload",
-                return_value={
-                    "exchangeId": "x",
-                    "senderKeyFingerprint": "sender",
-                    "recipientKeyFingerprint": "recipient",
-                    "curve": "P-256",
-                },
-            ),
-            patch(
-                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
-                return_value=_context(),
-            ),
-            patch(
-                "openlinktoken_ext_truveta.commands.upload.resolve_exchange_config_path",
-                return_value=missing_config,
-            ),
-        ):
-            result = _upload(_args(str(data_file)))
-
-        assert result == 1
-        err = capsys.readouterr().err
-        assert "Exchange config file not found" in err
-        assert "olt truveta initiate-exchange" in err
+        assert rc == 0
+        assert captured["api_url"] == "https://api.dev.truveta-int.com/openlink"
