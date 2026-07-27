@@ -96,16 +96,15 @@ class TestCallUploadEndpoint:
 
 
 class TestInitializeSession:
-    def test_returns_session_id_and_max_chunk_size_on_201(self):
+    def test_returns_max_chunk_size_on_201(self):
         payload = {
-            "sessionId": "sess-abc",
             "expiresAtUtc": "2026-07-21T12:00:00Z",
             "maxChunkSizeBytes": 8388608,
         }
         with patch("openlinktoken_ext_truveta.api.upload.requests.post") as mock_post:
             mock_post.return_value = _make_response(201, json_payload=payload)
 
-            session_id, max_chunk_size = initialize_session(
+            max_chunk_size = initialize_session(
                 "http://localhost:8080",
                 "token",
                 "ex-123",
@@ -113,11 +112,10 @@ class TestInitializeSession:
                 3,
             )
 
-        assert session_id == "sess-abc"
         assert max_chunk_size == 8388608
 
     def test_posts_to_correct_url(self):
-        payload = {"sessionId": "s1", "expiresAtUtc": "2026-07-21T12:00:00Z", "maxChunkSizeBytes": 8388608}
+        payload = {"expiresAtUtc": "2026-07-21T12:00:00Z", "maxChunkSizeBytes": 8388608}
         captured = {}
         with patch("openlinktoken_ext_truveta.api.upload.requests.post") as mock_post:
             mock_post.return_value = _make_response(201, json_payload=payload)
@@ -127,16 +125,20 @@ class TestInitializeSession:
                 return _make_response(201, json_payload=payload)
 
             mock_post.side_effect = capture
-            initialize_session("https://api.truveta.com/openlink", "token", "ex-123", "f.csv", 1)
+            initialize_session(
+                "https://api.truveta.com/openlink", "token", "ex-123", "f.csv", 1
+            )
 
-        assert captured["url"] == "https://api.truveta.com/openlink/v1/uploads/ex-123/sessions"
+        assert captured["url"] == "https://api.truveta.com/openlink/v1/uploads/ex-123"
 
     def test_raises_upload_api_error_on_non_201(self):
         with patch("openlinktoken_ext_truveta.api.upload.requests.post") as mock_post:
             mock_post.return_value = _make_response(400, text="exchange not found")
 
             with pytest.raises(UploadAPIError, match="400"):
-                initialize_session("http://localhost:8080", "token", "ex-123", "f.csv", 1)
+                initialize_session(
+                    "http://localhost:8080", "token", "ex-123", "f.csv", 1
+                )
 
     def test_raises_on_409_already_completed(self):
         with patch("openlinktoken_ext_truveta.api.upload.requests.post") as mock_post:
@@ -145,7 +147,9 @@ class TestInitializeSession:
             )
 
             with pytest.raises(UploadAPIError, match="409"):
-                initialize_session("http://localhost:8080", "token", "ex-123", "f.csv", 1)
+                initialize_session(
+                    "http://localhost:8080", "token", "ex-123", "f.csv", 1
+                )
 
 
 class TestUploadChunk:
@@ -155,6 +159,7 @@ class TestUploadChunk:
         captured = {}
 
         with patch("openlinktoken_ext_truveta.api.upload.requests.post") as mock_post:
+
             def capture(url, **kwargs):
                 captured["url"] = url
                 captured["data"] = kwargs.get("data", {})
@@ -162,11 +167,9 @@ class TestUploadChunk:
                 return _make_response(200)
 
             mock_post.side_effect = capture
-            upload_chunk(
-                "http://localhost:8080", "token", "ex-123", "sess-abc", 2, chunk_data
-            )
+            upload_chunk("http://localhost:8080", "token", "ex-123", 2, chunk_data)
 
-        assert captured["url"] == "http://localhost:8080/v1/uploads/ex-123/sessions/sess-abc/chunks"
+        assert captured["url"] == "http://localhost:8080/v1/uploads/ex-123/chunks"
         assert captured["data"]["chunkIndex"] == "2"
         assert captured["data"]["chunkChecksum"] == expected_checksum
 
@@ -176,12 +179,13 @@ class TestUploadChunk:
         captured = {}
 
         with patch("openlinktoken_ext_truveta.api.upload.requests.post") as mock_post:
+
             def capture(url, **kwargs):
                 captured["checksum"] = kwargs.get("data", {}).get("chunkChecksum")
                 return _make_response(200)
 
             mock_post.side_effect = capture
-            upload_chunk("http://localhost:8080", "token", "ex-123", "sess-abc", 0, chunk_data)
+            upload_chunk("http://localhost:8080", "token", "ex-123", 0, chunk_data)
 
         assert captured["checksum"] == expected_checksum
 
@@ -192,28 +196,32 @@ class TestUploadChunk:
             )
 
             with pytest.raises(UploadAPIError, match="400"):
-                upload_chunk("http://localhost:8080", "token", "ex-123", "sess-abc", 0, b"data")
+                upload_chunk("http://localhost:8080", "token", "ex-123", 0, b"data")
 
     def test_raises_on_413_chunk_too_large(self):
         with patch("openlinktoken_ext_truveta.api.upload.requests.post") as mock_post:
             mock_post.return_value = _make_response(413, text="chunk too large")
 
             with pytest.raises(UploadAPIError, match="413"):
-                upload_chunk("http://localhost:8080", "token", "ex-123", "sess-abc", 0, b"x" * 100)
+                upload_chunk("http://localhost:8080", "token", "ex-123", 0, b"x" * 100)
 
 
 class TestFinalizeSession:
     def test_posts_to_correct_url_and_returns_on_202(self):
         captured = {}
         with patch("openlinktoken_ext_truveta.api.upload.requests.post") as mock_post:
+
             def capture(url, **kwargs):
                 captured["url"] = url
                 return _make_response(202)
 
             mock_post.side_effect = capture
-            finalize_session("https://api.truveta.com/openlink", "token", "ex-123", "sess-abc")
+            finalize_session("https://api.truveta.com/openlink", "token", "ex-123")
 
-        assert captured["url"] == "https://api.truveta.com/openlink/v1/uploads/ex-123/sessions/sess-abc/complete"
+        assert (
+            captured["url"]
+            == "https://api.truveta.com/openlink/v1/uploads/ex-123/complete"
+        )
 
     def test_raises_with_missing_chunk_detail_on_incomplete_session(self):
         error_body = '{"code":"IncompleteUploadSession","missingChunks":[2,3]}'
@@ -221,11 +229,11 @@ class TestFinalizeSession:
             mock_post.return_value = _make_response(400, text=error_body)
 
             with pytest.raises(UploadAPIError, match="400"):
-                finalize_session("http://localhost:8080", "token", "ex-123", "sess-abc")
+                finalize_session("http://localhost:8080", "token", "ex-123")
 
     def test_raises_on_404_session_not_found(self):
         with patch("openlinktoken_ext_truveta.api.upload.requests.post") as mock_post:
             mock_post.return_value = _make_response(404, text="session not found")
 
             with pytest.raises(UploadAPIError, match="404"):
-                finalize_session("http://localhost:8080", "token", "ex-123", "sess-abc")
+                finalize_session("http://localhost:8080", "token", "ex-123")

@@ -36,29 +36,30 @@ def initialize_session(
     total_chunk_count: int,
     files: dict[str, Any] | None = None,
     timeout_seconds: int | None = None,
-) -> tuple[str, int]:
+) -> int:
     """
-    POST /v1/uploads/{exchangeId}/sessions to create a new chunked upload session.
+    POST /v1/uploads/{exchangeId} to create a new chunked upload session for this exchange.
 
     Validates the exchange upfront so the client fails fast before sending any data.
-    The server returns a session ID and the maximum chunk size to use for this session.
+    The exchange ID itself identifies the upload session for all subsequent chunk and
+    finalize calls. The server returns the maximum chunk size to use for this session.
 
     Args:
         api_url: Base API URL including the /openlink path when hosted.
         access_token: OAuth access token for authorization.
-        exchange_id: Exchange transaction ID.
+        exchange_id: Exchange transaction ID. Also identifies the upload session.
         file_name: Name of the file being uploaded.
         total_chunk_count: Total number of chunks the client will send.
         files: Optional additional multipart files (metadataFile, exchangeConfigFile).
         timeout_seconds: Optional request timeout override in seconds.
 
     Returns:
-        Tuple of (session_id, max_chunk_size_bytes).
+        max_chunk_size_bytes.
 
     Raises:
         UploadAPIError: On non-201 response.
     """
-    session_url = f"{api_url.rstrip('/')}/v1/uploads/{exchange_id}/sessions"
+    session_url = f"{api_url.rstrip('/')}/v1/uploads/{exchange_id}"
     request_timeout = resolve_timeout_seconds(timeout_seconds)
 
     form_data = {
@@ -86,7 +87,7 @@ def initialize_session(
             )
 
         payload = response.json()
-        return payload["sessionId"], payload["maxChunkSizeBytes"]
+        return payload["maxChunkSizeBytes"]
 
     except UploadAPIError:
         raise
@@ -100,13 +101,12 @@ def upload_chunk(
     api_url: str,
     access_token: str,
     exchange_id: str,
-    session_id: str,
     chunk_index: int,
     chunk_data: bytes,
     timeout_seconds: int | None = None,
 ) -> None:
     """
-    POST /v1/uploads/{exchangeId}/sessions/{sessionId}/chunks to send one chunk.
+    POST /v1/uploads/{exchangeId}/chunks to send one chunk.
 
     Computes a SHA-256 checksum of the chunk bytes and includes it in the request
     so the server can verify data integrity before storing the chunk.
@@ -114,8 +114,7 @@ def upload_chunk(
     Args:
         api_url: Base API URL including the /openlink path when hosted.
         access_token: OAuth access token for authorization.
-        exchange_id: Exchange transaction ID.
-        session_id: Session ID returned by initialize_session.
+        exchange_id: Exchange transaction ID. Also identifies the upload session.
         chunk_index: 0-based index of this chunk within the session.
         chunk_data: Raw bytes of this chunk.
         timeout_seconds: Optional request timeout override in seconds.
@@ -123,7 +122,7 @@ def upload_chunk(
     Raises:
         UploadAPIError: On non-200 response, including checksum mismatch detail.
     """
-    chunk_url = f"{api_url.rstrip('/')}/v1/uploads/{exchange_id}/sessions/{session_id}/chunks"
+    chunk_url = f"{api_url.rstrip('/')}/v1/uploads/{exchange_id}/chunks"
     request_timeout = resolve_timeout_seconds(timeout_seconds)
     checksum = hashlib.sha256(chunk_data).hexdigest()
 
@@ -152,7 +151,9 @@ def upload_chunk(
         raise
     except requests.RequestException as exc:
         raise UploadAPIError(
-            format_api_error(chunk_url, str(exc), operation=f"Upload chunk {chunk_index}")
+            format_api_error(
+                chunk_url, str(exc), operation=f"Upload chunk {chunk_index}"
+            )
         ) from exc
 
 
@@ -160,11 +161,10 @@ def finalize_session(
     api_url: str,
     access_token: str,
     exchange_id: str,
-    session_id: str,
     timeout_seconds: int | None = None,
 ) -> None:
     """
-    POST /v1/uploads/{exchangeId}/sessions/{sessionId}/complete to finalize the upload.
+    POST /v1/uploads/{exchangeId}/complete to finalize the upload.
 
     Signals the server that all chunks have been sent. The server verifies completeness,
     reassembles the file, and triggers downstream processing. Processing only starts
@@ -173,14 +173,13 @@ def finalize_session(
     Args:
         api_url: Base API URL including the /openlink path when hosted.
         access_token: OAuth access token for authorization.
-        exchange_id: Exchange transaction ID.
-        session_id: Session ID returned by initialize_session.
+        exchange_id: Exchange transaction ID. Also identifies the upload session.
         timeout_seconds: Optional request timeout override in seconds.
 
     Raises:
         UploadAPIError: On non-202 response, including incomplete-session detail.
     """
-    finalize_url = f"{api_url.rstrip('/')}/v1/uploads/{exchange_id}/sessions/{session_id}/complete"
+    finalize_url = f"{api_url.rstrip('/')}/v1/uploads/{exchange_id}/complete"
     request_timeout = resolve_timeout_seconds(timeout_seconds)
 
     try:

@@ -5,13 +5,11 @@ Unit tests for the upload command.
 """
 
 import argparse
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from openlinktoken_ext_truveta.auth import Credentials
 from openlinktoken_ext_truveta.commands.common import (
-    LOCAL_API_URL,
     AuthenticatedCommandContext,
     SessionResolutionError,
 )
@@ -77,7 +75,9 @@ class TestUploadCommand:
                 "openlinktoken_ext_truveta.commands.upload._validate_schema_and_extract_sample_token",
                 return_value=(None, None),
             ),
-            patch("openlinktoken_ext_truveta.commands.upload._validate_token_encryption"),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload._validate_token_encryption"
+            ),
             patch(
                 "openlinktoken_ext_truveta.commands.upload.resolve_exchange_config_path",
                 return_value=exchange_config,
@@ -85,7 +85,7 @@ class TestUploadCommand:
         ):
             yield
 
-    def _mock_3step(self, init_return=("sess-001", 8_388_608)):
+    def _mock_3step(self, init_return=8_388_608):
         """Return a context manager that mocks all three upload API steps."""
         return (
             patch(
@@ -116,7 +116,7 @@ class TestUploadCommand:
             ),
             patch(
                 "openlinktoken_ext_truveta.commands.upload.initialize_session",
-                return_value=("sess-001", 8_388_608),
+                return_value=8_388_608,
             ),
             patch("openlinktoken_ext_truveta.commands.upload.upload_chunk"),
             patch("openlinktoken_ext_truveta.commands.upload.finalize_session"),
@@ -133,7 +133,9 @@ class TestUploadCommand:
         data_file = tmp_path / "large.parquet"
         data_file.write_bytes(b"x" * (chunk_size * 3))
 
-        upload_chunk_mock = patch("openlinktoken_ext_truveta.commands.upload.upload_chunk")
+        upload_chunk_mock = patch(
+            "openlinktoken_ext_truveta.commands.upload.upload_chunk"
+        )
         with (
             patch(
                 "openlinktoken_ext_truveta.commands.upload.resolve_exchange_payload",
@@ -150,7 +152,7 @@ class TestUploadCommand:
             ),
             patch(
                 "openlinktoken_ext_truveta.commands.upload.initialize_session",
-                return_value=("sess-001", chunk_size),
+                return_value=chunk_size,
             ),
             upload_chunk_mock as mock_chunk,
             patch("openlinktoken_ext_truveta.commands.upload.finalize_session"),
@@ -170,10 +172,12 @@ class TestUploadCommand:
 
         init_mock = patch(
             "openlinktoken_ext_truveta.commands.upload.initialize_session",
-            return_value=("sess-001", 8_388_608),
+            return_value=8_388_608,
         )
         chunk_mock = patch("openlinktoken_ext_truveta.commands.upload.upload_chunk")
-        finalize_mock = patch("openlinktoken_ext_truveta.commands.upload.finalize_session")
+        finalize_mock = patch(
+            "openlinktoken_ext_truveta.commands.upload.finalize_session"
+        )
 
         with (
             patch(
@@ -223,7 +227,7 @@ class TestUploadCommand:
             ),
             patch(
                 "openlinktoken_ext_truveta.commands.upload.initialize_session",
-                return_value=("sess-001", server_chunk_size),
+                return_value=server_chunk_size,
             ),
             chunk_mock as mock_chunk,
             patch("openlinktoken_ext_truveta.commands.upload.finalize_session"),
@@ -288,12 +292,14 @@ class TestUploadCommand:
             ),
             patch(
                 "openlinktoken_ext_truveta.commands.upload.initialize_session",
-                return_value=("sess-001", 8_388_608),
+                return_value=8_388_608,
             ),
             patch("openlinktoken_ext_truveta.commands.upload.upload_chunk"),
             patch(
                 "openlinktoken_ext_truveta.commands.upload.finalize_session",
-                side_effect=UploadAPIError("400 - IncompleteUploadSession, missingChunks: [2]"),
+                side_effect=UploadAPIError(
+                    "400 - IncompleteUploadSession, missingChunks: [2]"
+                ),
             ),
         ):
             rc = _upload(_args(str(data_file)))
@@ -339,7 +345,7 @@ class TestUploadCommand:
 
         def capture_init(api_url, **kwargs):
             captured["api_url"] = api_url
-            return ("sess-001", 8_388_608)
+            return 8_388_608
 
         with (
             patch(
@@ -353,7 +359,9 @@ class TestUploadCommand:
             ),
             patch(
                 "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
-                return_value=_context(api_url="https://api.dev.truveta-int.com/openlink"),
+                return_value=_context(
+                    api_url="https://api.dev.truveta-int.com/openlink"
+                ),
             ),
             patch(
                 "openlinktoken_ext_truveta.commands.upload.initialize_session",

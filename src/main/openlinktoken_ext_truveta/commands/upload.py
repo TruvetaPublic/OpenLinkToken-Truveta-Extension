@@ -22,7 +22,6 @@ from openlinktoken_cli.processor.token_constants import TokenConstants
 from openlinktoken_ext_truveta.api import upload as upload_api
 from openlinktoken_ext_truveta.api.upload import (
     UploadAPIError,
-    call_upload_endpoint,
     finalize_session,
     initialize_session,
     upload_chunk,
@@ -443,7 +442,8 @@ def _upload(args: argparse.Namespace) -> int:
     Upload tokenized output data to Truveta for self-serve overlap analysis.
 
     Uses the 3-step chunked upload flow:
-    1. Initialize session — validates exchange and returns sessionId and maxChunkSizeBytes.
+    1. Initialize session — validates exchange and returns maxChunkSizeBytes. The exchange ID
+       itself identifies the upload session for the remaining steps.
     2. Upload chunks — file is split into chunks of maxChunkSizeBytes and sent sequentially.
     3. Finalize session — server reassembles chunks and triggers downstream processing.
 
@@ -491,7 +491,9 @@ def _upload(args: argparse.Namespace) -> int:
         )
 
     try:
-        sample_token, zip_metadata = _validate_schema_and_extract_sample_token(file_path)
+        sample_token, zip_metadata = _validate_schema_and_extract_sample_token(
+            file_path
+        )
     except UploadValidationError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
@@ -544,7 +546,12 @@ def _upload(args: argparse.Namespace) -> int:
     timeout_secs = resolve_timeout_seconds(args)
 
     session_files = _build_session_files(
-        is_zip, zip_metadata, metadata_path, exchange_metadata, file_path, exchange_config_file
+        is_zip,
+        zip_metadata,
+        metadata_path,
+        exchange_metadata,
+        file_path,
+        exchange_config_file,
     )
 
     # Estimate chunk count using the known server default so initialize_session is called
@@ -553,7 +560,7 @@ def _upload(args: argparse.Namespace) -> int:
 
     try:
         # Step 1: Initialize session — validates exchange and returns server-authoritative chunk size.
-        session_id, max_chunk_size_bytes = initialize_session(
+        max_chunk_size_bytes = initialize_session(
             api_url=context.api_url,
             access_token=context.credentials.access_token,
             exchange_id=exchange_id,
@@ -566,14 +573,17 @@ def _upload(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 1
     except FileNotFoundError as exc:
-        print(f"Error: Could not read metadata or exchange config file: {exc}", file=sys.stderr)
+        print(
+            f"Error: Could not read metadata or exchange config file: {exc}",
+            file=sys.stderr,
+        )
         return 1
 
     # Recalculate with the server-advertised size; re-initialize only if the count changed.
     total_chunks = _calculate_chunk_count(file_size, max_chunk_size_bytes)
     if total_chunks != initial_chunk_count:
         try:
-            session_id, _ = initialize_session(
+            initialize_session(
                 api_url=context.api_url,
                 access_token=context.credentials.access_token,
                 exchange_id=exchange_id,
@@ -586,7 +596,9 @@ def _upload(args: argparse.Namespace) -> int:
             print(str(exc), file=sys.stderr)
             return 1
 
-    print(f"Uploading {file_path.name} ({file_size / 1_048_576:.1f} MB, {total_chunks} chunk(s))")
+    print(
+        f"Uploading {file_path.name} ({file_size / 1_048_576:.1f} MB, {total_chunks} chunk(s))"
+    )
 
     chunk_index = 0
     try:
@@ -598,7 +610,6 @@ def _upload(args: argparse.Namespace) -> int:
                     api_url=context.api_url,
                     access_token=context.credentials.access_token,
                     exchange_id=exchange_id,
-                    session_id=session_id,
                     chunk_index=chunk_index,
                     chunk_data=chunk_data,
                     timeout_seconds=timeout_secs,
@@ -621,7 +632,6 @@ def _upload(args: argparse.Namespace) -> int:
             api_url=context.api_url,
             access_token=context.credentials.access_token,
             exchange_id=exchange_id,
-            session_id=session_id,
             timeout_seconds=timeout_secs,
         )
     except UploadAPIError as exc:
