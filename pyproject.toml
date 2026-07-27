@@ -16,7 +16,7 @@ dev = [
     "bump2version==1.0.1",
     "build==1.2.2",
     "autoflake==2.3.1",
-    "flake8==7.1.1",
+    "flake8==7.3.0",
 ]
 # Pinned upstream refs used by the release workflow to produce reproducible standalone binaries.
 # Bump these to the desired OpenLinkToken release tag before cutting a release.
