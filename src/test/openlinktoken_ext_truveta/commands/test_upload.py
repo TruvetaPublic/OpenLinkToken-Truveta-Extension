@@ -128,10 +128,11 @@ class TestUploadCommand:
         assert "Upload accepted" in out
 
     def test_progress_output_printed_per_chunk(self, tmp_path, capsys):
-        # 3 chunks: file is 3 * chunk_size bytes so exactly 3 reads produce 3 calls
+        # 2 * chunk_size + 1 bytes always needs exactly 3 chunks, regardless of the
+        # small fixed ZIP container overhead added when packaging the upload.
         chunk_size = 8_388_608
         data_file = tmp_path / "large.parquet"
-        data_file.write_bytes(b"x" * (chunk_size * 3))
+        data_file.write_bytes(b"x" * (chunk_size * 2 + 1))
 
         upload_chunk_mock = patch(
             "openlinktoken_ext_truveta.commands.upload.upload_chunk"
@@ -205,10 +206,11 @@ class TestUploadCommand:
         assert call_kwargs.kwargs["chunk_index"] == 0
 
     def test_uses_max_chunk_size_from_server_response(self, tmp_path):
-        # Server returns 4MB chunk size; 10MB file should produce 3 chunks
+        # Server returns 4MB chunk size; just over 2 * 4MB always needs 3 chunks,
+        # regardless of the small fixed ZIP container overhead added when packaging.
         server_chunk_size = 4_194_304
         data_file = tmp_path / "data.csv"
-        data_file.write_bytes(b"x" * (server_chunk_size * 3 - 1))  # just under 3 * 4MB
+        data_file.write_bytes(b"x" * (server_chunk_size * 2 + 1))
 
         chunk_mock = patch("openlinktoken_ext_truveta.commands.upload.upload_chunk")
         with (

@@ -10,7 +10,9 @@ import csv
 import io
 import json
 import math
+import os
 import sys
+import tempfile
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -383,58 +385,66 @@ def _calculate_chunk_count(file_size: int, max_chunk_size_bytes: int) -> int:
     return max(1, math.ceil(file_size / max_chunk_size_bytes))
 
 
+def _package_as_zip(data_path: Path, metadata_bytes: bytes) -> Path:
+    """
+    Package a raw CSV/Parquet data file together with its metadata into a single ZIP.
+
+    The CLI always uploads a ZIP regardless of the input format, so there is exactly
+    one upload code path (metadata embedded in the ZIP) instead of two — a raw data
+    file with a separately-sent metadataFile, and a ZIP with embedded metadata.
+
+    Args:
+        data_path: Path to the raw CSV or Parquet data file.
+        metadata_bytes: Raw JSON bytes to embed as metadata.json inside the ZIP.
+
+    Returns:
+        Path to a newly created temporary ZIP file. The caller is responsible for
+        deleting it once the upload completes.
+    """
+    zip_fd, zip_path_str = tempfile.mkstemp(suffix=".zip", prefix=f"{data_path.stem}-")
+    os.close(zip_fd)
+
+    zip_path = Path(zip_path_str)
+    # ZIP_STORED (no compression): token data is encrypted/hashed and has near-maximum
+    # entropy, so DEFLATE would spend CPU without meaningfully shrinking the payload.
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zf:
+        zf.write(data_path, arcname=data_path.name)
+        zf.writestr("metadata.json", metadata_bytes)
+
+    return zip_path
+
+
 def _build_session_files(
-    is_zip: bool,
-    zip_metadata: dict | None,
-    metadata_path: Path | None,
-    exchange_metadata: dict,
-    file_path: Path,
+    metadata_bytes: bytes,
+    zip_path: Path,
     exchange_config_path: Path,
 ) -> dict[str, Any]:
     """
-    Build the optional multipart files (metadataFile, exchangeConfigFile) sent at session init.
+    Build the multipart files (metadataFile, exchangeConfigFile) sent at session init.
+
+    The CLI always uploads a ZIP, so metadata always comes from a single resolved
+    payload rather than branching on whether the input was a raw file or a ZIP.
 
     Args:
-        is_zip: Whether the upload file is a ZIP archive.
-        zip_metadata: Metadata extracted from a ZIP, or None.
-        metadata_path: Explicit metadata file path, or None.
-        exchange_metadata: Exchange metadata dict built from exchange config.
-        file_path: Path to the data file being uploaded.
+        metadata_bytes: Raw JSON bytes to send as metadataFile.
+        zip_path: Path to the ZIP file being uploaded (used to name the metadataFile part).
         exchange_config_path: Path to the exchange config file.
 
     Returns:
         Dict of multipart file parts to include in the initialize_session call.
     """
-    files: dict[str, Any] = {}
-
-    if is_zip and zip_metadata is not None:
-        metadata_json = json.dumps(zip_metadata)
-        files["metadataFile"] = (
-            f"{file_path.stem}.metadata.json",
-            metadata_json,
+    return {
+        "metadataFile": (
+            f"{zip_path.stem}.metadata.json",
+            metadata_bytes,
             "application/json",
-        )
-    elif not is_zip and metadata_path is not None:
-        files["metadataFile"] = (
-            metadata_path.name,
-            metadata_path.read_bytes(),
+        ),
+        "exchangeConfigFile": (
+            exchange_config_path.name,
+            exchange_config_path.read_bytes(),
             "application/json",
-        )
-    else:
-        metadata_json = json.dumps(exchange_metadata)
-        files["metadataFile"] = (
-            f"{file_path.stem}.metadata.json",
-            metadata_json,
-            "application/json",
-        )
-
-    files["exchangeConfigFile"] = (
-        exchange_config_path.name,
-        exchange_config_path.read_bytes(),
-        "application/json",
-    )
-
-    return files
+        ),
+    }
 
 
 def _upload(args: argparse.Namespace) -> int:
@@ -542,18 +552,71 @@ def _upload(args: argparse.Namespace) -> int:
         return 1
 
     exchange_id = exchange_metadata["payload"]["exchangeId"]
-    file_size = file_path.stat().st_size
     timeout_secs = resolve_timeout_seconds(args)
 
-    session_files = _build_session_files(
-        is_zip,
-        zip_metadata,
-        metadata_path,
-        exchange_metadata,
-        file_path,
-        exchange_config_file,
-    )
+    # The CLI always uploads a ZIP, regardless of the input format. This keeps
+    # metadata resolution and upload chunking on a single code path instead of
+    # branching on raw-file vs. ZIP input.
+    if is_zip:
+        metadata_bytes = (
+            json.dumps(zip_metadata).encode()
+            if zip_metadata is not None
+            else json.dumps(exchange_metadata).encode()
+        )
+        upload_path = file_path
+        temp_zip_path: Path | None = None
+    else:
+        metadata_bytes = (
+            metadata_path.read_bytes()
+            if metadata_path
+            else json.dumps(exchange_metadata).encode()
+        )
+        upload_path = _package_as_zip(file_path, metadata_bytes)
+        temp_zip_path = upload_path
 
+    try:
+        file_size = upload_path.stat().st_size
+        session_files = _build_session_files(
+            metadata_bytes,
+            upload_path,
+            exchange_config_file,
+        )
+        return _run_upload(
+            context=context,
+            exchange_id=exchange_id,
+            upload_path=upload_path,
+            file_size=file_size,
+            session_files=session_files,
+            timeout_secs=timeout_secs,
+        )
+    finally:
+        if temp_zip_path is not None:
+            temp_zip_path.unlink(missing_ok=True)
+
+
+def _run_upload(
+    *,
+    context: AuthenticatedCommandContext,
+    exchange_id: str,
+    upload_path: Path,
+    file_size: int,
+    session_files: dict[str, Any],
+    timeout_secs: int | None,
+) -> int:
+    """
+    Run the 3-step chunked upload flow (initialize, chunk, finalize) for a prepared file.
+
+    Args:
+        context: Authenticated command context (API URL, credentials).
+        exchange_id: Exchange transaction ID. Also identifies the upload session.
+        upload_path: Path to the file to upload (always a ZIP).
+        file_size: Size of upload_path in bytes.
+        session_files: Multipart files (metadataFile, exchangeConfigFile) for initialize_session.
+        timeout_secs: Optional request timeout override in seconds.
+
+    Returns:
+        Exit code (0 on success, 1 on failure).
+    """
     # Estimate chunk count using the known server default so initialize_session is called
     # only once in the common case (server returns the same chunk size).
     initial_chunk_count = _calculate_chunk_count(file_size, _DEFAULT_CHUNK_SIZE)
@@ -564,7 +627,7 @@ def _upload(args: argparse.Namespace) -> int:
             api_url=context.api_url,
             access_token=context.credentials.access_token,
             exchange_id=exchange_id,
-            file_name=file_path.name,
+            file_name=upload_path.name,
             total_chunk_count=initial_chunk_count,
             files=session_files,
             timeout_seconds=timeout_secs,
@@ -587,7 +650,7 @@ def _upload(args: argparse.Namespace) -> int:
                 api_url=context.api_url,
                 access_token=context.credentials.access_token,
                 exchange_id=exchange_id,
-                file_name=file_path.name,
+                file_name=upload_path.name,
                 total_chunk_count=total_chunks,
                 files=session_files,
                 timeout_seconds=timeout_secs,
@@ -597,13 +660,13 @@ def _upload(args: argparse.Namespace) -> int:
             return 1
 
     print(
-        f"Uploading {file_path.name} ({file_size / 1_048_576:.1f} MB, {total_chunks} chunk(s))"
+        f"Uploading {upload_path.name} ({file_size / 1_048_576:.1f} MB, {total_chunks} chunk(s))"
     )
 
     chunk_index = 0
     try:
         # Step 2: Upload chunks sequentially with progress output.
-        with file_path.open("rb") as f:
+        with upload_path.open("rb") as f:
             for chunk_index in range(total_chunks):
                 chunk_data = f.read(max_chunk_size_bytes)
                 upload_chunk(
