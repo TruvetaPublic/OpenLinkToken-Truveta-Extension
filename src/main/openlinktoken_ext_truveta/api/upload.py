@@ -161,21 +161,29 @@ def finalize_session(
     api_url: str,
     access_token: str,
     exchange_id: str,
+    file_name: str,
+    total_chunk_count: int,
     file_checksum: str,
     timeout_seconds: int | None = None,
 ) -> None:
     """
     POST /v1/uploads/{exchangeId}/complete to finalize the upload.
 
-    Signals the server that all chunks have been sent and provides the SHA-256 checksum
-    of the complete original file so the server can verify the reassembled file matches
-    before starting downstream processing. Processing only starts after this call
-    returns successfully.
+    Signals the server that all chunks have been sent and provides the original file
+    name, total chunk count, and SHA-256 checksum of the complete original file so the
+    server can verify completeness and that the reassembled file matches before starting
+    downstream processing. The server does not persist any state across the initialize,
+    chunk, and finalize calls, so this information must be resent here. Processing only
+    starts after this call returns successfully.
 
     Args:
         api_url: Base API URL including the /openlink path when hosted.
         access_token: OAuth access token for authorization.
         exchange_id: Exchange transaction ID. Also identifies the upload session.
+        file_name: Name of the file being uploaded. Must match the name passed to
+            initialize_session.
+        total_chunk_count: Total number of chunks that were sent. Must match the count
+            passed to initialize_session.
         file_checksum: SHA-256 hex digest of the complete original file, computed by the
             client from the same bytes that were chunked.
         timeout_seconds: Optional request timeout override in seconds.
@@ -190,7 +198,11 @@ def finalize_session(
     try:
         response = requests.post(
             finalize_url,
-            json={"fileChecksum": file_checksum},
+            json={
+                "fileName": file_name,
+                "totalChunkCount": total_chunk_count,
+                "fileChecksum": file_checksum,
+            },
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=request_timeout,
         )

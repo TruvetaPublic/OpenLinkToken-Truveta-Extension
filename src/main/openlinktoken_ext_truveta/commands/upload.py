@@ -685,7 +685,6 @@ def _run_upload(
     except UploadAPIError as exc:
         print(
             f"Upload interrupted at chunk {chunk_index + 1}/{total_chunks}. "
-            "The incomplete session will expire automatically. "
             "Run the upload command again to retry.",
             file=sys.stderr,
         )
@@ -699,6 +698,8 @@ def _run_upload(
             api_url=context.api_url,
             access_token=context.credentials.access_token,
             exchange_id=exchange_id,
+            file_name=upload_path.name,
+            total_chunk_count=total_chunks,
             file_checksum=file_hash.hexdigest(),
             timeout_seconds=timeout_secs,
         )

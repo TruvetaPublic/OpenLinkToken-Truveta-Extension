@@ -22,5 +22,7 @@ class ExchangeResponse(BaseModel):
 
 
 class FinalizeSessionRequest(BaseModel):
+    file_name: str = Field(alias="fileName")
+    total_chunk_count: int = Field(alias="totalChunkCount")
     file_checksum: str = Field(alias="fileChecksum")
     model_config = dict(extra="forbid", populate_by_name=True)
