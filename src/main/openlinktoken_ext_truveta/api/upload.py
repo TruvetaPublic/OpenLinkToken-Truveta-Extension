@@ -161,23 +161,28 @@ def finalize_session(
     api_url: str,
     access_token: str,
     exchange_id: str,
+    file_checksum: str,
     timeout_seconds: int | None = None,
 ) -> None:
     """
     POST /v1/uploads/{exchangeId}/complete to finalize the upload.
 
-    Signals the server that all chunks have been sent. The server verifies completeness,
-    reassembles the file, and triggers downstream processing. Processing only starts
-    after this call returns successfully.
+    Signals the server that all chunks have been sent and provides the SHA-256 checksum
+    of the complete original file so the server can verify the reassembled file matches
+    before starting downstream processing. Processing only starts after this call
+    returns successfully.
 
     Args:
         api_url: Base API URL including the /openlink path when hosted.
         access_token: OAuth access token for authorization.
         exchange_id: Exchange transaction ID. Also identifies the upload session.
+        file_checksum: SHA-256 hex digest of the complete original file, computed by the
+            client from the same bytes that were chunked.
         timeout_seconds: Optional request timeout override in seconds.
 
     Raises:
-        UploadAPIError: On non-202 response, including incomplete-session detail.
+        UploadAPIError: On non-202 response, including checksum mismatch or
+            incomplete-session detail.
     """
     finalize_url = f"{api_url.rstrip('/')}/v1/uploads/{exchange_id}/complete"
     request_timeout = resolve_timeout_seconds(timeout_seconds)
@@ -185,6 +190,7 @@ def finalize_session(
     try:
         response = requests.post(
             finalize_url,
+            json={"fileChecksum": file_checksum},
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=request_timeout,
         )

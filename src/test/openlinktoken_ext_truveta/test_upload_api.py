@@ -213,15 +213,19 @@ class TestFinalizeSession:
 
             def capture(url, **kwargs):
                 captured["url"] = url
+                captured["json"] = kwargs.get("json")
                 return _make_response(202)
 
             mock_post.side_effect = capture
-            finalize_session("https://api.truveta.com/openlink", "token", "ex-123")
+            finalize_session(
+                "https://api.truveta.com/openlink", "token", "ex-123", "a" * 64
+            )
 
         assert (
             captured["url"]
             == "https://api.truveta.com/openlink/v1/uploads/ex-123/complete"
         )
+        assert captured["json"] == {"fileChecksum": "a" * 64}
 
     def test_raises_with_missing_chunk_detail_on_incomplete_session(self):
         error_body = '{"code":"IncompleteUploadSession","missingChunks":[2,3]}'
@@ -229,11 +233,19 @@ class TestFinalizeSession:
             mock_post.return_value = _make_response(400, text=error_body)
 
             with pytest.raises(UploadAPIError, match="400"):
-                finalize_session("http://localhost:8080", "token", "ex-123")
+                finalize_session("http://localhost:8080", "token", "ex-123", "a" * 64)
 
     def test_raises_on_404_session_not_found(self):
         with patch("openlinktoken_ext_truveta.api.upload.requests.post") as mock_post:
             mock_post.return_value = _make_response(404, text="session not found")
 
             with pytest.raises(UploadAPIError, match="404"):
-                finalize_session("http://localhost:8080", "token", "ex-123")
+                finalize_session("http://localhost:8080", "token", "ex-123", "a" * 64)
+
+    def test_raises_on_400_file_checksum_mismatch(self):
+        error_body = '{"code":"FileChecksumMismatch"}'
+        with patch("openlinktoken_ext_truveta.api.upload.requests.post") as mock_post:
+            mock_post.return_value = _make_response(400, text=error_body)
+
+            with pytest.raises(UploadAPIError, match="400"):
+                finalize_session("http://localhost:8080", "token", "ex-123", "a" * 64)

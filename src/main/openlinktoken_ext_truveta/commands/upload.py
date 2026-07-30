@@ -7,6 +7,7 @@ upload command: upload tokenized output data to Truveta for overlap analysis.
 import argparse
 import base64
 import csv
+import hashlib
 import io
 import json
 import math
@@ -664,11 +665,13 @@ def _run_upload(
     )
 
     chunk_index = 0
+    file_hash = hashlib.sha256()
     try:
         # Step 2: Upload chunks sequentially with progress output.
         with upload_path.open("rb") as f:
             for chunk_index in range(total_chunks):
                 chunk_data = f.read(max_chunk_size_bytes)
+                file_hash.update(chunk_data)
                 upload_chunk(
                     api_url=context.api_url,
                     access_token=context.credentials.access_token,
@@ -690,11 +693,13 @@ def _run_upload(
         return 1
 
     try:
-        # Step 3: Finalize — server verifies completeness, assembles, and starts processing.
+        # Step 3: Finalize — server verifies completeness and the full-file checksum,
+        # assembles the file, and starts processing.
         finalize_session(
             api_url=context.api_url,
             access_token=context.credentials.access_token,
             exchange_id=exchange_id,
+            file_checksum=file_hash.hexdigest(),
             timeout_seconds=timeout_secs,
         )
     except UploadAPIError as exc:

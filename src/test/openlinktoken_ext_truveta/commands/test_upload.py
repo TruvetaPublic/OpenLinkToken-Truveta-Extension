@@ -5,6 +5,7 @@ Unit tests for the upload command.
 """
 
 import argparse
+import hashlib
 from unittest.mock import patch
 
 import pytest
@@ -238,6 +239,52 @@ class TestUploadCommand:
 
         assert rc == 0
         assert mock_chunk.call_count == 3
+
+    def test_finalize_receives_checksum_of_uploaded_bytes(self, tmp_path):
+        data_file = tmp_path / "tokenized.csv"
+        data_file.write_bytes(b"token\nabc" * 1000)
+
+        captured_chunks: list[bytes] = []
+        captured_finalize: dict[str, str] = {}
+
+        def capture_chunk(**kwargs):
+            captured_chunks.append(kwargs["chunk_data"])
+
+        def capture_finalize(**kwargs):
+            captured_finalize["file_checksum"] = kwargs["file_checksum"]
+
+        with (
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.resolve_exchange_payload",
+                return_value={
+                    "exchangeId": "ex-1",
+                    "senderKeyFingerprint": "s",
+                    "recipientKeyFingerprint": "r",
+                    "curve": "P-256",
+                },
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
+                return_value=_context(),
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.initialize_session",
+                return_value=8_388_608,
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.upload_chunk",
+                side_effect=capture_chunk,
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.finalize_session",
+                side_effect=capture_finalize,
+            ),
+        ):
+            rc = _upload(_args(str(data_file)))
+
+        assert rc == 0
+        expected_checksum = hashlib.sha256(b"".join(captured_chunks)).hexdigest()
+        assert captured_finalize["file_checksum"] == expected_checksum
 
     def test_initialize_failure_exits_before_chunks(self, tmp_path, capsys):
         data_file = tmp_path / "tokenized.csv"
