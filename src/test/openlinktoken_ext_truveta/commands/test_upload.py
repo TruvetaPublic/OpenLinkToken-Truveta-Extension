@@ -6,6 +6,7 @@ Unit tests for the upload command.
 
 import argparse
 import hashlib
+import zipfile
 from unittest.mock import patch
 
 import pytest
@@ -14,7 +15,11 @@ from openlinktoken_ext_truveta.commands.common import (
     AuthenticatedCommandContext,
     SessionResolutionError,
 )
-from openlinktoken_ext_truveta.commands.upload import _upload
+from openlinktoken_ext_truveta.commands.upload import (
+    _package_as_zip,
+    _package_existing_zip,
+    _upload,
+)
 
 
 class _Response:
@@ -63,6 +68,33 @@ def _context(
 
 class TestUploadCommand:
     """Tests for the 3-step chunked upload flow."""
+
+    def test_packaged_zip_contains_exchange_config(self, tmp_path):
+        data_file = tmp_path / "tokenized.csv"
+        data_file.write_bytes(b"token\nabc")
+
+        zip_path = _package_as_zip(data_file, b'{"metadata":true}', b'{"exchange":true}')
+
+        try:
+            with zipfile.ZipFile(zip_path) as archive:
+                assert archive.read("metadata.json") == b'{"metadata":true}'
+                assert archive.read("exchange-config.json") == b'{"exchange":true}'
+        finally:
+            zip_path.unlink(missing_ok=True)
+
+    def test_existing_zip_gets_exchange_config(self, tmp_path):
+        source_path = tmp_path / "input.zip"
+        with zipfile.ZipFile(source_path, "w") as archive:
+            archive.writestr("data.csv", b"token\nabc")
+            archive.writestr("metadata.json", b"{}")
+
+        output_path = _package_existing_zip(source_path, b'{"exchange":true}')
+
+        try:
+            with zipfile.ZipFile(output_path) as archive:
+                assert archive.read("exchange-config.json") == b'{"exchange":true}'
+        finally:
+            output_path.unlink(missing_ok=True)
 
     @pytest.fixture(autouse=True)
     def _bypass_file_validation(self, tmp_path_factory):

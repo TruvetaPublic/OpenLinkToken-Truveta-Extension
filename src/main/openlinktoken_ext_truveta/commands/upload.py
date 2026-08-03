@@ -10,7 +10,6 @@ import csv
 import hashlib
 import io
 import json
-import math
 import os
 import sys
 import tempfile
@@ -51,9 +50,6 @@ _REQUIRED_COLUMNS = {
 }
 _SUPPORTED_DATA_EXTENSIONS = frozenset({FileExtension.CSV, FileExtension.PARQUET})
 
-# Matches the server default; used only for the initial chunk-count estimate before calling
-# initialize_session so that we only need one round-trip in the common case.
-_DEFAULT_CHUNK_SIZE = 8_388_608
 _SUPPORTED_EXTENSIONS = frozenset(
     {FileExtension.CSV, FileExtension.PARQUET, FileExtension.ZIP}
 )
@@ -372,31 +368,19 @@ def _build_exchange_metadata(domain: str) -> dict[str, Any]:
     }
 
 
-def _calculate_chunk_count(file_size: int, max_chunk_size_bytes: int) -> int:
+def _package_as_zip(
+    data_path: Path, metadata_bytes: bytes, exchange_config_bytes: bytes
+) -> Path:
     """
-    Calculate the number of chunks needed to upload a file.
+    Package a raw CSV/Parquet data file and required JSON sidecars into a ZIP.
 
-    Args:
-        file_size: Total file size in bytes.
-        max_chunk_size_bytes: Maximum allowed chunk size in bytes.
-
-    Returns:
-        Number of chunks, always at least 1.
-    """
-    return max(1, math.ceil(file_size / max_chunk_size_bytes))
-
-
-def _package_as_zip(data_path: Path, metadata_bytes: bytes) -> Path:
-    """
-    Package a raw CSV/Parquet data file together with its metadata into a single ZIP.
-
-    The CLI always uploads a ZIP regardless of the input format, so there is exactly
-    one upload code path (metadata embedded in the ZIP) instead of two — a raw data
-    file with a separately-sent metadataFile, and a ZIP with embedded metadata.
+    The CLI always uploads a ZIP regardless of the input format, with metadata and
+    exchange configuration embedded as JSON entries.
 
     Args:
         data_path: Path to the raw CSV or Parquet data file.
         metadata_bytes: Raw JSON bytes to embed as metadata.json inside the ZIP.
+        exchange_config_bytes: Raw JSON bytes to embed as exchange-config.json.
 
     Returns:
         Path to a newly created temporary ZIP file. The caller is responsible for
@@ -411,41 +395,29 @@ def _package_as_zip(data_path: Path, metadata_bytes: bytes) -> Path:
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zf:
         zf.write(data_path, arcname=data_path.name)
         zf.writestr("metadata.json", metadata_bytes)
+        zf.writestr("exchange-config.json", exchange_config_bytes)
 
     return zip_path
 
 
-def _build_session_files(
-    metadata_bytes: bytes,
-    zip_path: Path,
-    exchange_config_path: Path,
-) -> dict[str, Any]:
-    """
-    Build the multipart files (metadataFile, exchangeConfigFile) sent at session init.
+def _package_existing_zip(zip_path: Path, exchange_config_bytes: bytes) -> Path:
+    """Copy an existing ZIP and add the required exchange config entry when absent."""
+    zip_fd, output_path_str = tempfile.mkstemp(
+        suffix=".zip", prefix=f"{zip_path.stem}-"
+    )
+    os.close(zip_fd)
+    output_path = Path(output_path_str)
 
-    The CLI always uploads a ZIP, so metadata always comes from a single resolved
-    payload rather than branching on whether the input was a raw file or a ZIP.
+    with zipfile.ZipFile(zip_path, "r") as source, zipfile.ZipFile(
+        output_path, "w", zipfile.ZIP_STORED
+    ) as target:
+        names = source.namelist()
+        for name in names:
+            target.writestr(name, source.read(name))
+        if "exchange-config.json" not in names:
+            target.writestr("exchange-config.json", exchange_config_bytes)
 
-    Args:
-        metadata_bytes: Raw JSON bytes to send as metadataFile.
-        zip_path: Path to the ZIP file being uploaded (used to name the metadataFile part).
-        exchange_config_path: Path to the exchange config file.
-
-    Returns:
-        Dict of multipart file parts to include in the initialize_session call.
-    """
-    return {
-        "metadataFile": (
-            f"{zip_path.stem}.metadata.json",
-            metadata_bytes,
-            "application/json",
-        ),
-        "exchangeConfigFile": (
-            exchange_config_path.name,
-            exchange_config_path.read_bytes(),
-            "application/json",
-        ),
-    }
+    return output_path
 
 
 def _upload(args: argparse.Namespace) -> int:
@@ -458,7 +430,7 @@ def _upload(args: argparse.Namespace) -> int:
     2. Upload chunks — file is split into chunks of maxChunkSizeBytes and sent sequentially.
     3. Finalize session — server reassembles chunks and triggers downstream processing.
 
-    Metadata and exchange config are sent at session initialization (step 1), not per-chunk.
+    Metadata and exchange config are bundled into the ZIP before initialization.
     Progress is printed to stdout after each chunk.
 
     Args:
@@ -564,30 +536,28 @@ def _upload(args: argparse.Namespace) -> int:
             if zip_metadata is not None
             else json.dumps(exchange_metadata).encode()
         )
-        upload_path = file_path
-        temp_zip_path: Path | None = None
+        upload_path = _package_existing_zip(
+            file_path, exchange_config_file.read_bytes()
+        )
+        temp_zip_path: Path | None = upload_path
     else:
         metadata_bytes = (
             metadata_path.read_bytes()
             if metadata_path
             else json.dumps(exchange_metadata).encode()
         )
-        upload_path = _package_as_zip(file_path, metadata_bytes)
+        upload_path = _package_as_zip(
+            file_path, metadata_bytes, exchange_config_file.read_bytes()
+        )
         temp_zip_path = upload_path
 
     try:
         file_size = upload_path.stat().st_size
-        session_files = _build_session_files(
-            metadata_bytes,
-            upload_path,
-            exchange_config_file,
-        )
         return _run_upload(
             context=context,
             exchange_id=exchange_id,
             upload_path=upload_path,
             file_size=file_size,
-            session_files=session_files,
             timeout_secs=timeout_secs,
         )
     finally:
@@ -601,7 +571,6 @@ def _run_upload(
     exchange_id: str,
     upload_path: Path,
     file_size: int,
-    session_files: dict[str, Any],
     timeout_secs: int | None,
 ) -> int:
     """
@@ -612,16 +581,11 @@ def _run_upload(
         exchange_id: Exchange transaction ID. Also identifies the upload session.
         upload_path: Path to the file to upload (always a ZIP).
         file_size: Size of upload_path in bytes.
-        session_files: Multipart files (metadataFile, exchangeConfigFile) for initialize_session.
         timeout_secs: Optional request timeout override in seconds.
 
     Returns:
         Exit code (0 on success, 1 on failure).
     """
-    # Estimate chunk count using the known server default so initialize_session is called
-    # only once in the common case (server returns the same chunk size).
-    initial_chunk_count = _calculate_chunk_count(file_size, _DEFAULT_CHUNK_SIZE)
-
     try:
         # Step 1: Initialize session — validates exchange and returns server-authoritative chunk size.
         max_chunk_size_bytes = initialize_session(
@@ -629,8 +593,6 @@ def _run_upload(
             access_token=context.credentials.access_token,
             exchange_id=exchange_id,
             file_name=upload_path.name,
-            total_chunk_count=initial_chunk_count,
-            files=session_files,
             timeout_seconds=timeout_secs,
         )
     except UploadAPIError as exc:
@@ -643,22 +605,7 @@ def _run_upload(
         )
         return 1
 
-    # Recalculate with the server-advertised size; re-initialize only if the count changed.
-    total_chunks = _calculate_chunk_count(file_size, max_chunk_size_bytes)
-    if total_chunks != initial_chunk_count:
-        try:
-            initialize_session(
-                api_url=context.api_url,
-                access_token=context.credentials.access_token,
-                exchange_id=exchange_id,
-                file_name=upload_path.name,
-                total_chunk_count=total_chunks,
-                files=session_files,
-                timeout_seconds=timeout_secs,
-            )
-        except UploadAPIError as exc:
-            print(str(exc), file=sys.stderr)
-            return 1
+    total_chunks = max(1, (file_size + max_chunk_size_bytes - 1) // max_chunk_size_bytes)
 
     print(
         f"Uploading {upload_path.name} ({file_size / 1_048_576:.1f} MB, {total_chunks} chunk(s))"
