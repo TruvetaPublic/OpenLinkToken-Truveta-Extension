@@ -8,7 +8,6 @@ import hashlib
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from openlinktoken_ext_truveta.api.upload import (
     UploadAPIError,
     finalize_session,
@@ -32,12 +31,12 @@ class TestInitializeSession:
             mock_post.return_value = _make_response(201, json_payload=payload)
 
             max_chunk_size = initialize_session(
-                "http://localhost:8080", "token", "ex-123", "data.zip"
+                "http://localhost:8080", "token", "ex-123"
             )
 
         assert max_chunk_size == 8388608
 
-    def test_posts_json_without_multipart(self):
+    def test_posts_without_a_request_body(self):
         payload = {"maxChunkSizeBytes": 8388608}
         captured = {}
         with patch("openlinktoken_ext_truveta.api.upload.requests.post") as mock_post:
@@ -48,12 +47,10 @@ class TestInitializeSession:
                 return _make_response(201, json_payload=payload)
 
             mock_post.side_effect = capture
-            initialize_session(
-                "https://api.truveta.com/openlink", "token", "ex-123", "f.zip"
-            )
+            initialize_session("https://api.truveta.com/openlink", "token", "ex-123")
 
         assert captured["url"] == "https://api.truveta.com/openlink/v1/uploads/ex-123"
-        assert captured["json"] == {"fileName": "f.zip"}
+        assert "json" not in captured
         assert "data" not in captured
         assert "files" not in captured
 
@@ -62,14 +59,14 @@ class TestInitializeSession:
             mock_post.return_value = _make_response(400, text="exchange not found")
 
             with pytest.raises(UploadAPIError, match="400"):
-                initialize_session("http://localhost:8080", "token", "ex-123", "f.zip")
+                initialize_session("http://localhost:8080", "token", "ex-123")
 
     def test_raises_on_409_already_completed(self):
         with patch("openlinktoken_ext_truveta.api.upload.requests.post") as mock_post:
             mock_post.return_value = _make_response(409, text="already completed")
 
             with pytest.raises(UploadAPIError, match="409"):
-                initialize_session("http://localhost:8080", "token", "ex-123", "f.zip")
+                initialize_session("http://localhost:8080", "token", "ex-123")
 
 
 class TestUploadChunk:

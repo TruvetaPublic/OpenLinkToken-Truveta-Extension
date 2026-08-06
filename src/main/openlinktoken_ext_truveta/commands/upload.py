@@ -408,9 +408,10 @@ def _package_existing_zip(zip_path: Path, exchange_config_bytes: bytes) -> Path:
     os.close(zip_fd)
     output_path = Path(output_path_str)
 
-    with zipfile.ZipFile(zip_path, "r") as source, zipfile.ZipFile(
-        output_path, "w", zipfile.ZIP_STORED
-    ) as target:
+    with (
+        zipfile.ZipFile(zip_path, "r") as source,
+        zipfile.ZipFile(output_path, "w", zipfile.ZIP_STORED) as target,
+    ):
         names = source.namelist()
         for name in names:
             target.writestr(name, source.read(name))
@@ -592,7 +593,6 @@ def _run_upload(
             api_url=context.api_url,
             access_token=context.credentials.access_token,
             exchange_id=exchange_id,
-            file_name=upload_path.name,
             timeout_seconds=timeout_secs,
         )
     except UploadAPIError as exc:
@@ -605,7 +605,9 @@ def _run_upload(
         )
         return 1
 
-    total_chunks = max(1, (file_size + max_chunk_size_bytes - 1) // max_chunk_size_bytes)
+    total_chunks = max(
+        1, (file_size + max_chunk_size_bytes - 1) // max_chunk_size_bytes
+    )
 
     print(
         f"Uploading {upload_path.name} ({file_size / 1_048_576:.1f} MB, {total_chunks} chunk(s))"

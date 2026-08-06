@@ -23,7 +23,6 @@ def initialize_session(
     api_url: str,
     access_token: str,
     exchange_id: str,
-    file_name: str,
     timeout_seconds: int | None = None,
 ) -> int:
     """
@@ -37,7 +36,6 @@ def initialize_session(
         api_url: Base API URL including the /openlink path when hosted.
         access_token: OAuth access token for authorization.
         exchange_id: Exchange transaction ID. Also identifies the upload session.
-        file_name: Name of the file being uploaded.
         timeout_seconds: Optional request timeout override in seconds.
 
     Returns:
@@ -52,7 +50,6 @@ def initialize_session(
     try:
         response = requests.post(
             session_url,
-            json={"fileName": file_name},
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=request_timeout,
         )
