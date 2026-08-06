@@ -70,7 +70,7 @@ class TestInitializeSession:
 
 
 class TestUploadChunk:
-    def test_posts_raw_chunk_with_query_parameters(self):
+    def test_posts_raw_chunk_with_checksum_header(self):
         chunk_data = b"hello chunk"
         expected_checksum = hashlib.sha256(chunk_data).hexdigest()
         captured = {}
@@ -88,11 +88,11 @@ class TestUploadChunk:
         assert captured["url"] == "http://localhost:8080/v1/uploads/ex-123/chunks"
         assert captured["params"] == {
             "chunkIndex": "2",
-            "chunkChecksum": expected_checksum,
         }
         assert captured["data"] == chunk_data
         assert "files" not in captured
         assert captured["headers"]["Content-Type"] == "application/octet-stream"
+        assert captured["headers"]["Chunk-Checksum"] == expected_checksum
 
     def test_raises_on_checksum_mismatch(self):
         with patch("openlinktoken_ext_truveta.api.upload.requests.post") as mock_post:

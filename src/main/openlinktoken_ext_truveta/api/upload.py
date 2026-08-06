@@ -85,8 +85,10 @@ def upload_chunk(
     """
     POST /v1/uploads/{exchangeId}/chunks to send one chunk.
 
-    Computes a SHA-256 checksum of the chunk bytes and includes it in the request
-    so the server can verify data integrity before storing the chunk.
+    Computes a SHA-256 checksum of the chunk bytes and sends it as the
+    Chunk-Checksum request header so the server can verify data integrity 
+    before storing the chunk, without the digest showing up in access logs 
+    alongside the request URL.
 
     Args:
         api_url: Base API URL including the /openlink path when hosted.
@@ -108,12 +110,12 @@ def upload_chunk(
             chunk_url,
             params={
                 "chunkIndex": str(chunk_index),
-                "chunkChecksum": checksum,
             },
             data=chunk_data,
             headers={
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/octet-stream",
+                "Chunk-Checksum": checksum,
             },
             timeout=request_timeout,
         )
