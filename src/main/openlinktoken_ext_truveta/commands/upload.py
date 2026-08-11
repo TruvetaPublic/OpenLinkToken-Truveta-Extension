@@ -14,7 +14,7 @@ import os
 import sys
 import tempfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from openlinktoken.tokentransformer.match_token_constants import V1_TOKEN_PREFIX
@@ -24,6 +24,7 @@ from openlinktoken_cli.processor.token_constants import TokenConstants
 from openlinktoken_ext_truveta.api import upload as upload_api
 from openlinktoken_ext_truveta.api.upload import (
     UploadAPIError,
+    UploadSessionInfo,
     finalize_session,
     initialize_session,
     upload_chunk,
@@ -386,7 +387,7 @@ def _package_as_zip(
         Path to a newly created temporary ZIP file. The caller is responsible for
         deleting it once the upload completes.
     """
-    zip_fd, zip_path_str = tempfile.mkstemp(suffix=".zip", prefix=f"{data_path.stem}-")
+    zip_fd, zip_path_str = tempfile.mkstemp(suffix=".zip", prefix="upload-")
     os.close(zip_fd)
 
     zip_path = Path(zip_path_str)
@@ -413,12 +414,24 @@ def _package_existing_zip(zip_path: Path, exchange_config_bytes: bytes) -> Path:
         zipfile.ZipFile(output_path, "w", zipfile.ZIP_STORED) as target,
     ):
         names = source.namelist()
+        _validate_zip_member_names(names)
         for name in names:
             target.writestr(name, source.read(name))
         if "exchange-config.json" not in names:
             target.writestr("exchange-config.json", exchange_config_bytes)
 
     return output_path
+
+
+def _validate_zip_member_names(names: list[str]) -> None:
+    """Reject archive members that could escape the logical ZIP root."""
+    if len(names) != len(set(names)):
+        raise UploadValidationError("ZIP contains duplicate member names")
+
+    for name in names:
+        path = PurePosixPath(name)
+        if not name or name.startswith("/") or "\\" in name or ".." in path.parts:
+            raise UploadValidationError(f"ZIP contains unsafe member path: {name!r}")
 
 
 def _upload(args: argparse.Namespace) -> int:
@@ -589,7 +602,7 @@ def _run_upload(
     """
     try:
         # Step 1: Initialize session — validates exchange and returns server-authoritative chunk size.
-        max_chunk_size_bytes = initialize_session(
+        session_info = initialize_session(
             api_url=context.api_url,
             access_token=context.credentials.access_token,
             exchange_id=exchange_id,
@@ -604,6 +617,18 @@ def _run_upload(
             file=sys.stderr,
         )
         return 1
+
+    if isinstance(session_info, UploadSessionInfo):
+        max_chunk_size_bytes = session_info.max_chunk_size_bytes
+        if file_size > session_info.max_file_size_bytes:
+            print(
+                f"Error: File size ({file_size} bytes) exceeds maximum "
+                f"({session_info.max_file_size_bytes} bytes)",
+                file=sys.stderr,
+            )
+            return 1
+    else:
+        max_chunk_size_bytes = session_info
 
     total_chunks = max(
         1, (file_size + max_chunk_size_bytes - 1) // max_chunk_size_bytes

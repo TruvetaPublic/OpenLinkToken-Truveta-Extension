@@ -16,6 +16,7 @@ from openlinktoken_ext_truveta.commands.common import (
     SessionResolutionError,
 )
 from openlinktoken_ext_truveta.commands.upload import (
+    UploadValidationError,
     _package_as_zip,
     _package_existing_zip,
     _upload,
@@ -95,6 +96,14 @@ class TestUploadCommand:
                 assert archive.read("exchange-config.json") == b'{"exchange":true}'
         finally:
             output_path.unlink(missing_ok=True)
+
+    def test_existing_zip_rejects_unsafe_member_path(self, tmp_path):
+        source_path = tmp_path / "input.zip"
+        with zipfile.ZipFile(source_path, "w") as archive:
+            archive.writestr("../data.csv", b"token\nabc")
+
+        with pytest.raises(UploadValidationError, match="unsafe member path"):
+            _package_existing_zip(source_path, b'{}')
 
     @pytest.fixture(autouse=True)
     def _bypass_file_validation(self, tmp_path_factory):

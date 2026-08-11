@@ -42,20 +42,17 @@ class OpenLinkTokenServiceClient:
         exchange_id: str,
         version: str,
         body: bytes,
-        chunk_index: int | None = None,
-        chunk_checksum: str | None = None,
+        chunk_index: int,
+        chunk_checksum: str,
     ) -> None:
-        url = f"{self._base_url}/api/v{quote(str(version))}/uploads/{quote(str(exchange_id))}/chunks"
-        params: dict[str, int | str] = {}
-        if chunk_index is not None:
-            params["chunkIndex"] = chunk_index
-        if chunk_checksum is not None:
-            params["chunkChecksum"] = chunk_checksum
-        response = await self._client.post(
+        url = f"{self._base_url}/api/v{quote(str(version))}/uploads/{quote(str(exchange_id))}/chunks/{chunk_index}"
+        response = await self._client.put(
             url,
             content=body,
-            headers={"Content-Type": "application/octet-stream"},
-            params=params,
+            headers={
+                "Content-Type": "application/octet-stream",
+                "Chunk-Checksum": chunk_checksum,
+            },
         )
         response.raise_for_status()
 

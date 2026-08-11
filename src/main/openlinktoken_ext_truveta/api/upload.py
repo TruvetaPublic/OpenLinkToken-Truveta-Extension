@@ -5,6 +5,7 @@ Upload endpoint API client for tokenized payload submission.
 """
 
 import hashlib
+from dataclasses import dataclass
 
 import requests
 
@@ -19,12 +20,21 @@ class UploadAPIError(Exception):
     """Raised when upload API calls fail."""
 
 
+@dataclass(frozen=True)
+class UploadSessionInfo:
+    """Server-provided limits and lifetime for a chunked upload session."""
+
+    expires_at_utc: str
+    max_chunk_size_bytes: int
+    max_file_size_bytes: int
+
+
 def initialize_session(
     api_url: str,
     access_token: str,
     exchange_id: str,
     timeout_seconds: int | None = None,
-) -> int:
+) -> UploadSessionInfo:
     """
     POST /v1/uploads/{exchangeId} to create a new chunked upload session for this exchange.
 
@@ -39,7 +49,7 @@ def initialize_session(
         timeout_seconds: Optional request timeout override in seconds.
 
     Returns:
-        max_chunk_size_bytes.
+        Server-provided session limits and expiration.
 
     Raises:
         UploadAPIError: On non-201 response.
@@ -64,10 +74,25 @@ def initialize_session(
             )
 
         payload = response.json()
-        return payload["maxChunkSizeBytes"]
+        session = UploadSessionInfo(
+            expires_at_utc=payload["expiresAtUtc"],
+            max_chunk_size_bytes=payload["maxChunkSizeBytes"],
+            max_file_size_bytes=payload["maxFileSizeBytes"],
+        )
+        if (
+            not session.expires_at_utc
+            or session.max_chunk_size_bytes <= 0
+            or session.max_file_size_bytes <= 0
+        ):
+            raise ValueError("Initialize session returned invalid upload limits")
+        return session
 
     except UploadAPIError:
         raise
+    except (ValueError, KeyError, TypeError) as exc:
+        raise UploadAPIError(
+            format_api_error(session_url, str(exc), operation="Initialize session")
+        ) from exc
     except requests.RequestException as exc:
         raise UploadAPIError(
             format_api_error(session_url, str(exc), operation="Initialize session")
@@ -83,12 +108,13 @@ def upload_chunk(
     timeout_seconds: int | None = None,
 ) -> None:
     """
-    POST /v1/uploads/{exchangeId}/chunks to send one chunk.
+    PUT /v1/uploads/{exchangeId}/chunks/{chunkIndex} to send one chunk.
 
     Computes a SHA-256 checksum of the chunk bytes and sends it as the
-    Chunk-Checksum request header so the server can verify data integrity 
-    before storing the chunk, without the digest showing up in access logs 
-    alongside the request URL.
+    Chunk-Checksum request header so the server can verify data integrity
+    before storing the chunk, without the digest showing up in access logs
+    alongside the request URL. Uses PUT because re-uploading the same index
+    is idempotent.
 
     Args:
         api_url: Base API URL including the /openlink path when hosted.
@@ -101,16 +127,13 @@ def upload_chunk(
     Raises:
         UploadAPIError: On non-200 response, including checksum mismatch detail.
     """
-    chunk_url = f"{api_url.rstrip('/')}/v1/uploads/{exchange_id}/chunks"
+    chunk_url = f"{api_url.rstrip('/')}/v1/uploads/{exchange_id}/chunks/{chunk_index}"
     request_timeout = resolve_timeout_seconds(timeout_seconds)
     checksum = hashlib.sha256(chunk_data).hexdigest()
 
     try:
-        response = requests.post(
+        response = requests.put(
             chunk_url,
-            params={
-                "chunkIndex": str(chunk_index),
-            },
             data=chunk_data,
             headers={
                 "Authorization": f"Bearer {access_token}",
