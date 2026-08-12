@@ -51,6 +51,9 @@ Thumbs.db
 # Local data
 tmp/
 *.log
+.worktrees/
+target/
+openlinktoken-*.exchange.json
 
 # uv (lockfile not maintained in git for this repo)
 uv.lock
@@ -60,13 +63,7 @@ uv.lock
 .devcontainer/host-ca-certificates.crt
 .worktrees/
 
-target/
-
-
 # APM dependencies
 apm_modules/
 .agents/
 apm.lock.yaml
-
-
-openlinktoken-*.exchange.json
