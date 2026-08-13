@@ -21,6 +21,9 @@ services:
       - openlinktoken-config:/home/vscode/.config
       - openlinktoken-openhands:/home/vscode/.openhands
     user: vscode:vscode
+    environment:
+      GH_TOKEN: ${PUBLIC_GH_TOKEN:-}
+      UV_PROJECT_ENVIRONMENT: /home/vscode/.local/share/openlinktoken-ext-truveta/.venv
     # Keeps the container running so devcontainer tooling can attach
     command: sleep infinity
 
