@@ -51,7 +51,6 @@ Thumbs.db
 # Local data
 tmp/
 *.log
-.worktrees/
 target/
 openlinktoken-*.exchange.json
 
