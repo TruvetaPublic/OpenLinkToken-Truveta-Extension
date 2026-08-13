@@ -3,7 +3,7 @@ name = "openlinktoken-ext-truveta"
 version = "1.0.0"
 requires-python = ">=3.10"
 description = "Open Link Token extension for Truveta-specific CLI commands"
-dependencies = ["requests==2.33.0", "cryptography==48.0.1", "httpx==0.28.1", "pydantic==2.13.4"]
+dependencies = ["requests==2.33.0", "cryptography==50.0.0", "httpx==0.28.1", "pydantic==2.13.4"]
 
 [project.entry-points."openlinktoken.extensions"]
 truveta = "openlinktoken_ext_truveta.extension:TruvetaExtension"
@@ -15,12 +15,12 @@ dev = [
     "bump2version==1.0.1",
     "build==1.2.2",
     "autoflake==2.3.1",
-    "flake8==7.1.1",
+    "flake8==7.3.0",
 ]
-# Pinned upstream refs used by the release workflow to produce reproducible standalone binaries.
-# Bump these to the desired OpenLinkToken release tag before cutting a release.
+# Keep the release dependency aligned with the current OpenLinkToken develop branch
+# to maintain compatibility with the extension's runtime and build environment.
 release = [
-    "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@v1.13.2#subdirectory=lib/python/openlinktoken-cli",
+    "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@develop#subdirectory=lib/python/openlinktoken-cli",
 ]
 
 [build-system]
