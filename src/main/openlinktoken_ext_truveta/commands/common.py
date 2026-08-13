@@ -19,7 +19,7 @@ from openlinktoken_ext_truveta.domain import (
 )
 from openlinktoken_ext_truveta.session import read_session_domain
 
-LOCAL_API_URL = "http://localhost:18080"
+LOCAL_API_URL = "http://localhost:18080/api"
 DEFAULT_TIMEOUT_SECONDS = 30
 LOCAL_DEV_TIMEOUT_SECONDS = 180
 

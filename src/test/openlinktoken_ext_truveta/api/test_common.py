@@ -44,6 +44,19 @@ class TestExtractErrorBody:
         response = _make_response(400, json_payload=["error"], text="raw error")
         assert extract_error_body(response) == "raw error"
 
+    def test_preserves_typed_upload_error_details(self):
+        response = _make_response(
+            400,
+            json_payload={
+                "error": "Incomplete upload",
+                "code": "IncompleteUploadSession",
+                "missingChunks": [2, 3],
+            },
+        )
+        assert extract_error_body(response) == (
+            "Incomplete upload (code=IncompleteUploadSession, missingChunks=[2, 3])"
+        )
+
 
 class TestFormatApiError:
     def test_uses_operation_in_message(self):

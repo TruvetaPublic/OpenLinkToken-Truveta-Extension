@@ -122,28 +122,29 @@ def _patch_core_exchange_compat(monkeypatch):
     )
 
     resolved_exchange_config = exchange_config_module.ResolvedExchangeConfig
-    if not hasattr(resolved_exchange_config, "rotation_count"):
+    fields = getattr(resolved_exchange_config, "__annotations__", {})
+    if "rotation_count" not in fields:
         monkeypatch.setattr(
             resolved_exchange_config,
             "rotation_count",
             property(lambda self: self.payload.get("rotationCount", 50)),
             raising=False,
         )
-    if not hasattr(resolved_exchange_config, "bin_width"):
+    if "bin_width" not in fields:
         monkeypatch.setattr(
             resolved_exchange_config,
             "bin_width",
             property(lambda self: self.payload.get("binWidth", 0.05)),
             raising=False,
         )
-    if not hasattr(resolved_exchange_config, "dimension_bias"):
+    if "dimension_bias" not in fields:
         monkeypatch.setattr(
             resolved_exchange_config,
             "dimension_bias",
             property(lambda self: self.payload.get("dimensionBias", [])),
             raising=False,
         )
-    if not hasattr(resolved_exchange_config, "rotation_iv"):
+    if "rotation_iv" not in fields:
         monkeypatch.setattr(
             resolved_exchange_config,
             "rotation_iv",
