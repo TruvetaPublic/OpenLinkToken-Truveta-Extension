@@ -10,12 +10,11 @@ import csv
 import hashlib
 import io
 import json
-import os
 import sys
-import tempfile
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, BinaryIO
 
 from openlinktoken.tokentransformer.match_token_constants import V1_TOKEN_PREFIX
 from openlinktoken_cli.io.file_extension import FileExtension
@@ -58,6 +57,22 @@ _SUPPORTED_EXTENSIONS = frozenset(
 
 class UploadValidationError(Exception):
     """Raised when the data file fails pre-upload validation."""
+
+
+class UploadPackagingError(Exception):
+    """Raised when a ZIP for upload cannot be built, e.g. due to memory pressure."""
+
+
+@dataclass
+class PreparedUpload:
+    """A ready-to-upload payload: an open, readable stream plus its size and filename."""
+
+    stream: BinaryIO
+    size: int
+    filename: str
+
+    def close(self) -> None:
+        self.stream.close()
 
 
 def _validate_csv_columns(file_obj: io.IOBase) -> str | None:
@@ -371,12 +386,12 @@ def _build_exchange_metadata(domain: str) -> dict[str, Any]:
 
 def _package_as_zip(
     data_path: Path, metadata_bytes: bytes, exchange_config_bytes: bytes
-) -> Path:
+) -> PreparedUpload:
     """
-    Package a raw CSV/Parquet data file and required JSON sidecars into a ZIP.
+    Package a raw CSV/Parquet data file and required JSON sidecars into an in-memory ZIP.
 
-    The CLI always uploads a ZIP regardless of the input format, with metadata and
-    exchange configuration embedded as JSON entries.
+    The ZIP is built in a BytesIO buffer rather than written to disk, since it is
+    immediately re-read for chunked upload and discarded afterward.
 
     Args:
         data_path: Path to the raw CSV or Parquet data file.
@@ -384,43 +399,71 @@ def _package_as_zip(
         exchange_config_bytes: Raw JSON bytes to embed as exchange-config.json.
 
     Returns:
-        Path to a newly created temporary ZIP file. The caller is responsible for
-        deleting it once the upload completes.
+        A PreparedUpload wrapping the in-memory ZIP, positioned at the start.
+
+    Raises:
+        UploadPackagingError: The ZIP could not be built.
     """
-    zip_fd, zip_path_str = tempfile.mkstemp(suffix=".zip", prefix="upload-")
-    os.close(zip_fd)
+    buffer = io.BytesIO()
+    try:
+        # ZIP_STORED (no compression): token data is encrypted/hashed and has near-maximum
+        # entropy, so DEFLATE would spend CPU without meaningfully shrinking the payload.
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as zf:
+            zf.write(data_path, arcname=data_path.name)
+            zf.writestr("metadata.json", metadata_bytes)
+            zf.writestr("exchange-config.json", exchange_config_bytes)
+    except OSError as exc:
+        raise UploadPackagingError(f"Unable to build upload ZIP: {exc}") from exc
 
-    zip_path = Path(zip_path_str)
-    # ZIP_STORED (no compression): token data is encrypted/hashed and has near-maximum
-    # entropy, so DEFLATE would spend CPU without meaningfully shrinking the payload.
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zf:
-        zf.write(data_path, arcname=data_path.name)
-        zf.writestr("metadata.json", metadata_bytes)
-        zf.writestr("exchange-config.json", exchange_config_bytes)
-
-    return zip_path
+    size = buffer.getbuffer().nbytes
+    buffer.seek(0)
+    return PreparedUpload(stream=buffer, size=size, filename=f"{data_path.stem}.zip")
 
 
-def _package_existing_zip(zip_path: Path, exchange_config_bytes: bytes) -> Path:
-    """Copy an existing ZIP and add the required exchange config entry when absent."""
-    zip_fd, output_path_str = tempfile.mkstemp(
-        suffix=".zip", prefix=f"{zip_path.stem}-"
-    )
-    os.close(zip_fd)
-    output_path = Path(output_path_str)
+def _package_existing_zip(
+    zip_path: Path, exchange_config_bytes: bytes
+) -> PreparedUpload:
+    """Prepare an existing ZIP for upload.
 
-    with (
-        zipfile.ZipFile(zip_path, "r") as source,
-        zipfile.ZipFile(output_path, "w", zipfile.ZIP_STORED) as target,
-    ):
+    Args:
+        zip_path: Path to the user-provided ZIP archive.
+        exchange_config_bytes: JSON bytes to add when the archive lacks
+            ``exchange-config.json``.
+
+    Returns:
+        A PreparedUpload. When the archive already contains exchange-config.json,
+        it wraps the original file opened for reading, since no changes are
+        needed. Otherwise it wraps an in-memory ZIP built from the source entries
+        plus the added entry, avoiding an on-disk copy.
+
+    Raises:
+        UploadPackagingError: The augmented ZIP could not be built.
+    """
+    with zipfile.ZipFile(zip_path, "r") as source:
         names = source.namelist()
         _validate_zip_member_names(names)
-        for name in names:
-            target.writestr(name, source.read(name))
-        if "exchange-config.json" not in names:
-            target.writestr("exchange-config.json", exchange_config_bytes)
+        if "exchange-config.json" in names:
+            return PreparedUpload(
+                stream=zip_path.open("rb"),
+                size=zip_path.stat().st_size,
+                filename=zip_path.name,
+            )
 
-    return output_path
+    buffer = io.BytesIO()
+    try:
+        with (
+            zipfile.ZipFile(zip_path, "r") as source,
+            zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as target,
+        ):
+            for name in names:
+                target.writestr(name, source.read(name))
+            target.writestr("exchange-config.json", exchange_config_bytes)
+    except OSError as exc:
+        raise UploadPackagingError(f"Unable to build upload ZIP: {exc}") from exc
+
+    size = buffer.getbuffer().nbytes
+    buffer.seek(0)
+    return PreparedUpload(stream=buffer, size=size, filename=zip_path.name)
 
 
 def _validate_zip_member_names(names: list[str]) -> None:
@@ -544,47 +587,45 @@ def _upload(args: argparse.Namespace) -> int:
     # The CLI always uploads a ZIP, regardless of the input format. This keeps
     # metadata resolution and upload chunking on a single code path instead of
     # branching on raw-file vs. ZIP input.
-    if is_zip:
-        metadata_bytes = (
-            json.dumps(zip_metadata).encode()
-            if zip_metadata is not None
-            else json.dumps(exchange_metadata).encode()
-        )
-        upload_path = _package_existing_zip(
-            file_path, exchange_config_file.read_bytes()
-        )
-        temp_zip_path: Path | None = upload_path
-    else:
-        metadata_bytes = (
-            metadata_path.read_bytes()
-            if metadata_path
-            else json.dumps(exchange_metadata).encode()
-        )
-        upload_path = _package_as_zip(
-            file_path, metadata_bytes, exchange_config_file.read_bytes()
-        )
-        temp_zip_path = upload_path
+    try:
+        if is_zip:
+            metadata_bytes = (
+                json.dumps(zip_metadata).encode()
+                if zip_metadata is not None
+                else json.dumps(exchange_metadata).encode()
+            )
+            prepared_upload = _package_existing_zip(
+                file_path, exchange_config_file.read_bytes()
+            )
+        else:
+            metadata_bytes = (
+                metadata_path.read_bytes()
+                if metadata_path
+                else json.dumps(exchange_metadata).encode()
+            )
+            prepared_upload = _package_as_zip(
+                file_path, metadata_bytes, exchange_config_file.read_bytes()
+            )
+    except UploadPackagingError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
     try:
-        file_size = upload_path.stat().st_size
         return _run_upload(
             context=context,
             exchange_id=exchange_id,
-            upload_path=upload_path,
-            file_size=file_size,
+            prepared_upload=prepared_upload,
             timeout_secs=timeout_secs,
         )
     finally:
-        if temp_zip_path is not None:
-            temp_zip_path.unlink(missing_ok=True)
+        prepared_upload.close()
 
 
 def _run_upload(
     *,
     context: AuthenticatedCommandContext,
     exchange_id: str,
-    upload_path: Path,
-    file_size: int,
+    prepared_upload: PreparedUpload,
     timeout_secs: int | None,
 ) -> int:
     """
@@ -593,13 +634,13 @@ def _run_upload(
     Args:
         context: Authenticated command context (API URL, credentials).
         exchange_id: Exchange transaction ID. Also identifies the upload session.
-        upload_path: Path to the file to upload (always a ZIP).
-        file_size: Size of upload_path in bytes.
+        prepared_upload: The ZIP payload to upload, positioned at the start.
         timeout_secs: Optional request timeout override in seconds.
 
     Returns:
         Exit code (0 on success, 1 on failure).
     """
+    file_size = prepared_upload.size
     try:
         # Step 1: Initialize session — validates exchange and returns server-authoritative chunk size.
         session_info = initialize_session(
@@ -635,27 +676,26 @@ def _run_upload(
     )
 
     print(
-        f"Uploading {upload_path.name} ({file_size / 1_048_576:.1f} MB, {total_chunks} chunk(s))"
+        f"Uploading {prepared_upload.filename} ({file_size / 1_048_576:.1f} MB, {total_chunks} chunk(s))"
     )
 
     chunk_index = 0
     file_hash = hashlib.sha256()
     try:
         # Step 2: Upload chunks sequentially with progress output.
-        with upload_path.open("rb") as f:
-            for chunk_index in range(total_chunks):
-                chunk_data = f.read(max_chunk_size_bytes)
-                file_hash.update(chunk_data)
-                upload_chunk(
-                    api_url=context.api_url,
-                    access_token=context.credentials.access_token,
-                    exchange_id=exchange_id,
-                    chunk_index=chunk_index,
-                    chunk_data=chunk_data,
-                    timeout_seconds=timeout_secs,
-                )
-                percent = int((chunk_index + 1) / total_chunks * 100)
-                print(f"chunk {chunk_index + 1}/{total_chunks} ({percent}%)")
+        for chunk_index in range(total_chunks):
+            chunk_data = prepared_upload.stream.read(max_chunk_size_bytes)
+            file_hash.update(chunk_data)
+            upload_chunk(
+                api_url=context.api_url,
+                access_token=context.credentials.access_token,
+                exchange_id=exchange_id,
+                chunk_index=chunk_index,
+                chunk_data=chunk_data,
+                timeout_seconds=timeout_secs,
+            )
+            percent = int((chunk_index + 1) / total_chunks * 100)
+            print(f"chunk {chunk_index + 1}/{total_chunks} ({percent}%)")
     except UploadAPIError as exc:
         print(
             f"Upload interrupted at chunk {chunk_index + 1}/{total_chunks}. "
@@ -672,7 +712,7 @@ def _run_upload(
             api_url=context.api_url,
             access_token=context.credentials.access_token,
             exchange_id=exchange_id,
-            file_name=upload_path.name,
+            file_name=prepared_upload.filename,
             total_chunk_count=total_chunks,
             file_checksum=file_hash.hexdigest(),
             timeout_seconds=timeout_secs,

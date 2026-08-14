@@ -6,6 +6,7 @@ Unit tests for the upload command.
 
 import argparse
 import hashlib
+import io
 import zipfile
 from unittest.mock import patch
 
@@ -16,6 +17,7 @@ from openlinktoken_ext_truveta.commands.common import (
     SessionResolutionError,
 )
 from openlinktoken_ext_truveta.commands.upload import (
+    UploadPackagingError,
     UploadValidationError,
     _package_as_zip,
     _package_existing_zip,
@@ -74,14 +76,14 @@ class TestUploadCommand:
         data_file = tmp_path / "tokenized.csv"
         data_file.write_bytes(b"token\nabc")
 
-        zip_path = _package_as_zip(data_file, b'{"metadata":true}', b'{"exchange":true}')
+        prepared = _package_as_zip(data_file, b'{"metadata":true}', b'{"exchange":true}')
 
-        try:
-            with zipfile.ZipFile(zip_path) as archive:
-                assert archive.read("metadata.json") == b'{"metadata":true}'
-                assert archive.read("exchange-config.json") == b'{"exchange":true}'
-        finally:
-            zip_path.unlink(missing_ok=True)
+        assert isinstance(prepared.stream, io.BytesIO)
+        with zipfile.ZipFile(prepared.stream) as archive:
+            assert archive.read("metadata.json") == b'{"metadata":true}'
+            assert archive.read("exchange-config.json") == b'{"exchange":true}'
+        assert prepared.filename == "tokenized.zip"
+        assert prepared.size == len(prepared.stream.getvalue())
 
     def test_existing_zip_gets_exchange_config(self, tmp_path):
         source_path = tmp_path / "input.zip"
@@ -89,13 +91,26 @@ class TestUploadCommand:
             archive.writestr("data.csv", b"token\nabc")
             archive.writestr("metadata.json", b"{}")
 
-        output_path = _package_existing_zip(source_path, b'{"exchange":true}')
+        prepared = _package_existing_zip(source_path, b'{"exchange":true}')
+
+        assert isinstance(prepared.stream, io.BytesIO)
+        with zipfile.ZipFile(prepared.stream) as archive:
+            assert archive.read("exchange-config.json") == b'{"exchange":true}'
+
+    def test_existing_zip_with_exchange_config_is_reused(self, tmp_path):
+        source_path = tmp_path / "input.zip"
+        with zipfile.ZipFile(source_path, "w") as archive:
+            archive.writestr("data.csv", b"token\nabc")
+            archive.writestr("exchange-config.json", b'{"existing":true}')
+
+        prepared = _package_existing_zip(source_path, b'{"exchange":true}')
 
         try:
-            with zipfile.ZipFile(output_path) as archive:
-                assert archive.read("exchange-config.json") == b'{"exchange":true}'
+            assert not isinstance(prepared.stream, io.BytesIO)
+            with zipfile.ZipFile(prepared.stream) as archive:
+                assert archive.read("exchange-config.json") == b'{"existing":true}'
         finally:
-            output_path.unlink(missing_ok=True)
+            prepared.close()
 
     def test_existing_zip_rejects_unsafe_member_path(self, tmp_path):
         source_path = tmp_path / "input.zip"
@@ -104,6 +119,29 @@ class TestUploadCommand:
 
         with pytest.raises(UploadValidationError, match="unsafe member path"):
             _package_existing_zip(source_path, b'{}')
+
+    def test_package_as_zip_wraps_write_time_os_error(self, tmp_path):
+        data_file = tmp_path / "tokenized.csv"
+        data_file.write_bytes(b"token\nabc")
+
+        with patch(
+            "openlinktoken_ext_truveta.commands.upload.zipfile.ZipFile.write",
+            side_effect=OSError("No space left on device"),
+        ):
+            with pytest.raises(UploadPackagingError, match="Unable to build upload ZIP"):
+                _package_as_zip(data_file, b"{}", b"{}")
+
+    def test_package_existing_zip_wraps_write_time_os_error(self, tmp_path):
+        source_path = tmp_path / "input.zip"
+        with zipfile.ZipFile(source_path, "w") as archive:
+            archive.writestr("data.csv", b"token\nabc")
+
+        with patch(
+            "openlinktoken_ext_truveta.commands.upload.zipfile.ZipFile.writestr",
+            side_effect=OSError("No space left on device"),
+        ):
+            with pytest.raises(UploadPackagingError, match="Unable to build upload ZIP"):
+                _package_existing_zip(source_path, b'{"exchange":true}')
 
     @pytest.fixture(autouse=True)
     def _bypass_file_validation(self, tmp_path_factory):
