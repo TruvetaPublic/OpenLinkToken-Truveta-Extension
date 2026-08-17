@@ -11,9 +11,6 @@ from urllib.parse import urlparse
 
 import httpx
 
-from openlinktoken_ext_truveta.openlink_token_service_client.client import (
-    OpenLinkTokenServiceClient,
-)
 from openlinktoken_ext_truveta.openlink_token_service_client.types import (
     ExchangeRequest,
     ExchangeResponse,
