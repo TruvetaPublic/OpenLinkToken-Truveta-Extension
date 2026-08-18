@@ -26,7 +26,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-This installs the package in editable mode, pulls `openlinktoken-cli` from the `develop` branch of `TruvetaPublic/OpenLinkToken`, and installs dev tools (`pytest`, `bump2version`, `build`, `autoflake`, `flake8`).
+This installs the package in editable mode, pulls `openlinktoken-cli` from the `v2.1.2` release of `TruvetaPublic/OpenLinkToken`, and installs dev tools (`pytest`, `bump2version`, `build`, `autoflake`, `flake8`).
 
 ### Run Tests
 
