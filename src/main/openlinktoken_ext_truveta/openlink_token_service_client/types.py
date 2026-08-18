@@ -6,30 +6,30 @@ from typing import List, Optional
 
 
 class ExchangeRequest(BaseModel):
-    public_key: Optional[str] = Field(alias='publicKey', default=None)
+    public_key: Optional[str] = Field(alias="publicKey", default=None)
     model_config = dict(extra="forbid", populate_by_name=True)
 
 
 class ExchangeResponse(BaseModel):
-    exchange_id: str = Field(alias='exchangeId')
-    encrypted_hashing_key: str = Field(alias='encryptedHashingKey')
-    truveta_public_key: str = Field(alias='truvetaPublicKey')
-    encrypted_rotation_iv: str = Field(alias='encryptedRotationIv')
-    num_rotations: int = Field(alias='numRotations')
-    bin_width: float = Field(alias='binWidth')
-    dimension_bias: Optional[List[float]] = Field(alias='dimensionBias', default=None)
+    exchange_id: str = Field(alias="exchangeId")
+    encrypted_hashing_key: str = Field(alias="encryptedHashingKey")
+    truveta_public_key: str = Field(alias="truvetaPublicKey")
+    encrypted_rotation_iv: str = Field(alias="encryptedRotationIv")
+    num_rotations: int = Field(alias="numRotations")
+    bin_width: float = Field(alias="binWidth")
+    dimension_bias: Optional[List[float]] = Field(alias="dimensionBias", default=None)
     model_config = dict(extra="forbid", populate_by_name=True)
 
 
 class FinalizeSessionRequest(BaseModel):
-    file_name: str = Field(alias='fileName')
-    total_chunk_count: int = Field(alias='totalChunkCount')
-    file_checksum: str = Field(alias='fileChecksum')
+    file_name: str = Field(alias="fileName")
+    total_chunk_count: int = Field(alias="totalChunkCount")
+    file_checksum: str = Field(alias="fileChecksum")
     model_config = dict(extra="forbid", populate_by_name=True)
 
 
 class InitializeSessionResponse(BaseModel):
-    expires_at_utc: str = Field(alias='expiresAtUtc')
-    max_chunk_size_bytes: int = Field(alias='maxChunkSizeBytes')
-    max_file_size_bytes: int = Field(alias='maxFileSizeBytes')
+    expires_at_utc: str = Field(alias="expiresAtUtc")
+    max_chunk_size_bytes: int = Field(alias="maxChunkSizeBytes")
+    max_file_size_bytes: int = Field(alias="maxFileSizeBytes")
     model_config = dict(extra="forbid", populate_by_name=True)
