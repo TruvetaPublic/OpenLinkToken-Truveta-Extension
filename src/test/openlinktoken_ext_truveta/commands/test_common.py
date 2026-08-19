@@ -33,7 +33,7 @@ def _args(
 
 class TestCommonResolution:
     def test_local_api_url_is_openlink_service_port(self):
-        assert LOCAL_API_URL == "http://localhost:18080"
+        assert LOCAL_API_URL == "http://localhost:18080/api"
 
     def test_resolve_domain_uses_local_dev_env_var(self, monkeypatch):
         monkeypatch.setenv("OLT_TRV_LOCAL_DEV", "true")
@@ -136,7 +136,7 @@ class TestCommonResolution:
 
         assert resolved == AuthenticatedCommandContext(
             domain="dev.truveta-int.com",
-            api_url="http://localhost:18080",
+            api_url="http://localhost:18080/api",
             storage_domain="localhost-18080",
             credentials=expected_credentials,
         )

@@ -1,18 +1,18 @@
 # Open Link Token Truveta Extension
 
-- [Overview](#overview)
-- [Installation](#installation)
-  - [Quick Install (recommended)](#quick-install-recommended)
-  - [Standalone Distributables](#standalone-distributables)
-  - [Python Extension Install](#python-extension-install)
-- [Extension Commands](#extension-commands)
-  - [Subcommand Overview](#subcommand-overview)
-  - [login](#login)
-  - [initiate-exchange](#initiate-exchange)
-  - [upload](#upload)
-  - [auto-upload](#auto-upload)
-  - [logout](#logout)
-- [Developer Guide](#developer-guide)
+- [Open Link Token Truveta Extension](#open-link-token-truveta-extension)
+  - [Overview](#overview)
+  - [Installation](#installation)
+    - [Quick Install (recommended)](#quick-install-recommended)
+    - [Standalone Distributables](#standalone-distributables)
+    - [Python Extension Install](#python-extension-install)
+    - [Subcommand Overview](#subcommand-overview)
+    - [login](#login)
+    - [initiate-exchange](#initiate-exchange)
+    - [upload](#upload)
+    - [auto-upload](#auto-upload)
+    - [logout](#logout)
+  - [Developer Guide](#developer-guide)
 
 ## Overview
 
@@ -137,16 +137,35 @@ olt truveta initiate-exchange
 
 ### upload
 
+Uploads a tokenized file to Truveta for overlap analysis. Files are automatically split
+into chunks and uploaded sequentially. Progress is reported after each chunk.
+
 Parameters:
 
-- -i FILE, --input FILE: tokenized CSV, Parquet, or ZIP to upload.
-- --metadata META.json: optional metadata JSON for non-ZIP uploads.
+- `-i FILE, --input FILE`: tokenized CSV, Parquet, or ZIP to upload.
+- `--metadata META.json`: optional metadata JSON for non-ZIP uploads.
 
 Example:
 
 ```bash
 olt truveta upload -i packaged.parquet
 ```
+
+For all file sizes, the upload uses a chunked protocol. The server advertises the
+maximum chunk size at session initialization; the CLI uses that value to split the
+file automatically. Progress is displayed as each chunk is sent:
+
+```
+Uploading packaged.parquet (63.0 MB, 8 chunk(s))
+chunk 1/8 (12%)
+chunk 2/8 (25%)
+...
+chunk 8/8 (100%)
+✓ Upload accepted.
+```
+
+If an upload is interrupted or a chunk is rejected, a clear error is shown
+describing which chunks are missing. Re-run the same command to retry.
 
 ### auto-upload
 
