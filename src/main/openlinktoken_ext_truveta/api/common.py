@@ -4,6 +4,8 @@ Copyright (c) Truveta. All rights reserved.
 Shared helpers for OpenLink Token API clients.
 """
 
+import json
+
 import requests
 
 DEFAULT_TIMEOUT_SECONDS = 30
@@ -38,7 +40,17 @@ def extract_error_body(response: requests.Response) -> str:
         return response.text
 
     if isinstance(error_json, dict):
-        return error_json.get("error", response.text)
+        message = error_json.get("error", response.text)
+        details = [
+            f"{field}={error_json[field]}"
+            for field in ("code", "chunkIndex", "missingChunks", "receivedChunks")
+            if field in error_json
+        ]
+        if details and message:
+            return f"{message} ({', '.join(details)})"
+        if details:
+            return json.dumps(error_json, sort_keys=True)
+        return message
 
     return response.text
 

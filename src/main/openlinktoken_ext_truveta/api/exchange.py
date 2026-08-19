@@ -11,9 +11,6 @@ from urllib.parse import urlparse
 
 import httpx
 
-from openlinktoken_ext_truveta.openlink_token_service_client.client import (
-    OpenLinkTokenServiceClient,
-)
 from openlinktoken_ext_truveta.openlink_token_service_client.types import (
     ExchangeRequest,
     ExchangeResponse,
@@ -122,8 +119,13 @@ async def _call_exchange_async(
         verify=verify_ssl,
         timeout=timeout,
     ) as client:
-        olt_client = OpenLinkTokenServiceClient(base_url, client)
-        return await olt_client.exchange_exchange("1", request)
+        response = await client.post(
+            _resolve_exchange_url(base_url),
+            content=request.model_dump_json(by_alias=True),
+            headers={"Content-Type": "application/json"},
+        )
+        response.raise_for_status()
+        return ExchangeResponse.model_validate(response.json())
 
 
 def call_exchange_endpoint(
