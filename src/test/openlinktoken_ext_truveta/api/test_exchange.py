@@ -4,7 +4,8 @@ Copyright (c) Truveta. All rights reserved.
 Unit tests for exchange_api.py — API endpoint calls for exchange negotiation.
 """
 
-from unittest.mock import AsyncMock, patch
+import asyncio
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
@@ -17,7 +18,11 @@ from openlinktoken_ext_truveta.api.exchange import (
     ExchangeAPIError,
     call_exchange_endpoint,
 )
+from openlinktoken_ext_truveta.openlink_token_service_client.client import (
+    OpenLinkTokenServiceClient,
+)
 from openlinktoken_ext_truveta.openlink_token_service_client.types import (
+    ExchangeRequest,
     ExchangeResponse,
 )
 
@@ -66,6 +71,33 @@ def _sample_public_key() -> str:
 
 
 class TestCallExchangeEndpoint:
+    def test_service_client_uses_develop_exchange_route(self):
+        response = Mock()
+        response.json.return_value = {
+            "exchangeId": "ex-123",
+            "encryptedHashingKey": "encrypted-secret",
+            "truvetaPublicKey": "server-spki-b64",
+            "encryptedRotationIv": "encrypted-iv",
+            "numRotations": 50,
+            "binWidth": 0.05,
+            "dimensionBias": [],
+        }
+        http_client = AsyncMock()
+        http_client.post.return_value = response
+        service_client = OpenLinkTokenServiceClient(
+            "https://api.test.com/openlink", http_client
+        )
+
+        asyncio.run(
+            service_client.exchange_exchange(
+                "1", ExchangeRequest(publicKey="client-public-key")
+            )
+        )
+
+        assert http_client.post.call_args.args[0] == (
+            "https://api.test.com/openlink/v1/Exchange"
+        )
+
     def test_successful_call_returns_response(self):
         public_pem = _sample_public_key()
         mock_response = _make_exchange_response(dimensionBias=None)

@@ -20,7 +20,7 @@ class OpenLinkTokenServiceClient:
     async def exchange_exchange(
         self, version: str, body: ExchangeRequest
     ) -> ExchangeResponse:
-        url = f"{self._base_url}/api/v{quote(str(version))}/Exchange"
+        url = f"{self._base_url}/v{quote(str(version))}/Exchange"
         response = await self._client.post(
             url,
             content=body.model_dump_json(by_alias=True),
@@ -32,7 +32,9 @@ class OpenLinkTokenServiceClient:
     async def upload_initialize_session(
         self, exchange_id: str, version: str
     ) -> InitializeSessionResponse:
-        url = f"{self._base_url}/api/v{quote(str(version))}/uploads/{quote(str(exchange_id))}"
+        url = (
+            f"{self._base_url}/v{quote(str(version))}/uploads/{quote(str(exchange_id))}"
+        )
         response = await self._client.post(url)
         response.raise_for_status()
         return InitializeSessionResponse.model_validate(response.json())
@@ -45,7 +47,7 @@ class OpenLinkTokenServiceClient:
         chunk_index: int,
         chunk_checksum: str,
     ) -> None:
-        url = f"{self._base_url}/api/v{quote(str(version))}/uploads/{quote(str(exchange_id))}/chunks/{chunk_index}"
+        url = f"{self._base_url}/v{quote(str(version))}/uploads/{quote(str(exchange_id))}/chunks/{chunk_index}"
         response = await self._client.put(
             url,
             content=body,
@@ -59,7 +61,7 @@ class OpenLinkTokenServiceClient:
     async def upload_finalize_session(
         self, exchange_id: str, version: str, body: FinalizeSessionRequest
     ) -> None:
-        url = f"{self._base_url}/api/v{quote(str(version))}/uploads/{quote(str(exchange_id))}/complete"
+        url = f"{self._base_url}/v{quote(str(version))}/uploads/{quote(str(exchange_id))}/complete"
         response = await self._client.post(
             url,
             content=body.model_dump_json(by_alias=True),
