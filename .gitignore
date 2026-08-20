@@ -23,10 +23,12 @@ MANIFEST
 
 # Virtual envs
 .venv/
-.worktrees/
 venv/
 env/
 ENV/
+
+# Git worktrees
+.worktrees/
 
 # Testing / coverage
 .pytest_cache/
@@ -38,7 +40,6 @@ htmlcov/
 coverage.xml
 test-output.xml
 *.cover
-.venv
 
 # IDE
 .idea/
@@ -61,7 +62,6 @@ uv.lock
 # DevContainer
 .devcontainer/.env
 .devcontainer/host-ca-certificates.crt
-.worktrees/
 
 # APM dependencies
 apm_modules/
