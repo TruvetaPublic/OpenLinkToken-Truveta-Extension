@@ -22,6 +22,7 @@ from cryptography.hazmat.primitives.serialization import (
     load_der_public_key,
     load_pem_public_key,
 )
+from openlinktoken.ec_key_utils import fingerprint_to_kid, public_key_fingerprint
 
 from openlinktoken_ext_truveta.exchange.constants import (
     BIN_WIDTH_KEY,
@@ -38,10 +39,12 @@ from openlinktoken_ext_truveta.exchange.constants import (
     OPENLINKTOKEN_CURVE_BY_CRYPTOGRAPHY_CURVE,
     OPENLINKTOKEN_EXCHANGE_CONFIG_MODULE,
     OPENLINKTOKEN_EXCHANGE_JWE_MODULE,
-    P256_CURVE,
     PEM_HEADER_PREFIX,
     REQUIRED_SERVER_RESPONSE_FIELDS,
     ROTATION_COUNT_KEY,
+    ROTATION_IV_ENCODING_KEY,
+    ROTATION_IV_ENCODING_VALUE,
+    ROTATION_IV_KEY,
     SERVER_PUBLIC_KEY_KEY,
 )
 from openlinktoken_ext_truveta.exchange.key_management import (
@@ -154,11 +157,12 @@ def _validate_exchange_envelope_shape(config: dict[str, Any]) -> None:
                 f"recipient[{index}].header.epk must be an object"
             )
 
-        if epk.get("kty") != EC_KEY_TYPE or epk.get("crv") != P256_CURVE:
+        supported_curves = set(OPENLINKTOKEN_CURVE_BY_CRYPTOGRAPHY_CURVE.values())
+        if epk.get("kty") != EC_KEY_TYPE or epk.get("crv") not in supported_curves:
             raise ExchangeConfigError(
                 "Invalid exchange envelope: "
                 "recipient[{index}].header.epk must contain "
-                f"kty={EC_KEY_TYPE} and crv={P256_CURVE}"
+                f"kty={EC_KEY_TYPE} and a supported curve ({', '.join(sorted(supported_curves))})"
             )
 
         if not isinstance(epk.get("x"), str) or not isinstance(epk.get("y"), str):
@@ -315,6 +319,83 @@ def _derive_curve_from_public_key(public_key_data: str) -> str:
     return curve_name
 
 
+def _build_envelope_with_extensions(
+    exchange_name: str,
+    hashing_secret: bytes,
+    sender_public_pem: bytes,
+    recipient_public_pem: bytes,
+    curve: str,
+    created_at: str,
+    exchange_id: str,
+    *,
+    rotation_iv: bytes = b"",
+    rotation_count: int = DEFAULT_ROTATION_COUNT,
+    bin_width: float = DEFAULT_BIN_WIDTH,
+    dimension_bias: list | None = None,
+) -> dict[str, Any]:
+    """Build a JWE envelope and carry rotation metadata in the encrypted payload."""
+    from jwcrypto import jwe, jwk
+
+    payload: dict[str, Any] = {
+        "exchangeName": exchange_name,
+        "hashingSecret": base64.urlsafe_b64encode(hashing_secret)
+        .decode("utf-8")
+        .rstrip("="),
+        "hashingSecretEncoding": "base64url",
+        "senderKeyFingerprint": public_key_fingerprint(sender_public_pem),
+        "recipientKeyFingerprint": public_key_fingerprint(recipient_public_pem),
+        "senderPublicKey": sender_public_pem.decode("utf-8"),
+        "recipientPublicKey": recipient_public_pem.decode("utf-8"),
+        "curve": curve,
+        "createdAt": created_at,
+        "exchangeId": exchange_id,
+        "rotationCount": rotation_count,
+        "binWidth": bin_width,
+        "dimensionBias": [] if dimension_bias is None else dimension_bias,
+    }
+
+    if rotation_iv:
+        payload[ROTATION_IV_KEY] = (
+            base64.urlsafe_b64encode(rotation_iv).decode("utf-8").rstrip("=")
+        )
+        payload[ROTATION_IV_ENCODING_KEY] = ROTATION_IV_ENCODING_VALUE
+
+    protected_header = {
+        "typ": "openlinktoken-exchange+jwe",
+        "cty": "application/openlinktoken-exchange+json",
+        "enc": "A256GCM",
+    }
+
+    envelope = jwe.JWE(
+        json.dumps(payload, separators=(",", ":")).encode("utf-8"),
+        protected=json.dumps(protected_header, separators=(",", ":")),
+    )
+    envelope.add_recipient(
+        jwk.JWK.from_pem(sender_public_pem),
+        header=json.dumps(
+            {
+                "alg": JWE_RECIPIENT_ALG,
+                "kid": fingerprint_to_kid(public_key_fingerprint(sender_public_pem)),
+            },
+            separators=(",", ":"),
+        ),
+    )
+    envelope.add_recipient(
+        jwk.JWK.from_pem(recipient_public_pem),
+        header=json.dumps(
+            {
+                "alg": JWE_RECIPIENT_ALG,
+                "kid": fingerprint_to_kid(public_key_fingerprint(recipient_public_pem)),
+            },
+            separators=(",", ":"),
+        ),
+    )
+
+    serialized = json.loads(envelope.serialize(compact=False))
+    serialized["version"] = 1
+    return serialized
+
+
 def build_exchange_config(
     server_response: dict[str, Any],
     local_public_key_pem: str,
@@ -377,20 +458,42 @@ def build_exchange_config(
                 else decrypted_iv_str.decode("utf-8")
             )
 
-        build_exchange_envelope = _load_build_exchange_envelope()
-        config = build_exchange_envelope(
-            exchange_name=exchange_name,
-            hashing_secret=_decode_hashing_secret(hashing_secret),
-            sender_public_pem=local_public_key_pem.encode("utf-8"),
-            recipient_public_pem=server_public_key_pem.encode("utf-8"),
-            curve=curve,
-            created_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            exchange_id=exchange_id,
-            rotation_iv=rotation_iv,
-            rotation_count=rotation_count,
-            bin_width=bin_width,
-            dimension_bias=dimension_bias,
+        config_kwargs = {
+            "exchange_name": exchange_name,
+            "hashing_secret": _decode_hashing_secret(hashing_secret),
+            "sender_public_pem": local_public_key_pem.encode("utf-8"),
+            "recipient_public_pem": server_public_key_pem.encode("utf-8"),
+            "curve": curve,
+            "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "exchange_id": exchange_id,
+            "rotation_iv": rotation_iv,
+            "rotation_count": rotation_count,
+            "bin_width": bin_width,
+            "dimension_bias": dimension_bias,
+        }
+        try:
+            builder = _load_build_exchange_envelope()
+            config = builder(**config_kwargs)
+        except TypeError:
+            config = _build_envelope_with_extensions(**config_kwargs)
+
+        legacy_rotation_count = server_response.get(ROTATION_COUNT_KEY, 30)
+        legacy_bin_width = server_response.get(BIN_WIDTH_KEY, DEFAULT_BIN_WIDTH)
+        legacy_dimension_bias = (
+            []
+            if server_response.get(DIMENSION_BIAS_KEY) is None
+            else server_response[DIMENSION_BIAS_KEY]
         )
+
+        config[ROTATION_COUNT_KEY] = legacy_rotation_count
+        config[BIN_WIDTH_KEY] = legacy_bin_width
+        config[DIMENSION_BIAS_KEY] = legacy_dimension_bias
+        if rotation_iv:
+            config[ROTATION_IV_KEY] = (
+                base64.urlsafe_b64encode(rotation_iv).decode("utf-8").rstrip("=")
+            )
+            config[ROTATION_IV_ENCODING_KEY] = ROTATION_IV_ENCODING_VALUE
+
         _validate_exchange_envelope_shape(config)
         return config
 
@@ -400,16 +503,34 @@ def build_exchange_config(
         raise ExchangeConfigError(f"Failed to build exchange config: {exc}")
 
 
-def write_exchange_config(config: dict[str, Any]) -> Path:
+def _resolve_legacy_domain_and_config(
+    config_or_domain: dict[str, Any] | str | None,
+    maybe_config: dict[str, Any] | None = None,
+) -> tuple[str | None, dict[str, Any]]:
+    """Support both the modern config-only API and the older domain+config API."""
+    if isinstance(config_or_domain, dict):
+        return None, config_or_domain
+
+    domain = config_or_domain
+    if maybe_config is None:
+        raise TypeError("Exchange config data is required")
+
+    if not isinstance(maybe_config, dict):
+        raise TypeError("Exchange config must be a dictionary")
+
+    return domain, maybe_config
+
+
+def write_exchange_config(
+    config_or_domain: dict[str, Any] | str | None = None,
+    maybe_config: dict[str, Any] | None = None,
+) -> Path:
     """
     Persist an exchange config to the current directory as openlinktoken-<YYYY-MM-DD>.exchange.json.
 
-    Inputs:
-        config: The validated exchange configuration envelope to persist.
-
-    Returns:
-        The filesystem path to the written exchange configuration file.
+    The older domain-based calling convention is still accepted for compatibility.
     """
+    _, config = _resolve_legacy_domain_and_config(config_or_domain, maybe_config)
     try:
         _validate_exchange_envelope_shape(config)
         date_stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -420,13 +541,14 @@ def write_exchange_config(config: dict[str, Any]) -> Path:
         raise ExchangeConfigError(f"Failed to write exchange config: {exc}")
 
 
-def load_exchange_config() -> dict[str, Any]:
+def load_exchange_config(domain: str | None = None) -> dict[str, Any]:
     """
     Load an exchange config from the current directory only.
 
-    Returns:
-        The parsed exchange configuration JSON object for the current UTC date.
+    The optional domain argument is accepted for backwards compatibility and ignored
+    because the current CLI stores date-scoped exchange configs in the working directory.
     """
+    del domain
     try:
         cwd_configs = sorted(Path.cwd().glob("openlinktoken-*.exchange.json"))
         if not cwd_configs:
@@ -448,13 +570,13 @@ def load_exchange_config() -> dict[str, Any]:
         raise ExchangeConfigError(f"Failed to load exchange config: {exc}")
 
 
-def resolve_exchange_payload() -> dict[str, Any]:
+def resolve_exchange_payload(domain: str | None = None) -> dict[str, Any]:
     """
     Resolve a decrypted exchange payload from a JWE config.
 
-    Returns:
-        The decrypted exchange payload JSON object produced by OpenLinkToken core.
+    The optional domain argument is accepted for backwards compatibility.
     """
+    del domain
     config = load_exchange_config()
 
     private_key_path_value = private_key_path()
@@ -477,12 +599,12 @@ def resolve_exchange_payload() -> dict[str, Any]:
         raise ExchangeConfigError(f"Failed to resolve exchange payload: {exc}")
 
 
-def resolve_exchange_config_path() -> Path:
+def resolve_exchange_config_path(domain: str | None = None) -> Path:
     """
     Return the path for today's exchange config file in the current working directory.
 
-    Returns:
-        The expected filesystem path for the date-stamped exchange config file.
+    The optional domain argument is accepted for backwards compatibility.
     """
+    del domain
     today_stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return Path.cwd() / f"openlinktoken-{today_stamp}.exchange.json"
