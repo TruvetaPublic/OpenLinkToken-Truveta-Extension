@@ -24,7 +24,7 @@ release = [
 ]
 
 [build-system]
-requires = ["setuptools==84.0.0", "wheel==0.46.2"]
+requires = ["setuptools==83.0.0", "wheel==0.46.2"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
@@ -33,3 +33,4 @@ where = ["src/main"]
 [tool.pytest.ini_options]
 pythonpath = ["src/main"]
 testpaths = ["src/test"]
+norecursedirs = [".venv", "node_modules", "__pycache__", ".git"]
