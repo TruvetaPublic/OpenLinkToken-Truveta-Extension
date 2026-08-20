@@ -26,7 +26,7 @@ for module in ("openlinktoken", "openlinktoken_cli", "openlinktoken_ext_truveta"
 import importlib.util as _ilu
 import pathlib as _pl
 
-_spec = _ilu.find_spec("openlinktoken_cli.main")
+_spec = _ilu.find_spec("openlinktoken_cli.__main__")
 _entrypoint = str(_pl.Path(_spec.origin).as_posix())
 
 a = Analysis(

@@ -14,7 +14,6 @@ import pytest
 from openlinktoken_ext_truveta.auth import (
     AuthError,
     Credentials,
-    _cache_path,
     _is_token_valid,
     _read_cache,
     _write_cache,
@@ -22,6 +21,7 @@ from openlinktoken_ext_truveta.auth import (
     ensure_auth,
     get_auth_headers,
 )
+from openlinktoken_ext_truveta.paths import credentials_cache_path
 
 
 def _make_jwt(payload: dict) -> str:
@@ -81,13 +81,13 @@ class TestIsTokenValid:
 
 
 # ---------------------------------------------------------------------------
-# _cache_path
+# credentials_cache_path
 # ---------------------------------------------------------------------------
 
 
 class TestCachePath:
     def test_path_structure(self):
-        path = _cache_path("truveta.com")
+        path = credentials_cache_path("truveta.com")
         assert (
             path
             == Path.home()
@@ -106,7 +106,7 @@ class TestCachePath:
 class TestCacheReadWrite:
     def test_round_trip(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "openlinktoken_ext_truveta.auth.Path.home", lambda: tmp_path
+            "openlinktoken_ext_truveta.paths.Path.home", lambda: tmp_path
         )
         creds = Credentials(
             access_token=_future_jwt(), id_token=_future_jwt(email="u@t.com")
@@ -121,13 +121,13 @@ class TestCacheReadWrite:
 
     def test_missing_file_returns_none(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "openlinktoken_ext_truveta.auth.Path.home", lambda: tmp_path
+            "openlinktoken_ext_truveta.paths.Path.home", lambda: tmp_path
         )
         assert _read_cache("truveta.com") is None
 
     def test_expired_tokens_delete_cache_and_return_none(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "openlinktoken_ext_truveta.auth.Path.home", lambda: tmp_path
+            "openlinktoken_ext_truveta.paths.Path.home", lambda: tmp_path
         )
         creds = Credentials(access_token=_expired_jwt(), id_token=_expired_jwt())
         _write_cache("truveta.com", creds)
@@ -135,11 +135,11 @@ class TestCacheReadWrite:
         result = _read_cache("truveta.com")
 
         assert result is None
-        assert not _cache_path("truveta.com").exists()
+        assert not credentials_cache_path("truveta.com").exists()
 
     def test_malformed_json_returns_none(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "openlinktoken_ext_truveta.auth.Path.home", lambda: tmp_path
+            "openlinktoken_ext_truveta.paths.Path.home", lambda: tmp_path
         )
         path = (
             tmp_path / ".openlinktoken" / "truveta" / "truveta.com" / "credentials.json"
@@ -153,7 +153,7 @@ class TestCacheReadWrite:
 class TestEnsureAuth:
     def test_returns_cached_credentials(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "openlinktoken_ext_truveta.auth.Path.home", lambda: tmp_path
+            "openlinktoken_ext_truveta.paths.Path.home", lambda: tmp_path
         )
         creds = Credentials(
             access_token=_future_jwt(), id_token=_future_jwt(email="u@t.com")
@@ -170,7 +170,7 @@ class TestEnsureAuth:
 
     def test_runs_device_flow_when_no_cache(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "openlinktoken_ext_truveta.auth.Path.home", lambda: tmp_path
+            "openlinktoken_ext_truveta.paths.Path.home", lambda: tmp_path
         )
         fake_creds = Credentials(
             access_token=_future_jwt(), id_token=_future_jwt(email="u@t.com")
@@ -186,7 +186,7 @@ class TestEnsureAuth:
 
     def test_caches_result_of_device_flow(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
-            "openlinktoken_ext_truveta.auth.Path.home", lambda: tmp_path
+            "openlinktoken_ext_truveta.paths.Path.home", lambda: tmp_path
         )
         fake_creds = Credentials(
             access_token=_future_jwt(), id_token=_future_jwt(email="u@t.com")
@@ -197,7 +197,7 @@ class TestEnsureAuth:
         ):
             ensure_auth("truveta.com")
 
-        assert _cache_path("truveta.com").exists()
+        assert credentials_cache_path("truveta.com").exists()
 
 
 # ---------------------------------------------------------------------------
