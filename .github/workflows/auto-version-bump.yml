@@ -1,0 +1,143 @@
+name: Auto Version Bump
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-version-bump:
+    runs-on: ubuntu-latest
+    if: startsWith(github.event.pull_request.head.ref, 'release/')
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Extract version from branch name
+        id: extract_version
+        shell: bash
+        run: |
+          BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          VERSION="${BRANCH_NAME#release/}"
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Branch name must be in format release/x.y.z (e.g., release/1.12.0)"
+            echo "Got: $BRANCH_NAME"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Extracted version: $VERSION"
+
+      - name: Check current version
+        id: check_version
+        shell: bash
+        run: |
+          CURRENT_VERSION=$(sed -n '/^\[bumpversion\]/,/^\[/p' .bumpversion.cfg | grep '^current_version' | head -n 1 | cut -d'=' -f2 | tr -d ' ')
+
+          if [ -z "$CURRENT_VERSION" ]; then
+            echo "ERROR: Could not parse current version from .bumpversion.cfg" >&2
+            exit 1
+          fi
+
+          TARGET_VERSION="${{ steps.extract_version.outputs.version }}"
+
+          echo "current=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "target=$TARGET_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Current version: $CURRENT_VERSION"
+          echo "Target version: $TARGET_VERSION"
+
+          if [ "$CURRENT_VERSION" = "$TARGET_VERSION" ]; then
+            echo "needs_update=false" >> "$GITHUB_OUTPUT"
+            echo "Version is already up to date!"
+          else
+            echo "needs_update=true" >> "$GITHUB_OUTPUT"
+            echo "Version needs to be updated"
+          fi
+
+      - name: Set up Python
+        if: steps.check_version.outputs.needs_update == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install bump2version
+        if: steps.check_version.outputs.needs_update == 'true'
+        run: python -m pip install bump2version
+
+      - name: Update version
+        if: steps.check_version.outputs.needs_update == 'true'
+        shell: bash
+        run: |
+          VERSION="${{ steps.extract_version.outputs.version }}"
+          bump2version --new-version "$VERSION" --no-commit --no-tag patch
+          echo "Updated version to $VERSION"
+
+      - name: Configure Git
+        if: steps.check_version.outputs.needs_update == 'true'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit version changes
+        if: steps.check_version.outputs.needs_update == 'true'
+        shell: bash
+        run: |
+          VERSION="${{ steps.extract_version.outputs.version }}"
+
+          if [[ -n $(git status -s) ]]; then
+            git add .
+            git commit -m "chore: bump version to $VERSION"
+            git push origin "${{ github.event.pull_request.head.ref }}"
+            echo "Version updated and pushed to release branch"
+          else
+            echo "No changes to commit"
+          fi
+
+      - name: Add comment to PR
+        if: steps.check_version.outputs.needs_update == 'true'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `🤖 **Version Auto-Updated**
+
+              Version has been automatically updated to \`${{ steps.extract_version.outputs.version }}\` based on the release branch name.
+
+              Updated files:
+              - \`.bumpversion.cfg\`
+              - \`pyproject.toml\`
+              - \`README.md\`
+              - \`src/main/openlinktoken_ext_truveta/extension.py\`
+              - \`src/test/openlinktoken_ext_truveta/test_extension.py\`
+
+              Please review the changes before merging.`
+            });
+
+      - name: Version already up-to-date comment
+        if: steps.check_version.outputs.needs_update == 'false'
+        uses: actions/github-script@v9
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `✅ **Version Check Passed**
+
+              Version is already set to \`${{ steps.extract_version.outputs.version }}\` - no update needed.`
+            });

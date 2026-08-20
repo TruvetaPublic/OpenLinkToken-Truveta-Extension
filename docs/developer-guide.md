@@ -49,6 +49,10 @@ python -m build
 
 This produces `dist/openlinktoken_ext_truveta-<version>-py3-none-any.whl` and the corresponding source distribution.
 
+## Branching and Release Policy
+
+Feature work and standard pull requests should target `develop`. `main` is reserved for release PRs created from `release/x.y.z` branches only. The repository includes `.github/workflows/retarget-pr-to-develop.yml`, which automatically moves any PR that targets `main` from a non-release branch back to `develop`, and `.github/workflows/validate-pr-target.yml`, which fails PR validation unless the PR comes from a `release/*` branch when targeting `main`.
+
 ## Versioning
 
 This project follows [Semantic Versioning](https://semver.org/). Version bumps are managed with [`bump2version`](https://github.com/c4urself/bump2version) and configured in `.bumpversion.cfg`.
@@ -64,11 +68,13 @@ bump2version minor
 bump2version major
 ```
 
-`bump2version` updates the version in `pyproject.toml` and `src/main/openlinktoken_ext_truveta/__init__.py`, creates a commit, and tags the commit as `v<new_version>`.
+`bump2version` updates the version in `pyproject.toml`, `README.md`, and the version assertions in `src/main/openlinktoken_ext_truveta/extension.py` / `src/test/openlinktoken_ext_truveta/test_extension.py`, creates a commit, and tags the commit as `v<new_version>`.
+
+For release branches, `.github/workflows/auto-version-bump.yml` automatically extracts the target version from the `release/x.y.z` branch name and pushes the version bump back to that branch before the PR is merged.
 
 ## Continuous Integration
 
-CI is defined in `.github/workflows/ci.yml` and runs on every push and pull request targeting `main`. The workflow:
+CI is defined in `.github/workflows/ci.yml` and runs on every push and pull request targeting `main` and `develop`. The workflow:
 
 1. Checks out the source.
 2. Sets up Python 3.12 and uv.
