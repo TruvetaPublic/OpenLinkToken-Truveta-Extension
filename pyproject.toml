@@ -10,21 +10,21 @@ truveta = "openlinktoken_ext_truveta.extension:TruvetaExtension"
 
 [project.optional-dependencies]
 dev = [
-    "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@develop#subdirectory=lib/python/openlinktoken-cli",
-    "pytest==9.0.3",
+    "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@v2.1.2#subdirectory=lib/python/openlinktoken-cli",
+    "pytest==9.1.1",
     "bump2version==1.0.1",
-    "build==1.2.2",
-    "autoflake==2.3.1",
+    "build==1.5.0",
+    "autoflake==2.3.3",
     "flake8==7.3.0",
 ]
-# Pinned upstream refs used by the release workflow to produce reproducible standalone binaries.
-# Bump these to the desired OpenLinkToken release tag before cutting a release.
+# Keep the release dependency aligned with the pinned OpenLinkToken release used by
+# this extension so the CLI surface remains compatible with the runtime.
 release = [
-    "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@v1.13.2#subdirectory=lib/python/openlinktoken-cli",
+    "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@v2.1.2#subdirectory=lib/python/openlinktoken-cli",
 ]
 
 [build-system]
-requires = ["setuptools==78.1.1", "wheel==0.46.2"]
+requires = ["setuptools==84.0.0", "wheel==0.46.2"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

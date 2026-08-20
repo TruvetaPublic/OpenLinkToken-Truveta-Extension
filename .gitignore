@@ -23,6 +23,7 @@ MANIFEST
 
 # Virtual envs
 .venv/
+.worktrees/
 venv/
 env/
 ENV/
