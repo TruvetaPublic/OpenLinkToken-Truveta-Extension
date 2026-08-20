@@ -155,6 +155,67 @@ class TestUploadCommand:
         ):
             _package_existing_zip(source_path, b"{}")
 
+    def test_schema_validation_failure_stops_before_authentication(
+        self, tmp_path, capsys
+    ):
+        data_file = tmp_path / "invalid.csv"
+        data_file.write_text("Token\nplain-token\n", encoding="utf-8")
+
+        with (
+            patch(
+                "openlinktoken_ext_truveta.commands.upload_validation.validate_file",
+                return_value=(None, None, "Missing required columns"),
+            ) as validate_file,
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context"
+            ) as resolve_context,
+        ):
+            rc = _upload(_args(str(data_file)))
+
+        assert rc == 1
+        validate_file.assert_called_once()
+        resolve_context.assert_not_called()
+        assert "Missing required columns" in capsys.readouterr().err
+
+    def test_encryption_validation_failure_stops_before_upload(self, tmp_path, capsys):
+        data_file = tmp_path / "tokenized.csv"
+        data_file.write_text("RuleId,Token,RecordId\nr1,token,r1\n", encoding="utf-8")
+
+        with (
+            patch(
+                "openlinktoken_ext_truveta.commands.upload_validation.validate_file",
+                return_value=("sample-token", None, None),
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload_validation.validate_token_encryption",
+                return_value="Token decryption failed",
+            ) as validate_encryption,
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
+                return_value=_context(),
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload._build_exchange_metadata",
+                return_value={
+                    "payload": {
+                        "exchangeId": "ex-1",
+                        "senderKeyFingerprint": "s",
+                        "recipientKeyFingerprint": "r",
+                        "curve": "P-256",
+                    }
+                },
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload._run_upload"
+            ) as run_upload,
+        ):
+            rc = _upload(_args(str(data_file)))
+
+        assert rc == 1
+        validate_encryption.assert_called_once_with("sample-token")
+        run_upload.assert_not_called()
+        assert "Token decryption failed" in capsys.readouterr().err
+
     @pytest.fixture(autouse=True)
     def _bypass_file_validation(self, tmp_path_factory):
         """Bypass schema/token validation so tests focus on upload flow."""

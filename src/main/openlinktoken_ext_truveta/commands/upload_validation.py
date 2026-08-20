@@ -11,6 +11,7 @@ import json
 import zipfile
 from pathlib import Path
 
+import pyarrow as pa
 import pyarrow.parquet as pq
 from jwcrypto import jwe, jwk
 from openlinktoken.exchange_config import derive_transport_encryption_key
@@ -95,7 +96,7 @@ def _validate_data_bytes(
                     if token and token != Token.BLANK:
                         return token, None
             return None, None
-    except (ValueError, IOError) as exc:
+    except (ValueError, IOError, pa.ArrowException) as exc:
         return None, str(exc)
 
 
@@ -231,15 +232,8 @@ def validate_token_encryption(sample_token: str | None) -> str | None:
     Returns:
         None on success, or an error message string on failure.
     """
-    if not sample_token:
+    if not sample_token or not is_supported_v1_token(sample_token):
         return None
-
-    if not is_supported_v1_token(sample_token):
-        return (
-            "Upload requires JWE-packaged tokens (produced by 'olt package'), "
-            "but the file contains plain hashed tokens. "
-            "Run 'olt package' on the tokenized output before uploading."
-        )
 
     try:
         exchange_config_raw = _load_exchange_config()
