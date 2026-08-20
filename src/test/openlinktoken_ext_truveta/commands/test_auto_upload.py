@@ -116,10 +116,10 @@ class TestAutoUploadCommand:
 
         pa = captured_package_args["args"]
         assert pa.input_path == str(input_file)
-        assert "demo_input_packaged.zip" in pa.output_path
+        assert "demo_input_packaged.parquet" in pa.output_path
         assert pa.exchange_config is not None
 
-    def test_upload_receives_zip_path(self, tmp_path):
+    def test_upload_receives_parquet_path(self, tmp_path):
         input_file = tmp_path / "demo_input.csv"
         input_file.write_text("data")
 
@@ -136,11 +136,38 @@ class TestAutoUploadCommand:
         ):
             _auto_upload(_args(str(input_file)))
 
-        assert captured_upload_args["input"].endswith(".zip")
+        assert captured_upload_args["input"].endswith(".parquet")
         assert "demo_input_packaged" in captured_upload_args["input"]
 
-    def test_upload_metadata_is_always_none_for_zip(self, tmp_path):
-        """Zip output bundles metadata internally — upload receives metadata=None."""
+    def test_upload_receives_metadata_path_when_present(self, tmp_path):
+        input_file = tmp_path / "demo_input.csv"
+        input_file.write_text("data")
+
+        captured_upload_args = {}
+
+        def _write_metadata_and_capture(package_args):
+            Path(package_args.output_path).with_suffix(".metadata.json").write_text(
+                "{}"
+            )
+            return 0
+
+        def _capture_upload(upload_args):
+            captured_upload_args["metadata"] = upload_args.metadata
+            return 0
+
+        with (
+            patch(_INITIATE_EXCHANGE, return_value=0),
+            patch(_PACKAGE_EXECUTE, side_effect=_write_metadata_and_capture),
+            patch(_UPLOAD, side_effect=_capture_upload),
+        ):
+            _auto_upload(_args(str(input_file)))
+
+        assert captured_upload_args["metadata"] is not None
+        assert captured_upload_args["metadata"].endswith(
+            "demo_input_packaged.metadata.json"
+        )
+
+    def test_upload_metadata_is_none_when_not_present(self, tmp_path):
         input_file = tmp_path / "demo_input.csv"
         input_file.write_text("data")
 
