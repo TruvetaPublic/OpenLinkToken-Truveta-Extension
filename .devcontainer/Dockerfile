@@ -18,7 +18,9 @@ RUN apt-get update \
     ca-certificates \
     curl \
     git \
+    git-lfs \
     openssl && \
+    git lfs install --system && \
     # Make the script executable and run it
     chmod +x /tmp/detect_zscaler.sh && \
     /tmp/detect_zscaler.sh && \
