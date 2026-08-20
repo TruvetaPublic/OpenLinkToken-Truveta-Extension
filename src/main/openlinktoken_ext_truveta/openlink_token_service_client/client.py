@@ -1,10 +1,15 @@
-# NOTE: This file is auto-generated. Do not edit manually.
+# NOTE: This file is auto-generated .  Do not edit manually.
 
-from urllib.parse import quote
+from .types import (
+    ExchangeRequest,
+    ExchangeResponse,
+    FinalizeSessionRequest,
+    InitializeSessionResponse,
+)
 
 from httpx import AsyncClient
 
-from .types import ExchangeRequest, ExchangeResponse
+from urllib.parse import quote
 
 
 class OpenLinkTokenServiceClient:
@@ -24,14 +29,35 @@ class OpenLinkTokenServiceClient:
         response.raise_for_status()
         return ExchangeResponse.model_validate(response.json())
 
-    async def exchange_exchange_2(
-        self, version: str, body: ExchangeRequest
-    ) -> ExchangeResponse:
-        url = f"{self._base_url}/api/v{quote(str(version))}/Exchange"
+    async def uploads_initialize_session(
+        self, exchange_id: str, version: str
+    ) -> InitializeSessionResponse:
+        url = (
+            f"{self._base_url}/v{quote(str(version))}/Uploads/{quote(str(exchange_id))}"
+        )
+        response = await self._client.post(url)
+        response.raise_for_status()
+        return InitializeSessionResponse.model_validate(response.json())
+
+    async def uploads_upload_chunk(
+        self, exchange_id: str, chunk_index: int, version: str, body: bytes
+    ) -> None:
+        url = (
+            f"{self._base_url}/v{quote(str(version))}/Uploads/"
+            f"{quote(str(exchange_id))}/chunks/{quote(str(chunk_index))}"
+        )
+        response = await self._client.put(
+            url, content=body, headers={"Content-Type": "application/octet-stream"}
+        )
+        response.raise_for_status()
+
+    async def uploads_finalize_session(
+        self, exchange_id: str, version: str, body: FinalizeSessionRequest
+    ) -> None:
+        url = f"{self._base_url}/v{quote(str(version))}/Uploads/{quote(str(exchange_id))}/complete"
         response = await self._client.post(
             url,
             content=body.model_dump_json(by_alias=True),
             headers={"Content-Type": "application/json"},
         )
         response.raise_for_status()
-        return ExchangeResponse.model_validate(response.json())
