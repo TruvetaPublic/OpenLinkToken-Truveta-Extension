@@ -6,6 +6,7 @@ Unit tests for the upload command.
 
 import argparse
 import hashlib
+import os
 import zipfile
 from unittest.mock import patch
 
@@ -91,13 +92,58 @@ class TestUploadCommand:
             archive.writestr("data.csv", b"token\nabc")
             archive.writestr("metadata.json", b"{}")
 
-        output_path = _package_existing_zip(source_path, b'{"exchange":true}')
+        with patch(
+            "openlinktoken_ext_truveta.commands.upload.zipfile.ZipFile.read",
+            side_effect=AssertionError("existing ZIP members should not be read"),
+        ):
+            output_path = _package_existing_zip(source_path, b'{"exchange":true}')
 
         try:
             with zipfile.ZipFile(output_path) as archive:
                 assert archive.read("exchange-config.json") == b'{"exchange":true}'
+            with zipfile.ZipFile(source_path) as archive:
+                assert "exchange-config.json" not in archive.namelist()
         finally:
             output_path.unlink(missing_ok=True)
+
+    def test_complete_existing_zip_is_reused(self, tmp_path):
+        source_path = tmp_path / "input.zip"
+        with zipfile.ZipFile(source_path, "w") as archive:
+            archive.writestr("data.csv", b"token\nabc")
+            archive.writestr("exchange-config.json", b'{"exchange":true}')
+
+        with patch(
+            "openlinktoken_ext_truveta.commands.upload.tempfile.mkstemp",
+            side_effect=AssertionError("complete ZIP should not be copied"),
+        ):
+            output_path = _package_existing_zip(source_path, b"{}")
+
+        assert output_path == source_path
+
+    def test_existing_zip_cleanup_removes_partial_output(self, tmp_path):
+        source_path = tmp_path / "input.zip"
+        output_path = tmp_path / "output.zip"
+        with zipfile.ZipFile(source_path, "w") as archive:
+            archive.writestr("data.csv", b"token\nabc")
+
+        def create_output_file(*args, **kwargs):
+            fd = os.open(output_path, os.O_CREAT | os.O_RDWR)
+            return fd, str(output_path)
+
+        with (
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.tempfile.mkstemp",
+                side_effect=create_output_file,
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.shutil.copyfile",
+                side_effect=OSError("copy failed"),
+            ),
+            pytest.raises(OSError, match="copy failed"),
+        ):
+            _package_existing_zip(source_path, b"{}")
+
+        assert not output_path.exists()
 
     def test_existing_zip_rejects_unsafe_member_path(self, tmp_path):
         source_path = tmp_path / "input.zip"
@@ -131,6 +177,37 @@ class TestUploadCommand:
             ),
         ):
             yield
+
+    @pytest.mark.parametrize("upload_result", [0, 1])
+    def test_reused_input_zip_is_preserved_after_upload(self, tmp_path, upload_result):
+        input_zip = tmp_path / "input.zip"
+        with zipfile.ZipFile(input_zip, "w") as archive:
+            archive.writestr("data.csv", b"token\nabc")
+            archive.writestr("exchange-config.json", b'{"exchange":true}')
+
+        with (
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.resolve_exchange_payload",
+                return_value={
+                    "exchangeId": "ex-1",
+                    "senderKeyFingerprint": "s",
+                    "recipientKeyFingerprint": "r",
+                    "curve": "P-256",
+                },
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
+                return_value=_context(),
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload._run_upload",
+                return_value=upload_result,
+            ),
+        ):
+            rc = _upload(_args(str(input_zip)))
+
+        assert rc == upload_result
+        assert input_zip.exists()
 
     def _mock_3step(self, init_return=8_388_608):
         """Return a context manager that mocks all three upload API steps."""

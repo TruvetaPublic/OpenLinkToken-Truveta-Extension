@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import sys
 import tempfile
 import zipfile
@@ -123,23 +124,34 @@ def _package_as_zip(
 
 
 def _package_existing_zip(zip_path: Path, exchange_config_bytes: bytes) -> Path:
-    """Copy an existing ZIP and add the required exchange config entry when absent."""
+    """
+    Prepare an existing ZIP for upload.
+
+    The original path is returned when the required exchange config is already
+    present. Otherwise, the archive is copied and the config is appended without
+    loading existing members into memory.
+    """
+    with zipfile.ZipFile(zip_path, "r") as source:
+        names = source.namelist()
+        _validate_zip_member_names(names)
+        if "exchange-config.json" in names:
+            return zip_path
+
     zip_fd, output_path_str = tempfile.mkstemp(
         suffix=".zip", prefix=f"{zip_path.stem}-"
     )
     os.close(zip_fd)
     output_path = Path(output_path_str)
 
-    with (
-        zipfile.ZipFile(zip_path, "r") as source,
-        zipfile.ZipFile(output_path, "w", zipfile.ZIP_STORED) as target,
-    ):
-        names = source.namelist()
-        _validate_zip_member_names(names)
-        for name in names:
-            target.writestr(name, source.read(name))
-        if "exchange-config.json" not in names:
+    prepared = False
+    try:
+        shutil.copyfile(zip_path, output_path)
+        with zipfile.ZipFile(output_path, "a", zipfile.ZIP_STORED) as target:
             target.writestr("exchange-config.json", exchange_config_bytes)
+        prepared = True
+    finally:
+        if not prepared:
+            output_path.unlink(missing_ok=True)
 
     return output_path
 
@@ -274,7 +286,7 @@ def _upload(args: argparse.Namespace) -> int:
         upload_path = _package_existing_zip(
             file_path, exchange_config_file.read_bytes()
         )
-        temp_zip_path: Path | None = upload_path
+        temp_zip_path: Path | None = upload_path if upload_path != file_path else None
     else:
         metadata_bytes = (
             metadata_path.read_bytes()
