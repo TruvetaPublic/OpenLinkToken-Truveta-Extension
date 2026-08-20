@@ -35,6 +35,8 @@ from openlinktoken_ext_truveta.exchange.config import (
 from openlinktoken_ext_truveta.commands import upload_validation
 
 _SUPPORTED_EXTENSIONS = upload_validation.SUPPORTED_EXTENSIONS
+_GREEN = "\033[32m"
+_RESET = "\033[0m"
 
 
 def _discover_metadata_file(data_file: Path) -> Path | None:
@@ -400,5 +402,5 @@ def _run_upload(
         print(str(exc), file=sys.stderr)
         return 1
 
-    print("\u2713 Upload accepted.")
+    print(f"{_GREEN}\u2713 Upload accepted.{_RESET}")
     return 0
