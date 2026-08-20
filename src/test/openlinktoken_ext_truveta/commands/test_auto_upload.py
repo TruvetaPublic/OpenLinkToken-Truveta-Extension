@@ -139,15 +139,15 @@ class TestAutoUploadCommand:
         assert captured_upload_args["input"].endswith(".zip")
         assert "demo_input_packaged" in captured_upload_args["input"]
 
-    def test_upload_metadata_is_always_none_for_zip(self, tmp_path):
-        """Zip output bundles metadata internally — upload receives metadata=None."""
+    def test_upload_does_not_receive_external_metadata_for_zip(self, tmp_path):
+        """Zip output bundles metadata internally — upload receives no external metadata."""
         input_file = tmp_path / "demo_input.csv"
         input_file.write_text("data")
 
         captured_upload_args = {}
 
         def _capture_upload(upload_args):
-            captured_upload_args["metadata"] = upload_args.metadata
+            captured_upload_args["has_metadata"] = hasattr(upload_args, "metadata")
             return 0
 
         with (
@@ -157,7 +157,7 @@ class TestAutoUploadCommand:
         ):
             _auto_upload(_args(str(input_file)))
 
-        assert captured_upload_args["metadata"] is None
+        assert not captured_upload_args["has_metadata"]
 
     def test_temp_dir_cleaned_up_on_success(self, tmp_path):
         input_file = tmp_path / "input.csv"

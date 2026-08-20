@@ -111,6 +111,5 @@ def _auto_upload(args: argparse.Namespace) -> int:
 
         upload_args = argparse.Namespace(
             input=str(zip_path),
-            metadata=None,
         )
         return _upload(upload_args)
