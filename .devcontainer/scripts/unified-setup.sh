@@ -78,6 +78,15 @@ step_activate_venv() {
   source "$VENV_DIR/bin/activate"
 }
 
+step_configure_git_lfs() {
+  if ! command -v git-lfs >/dev/null 2>&1; then
+    echo "Error: Git LFS is required to install the OpenLinkToken ML model." >&2
+    echo "Rebuild the dev container to install the git-lfs package." >&2
+    return 1
+  fi
+  git lfs install --skip-repo
+}
+
 step_install_packages() {
   echo "→ Installing extension package with dev extras"
   cd "$REPO_ROOT"
@@ -169,6 +178,7 @@ run_core_setup() {
 
 run_full_setup() {
   run_core_setup
+  step_configure_git_lfs
   step_install_packages
   step_activate_shell_init
   step_install_prek
@@ -179,6 +189,7 @@ run_full_setup() {
 
 run_refresh_setup() {
   run_core_setup
+  step_configure_git_lfs
   step_refresh_packages
   step_activate_shell_init
   step_install_apm_cli

@@ -7,6 +7,7 @@
 - Python 3.12
 - [uv](https://docs.astral.sh/uv/) (recommended) or `pip`
 - Access to [TruvetaPublic/OpenLinkToken](https://github.com/TruvetaPublic/OpenLinkToken) on GitHub (the `openlinktoken-cli` dev dependency is installed from this repo)
+- Git LFS, required to retrieve OpenLinkToken's ML model files
 
 > The repository ships with a VS Code dev container under `.devcontainer/` that provisions Python 3.12, installs dev tooling, and runs an editable install automatically. This is the recommended development environment.
 
@@ -15,6 +16,7 @@
 ```bash
 uv venv .venv
 source .venv/bin/activate
+git lfs install --skip-repo
 uv pip install -e ".[dev]"
 ```
 
@@ -23,6 +25,7 @@ Or with pip:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
+git lfs install --skip-repo
 pip install -e ".[dev]"
 ```
 

@@ -49,10 +49,6 @@
     "type=volume,source=openlinktoken-ext-truveta-vscode-server,target=/home/vscode/.vscode-server",
     "type=volume,source=openlinktoken-ext-truveta-vscode-insiders,target=/home/vscode/.vscode-server-insiders"
   ],
-  "containerEnv": {
-    "GH_TOKEN": "${localEnv:GH_TOKEN}",
-    "UV_PROJECT_ENVIRONMENT": "/home/vscode/.local/share/openlinktoken-ext-truveta/.venv"
-  },
   "updateContentCommand": {
     "fix-mount-permissions": "for d in /home/vscode/.copilot /home/vscode/.cache /home/vscode/.local /home/vscode/.vscode-server /home/vscode/.vscode-server-insiders; do [ -d \"$d\" ] || continue; sudo chown -R vscode:vscode \"$d\"; done"
   },
