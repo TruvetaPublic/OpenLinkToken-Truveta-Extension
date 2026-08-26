@@ -23,10 +23,12 @@ MANIFEST
 
 # Virtual envs
 .venv/
-.worktrees/
 venv/
 env/
 ENV/
+
+# Git worktrees
+.worktrees/
 
 # Testing / coverage
 .pytest_cache/
@@ -51,19 +53,17 @@ Thumbs.db
 # Local data
 tmp/
 *.log
+target/
+openlinktoken-*.exchange.json
 
 # uv (lockfile not maintained in git for this repo)
 uv.lock
-.devcontainer/host-ca-certificates.crt
-.venv
-target/
 
+# DevContainer
+.devcontainer/.env
+.devcontainer/host-ca-certificates.crt
 
 # APM dependencies
 apm_modules/
 .agents/
 apm.lock.yaml
-.devcontainer/.env
-
-# temp files
-openlinktoken-*.exchange.json
