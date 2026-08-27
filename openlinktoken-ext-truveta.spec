@@ -2,6 +2,8 @@
 # PyInstaller spec for the bundled OpenLinkToken CLI + Truveta extension distributable.
 
 import os
+import sys
+
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 block_cipher = None
@@ -9,12 +11,22 @@ block_cipher = None
 # Anchor to spec file location for reproducible builds.
 # SPECPATH is provided by PyInstaller when executing the spec.
 base_dir = os.path.abspath(SPECPATH)
+sys.path.insert(0, os.path.join(base_dir, "src", "main"))
+
+from openlinktoken_ext_truveta.util.inferencing_assets import collect_ml1_assets
 
 datas = []
 binaries = []
 hiddenimports = []
 
-for package_name in ("cryptography",):
+for package_name in (
+    "openlinktoken",
+    "openlinktoken.core",
+    "pyarrow",
+    "pandas",
+    "csv2parquet",
+    "cryptography",
+):
     package_datas, package_binaries, package_hiddenimports = collect_all(package_name)
     datas += package_datas
     binaries += package_binaries
@@ -22,6 +34,14 @@ for package_name in ("cryptography",):
 
 for module in ("openlinktoken", "openlinktoken_cli", "openlinktoken_ext_truveta"):
     hiddenimports += collect_submodules(module)
+
+inferencing_assets_source = os.environ.get("OLT_INFERENCING_ASSETS_SOURCE")
+if not inferencing_assets_source:
+    raise RuntimeError(
+        "OLT_INFERENCING_ASSETS_SOURCE must point to OpenLinkToken's "
+        "resources/inferencing/ml1 directory"
+    )
+datas += collect_ml1_assets(inferencing_assets_source)
 
 import importlib.util as _ilu
 import pathlib as _pl
@@ -31,7 +51,7 @@ _entrypoint = str(_pl.Path(_spec.origin).as_posix())
 
 a = Analysis(
     [_entrypoint],
-    pathex=[base_dir],
+    pathex=[base_dir, os.path.join(base_dir, "src", "main")],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,

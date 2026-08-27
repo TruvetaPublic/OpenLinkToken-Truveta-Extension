@@ -6,11 +6,13 @@
     - [Install Dependencies](#install-dependencies)
     - [ML1 Assets](#ml1-assets)
     - [Run Tests](#run-tests)
+    - [Smoke Test](#smoke-test)
   - [Building a Wheel](#building-a-wheel)
   - [Branching and Release Policy](#branching-and-release-policy)
   - [Versioning](#versioning)
   - [Continuous Integration](#continuous-integration)
   - [Releases](#releases)
+  - [Building a Standalone Executable Locally](#building-a-standalone-executable-locally)
 
 ## Local Development Setup
 
@@ -42,9 +44,9 @@ git lfs install --skip-repo
 pip install -e ".[dev]"
 ```
 
-This installs the package in editable mode, pulls `openlinktoken-cli` from the
-OpenLinkToken commit that provides the ML1 inferencing options, and installs
-dev tools (`pytest`, `bump2version`, `build`, `autoflake`, `flake8`).
+This installs the package in editable mode, pulls the model-enabled `openlinktoken-cli`
+from OpenLinkToken, and installs dev tools (`pytest`, `bump2version`, `build`,
+`autoflake`, `flake8`).
 
 ### ML1 Assets
 
@@ -126,7 +128,26 @@ Releases are defined in `.github/workflows/release.yml` and triggered in two way
 The release workflow:
 
 1. Builds the wheel and sdist, then publishes them to GitHub Releases.
-2. Builds standalone executables for Linux, Windows, and macOS using PyInstaller.
-3. Attaches all artifacts to the GitHub Release.
+2. Checks out the pinned OpenLinkToken model assets with Git LFS.
+3. Builds standalone executables for Linux, Windows, and macOS using PyInstaller.
+4. Runs a tokenization smoke test against each executable to verify the embedded model.
+5. Attaches all artifacts to the GitHub Release.
 
-The standalone binary bundles both the `openlinktoken` CLI and the Truveta extension into a single file — no Python installation required for end users.
+The standalone binary bundles the `openlinktoken` CLI, the Truveta extension, and the ML1 model/tokenizer assets into a single file — no Python installation required for end users. The release build pins OpenLinkToken to commit `cde35f290a2d57f1ac7c7056f78b1ff9f150a201`, which is the model-enabled source used for the build.
+
+### Building a Standalone Executable Locally
+
+The standalone spec requires a hydrated checkout of OpenLinkToken's ML1 assets. Clone the same model-enabled source revision, install the release dependencies, and point the spec at the assets:
+
+```bash
+git clone --filter=blob:none --sparse https://github.com/TruvetaPublic/OpenLinkToken.git openlinktoken-source
+git -C openlinktoken-source sparse-checkout set resources/inferencing/ml1
+git -C openlinktoken-source checkout cde35f290a2d57f1ac7c7056f78b1ff9f150a201
+git -C openlinktoken-source lfs pull
+export OLT_INFERENCING_ASSETS_SOURCE="$PWD/openlinktoken-source/resources/inferencing/ml1"
+uv pip install -e ".[release]"
+uv pip install -r pyinstaller-requirements.txt
+pyinstaller --clean --noconfirm openlinktoken-ext-truveta.spec
+```
+
+The spec validates the manifest, sizes, and SHA-256 digests before embedding `asset-manifest.json`, `model.onnx`, `model.onnx.data`, and `tokenizer.json` under the runtime package path.
