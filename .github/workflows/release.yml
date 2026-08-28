@@ -140,7 +140,7 @@ jobs:
 
       - name: Build standalone executable (macOS universal2)
         if: runner.os == 'macOS'
-        run: pyinstaller --clean --noconfirm --target-arch universal2 openlinktoken-ext-truveta.spec
+        run: OLT_TARGET_ARCH=universal2 pyinstaller --clean --noconfirm openlinktoken-ext-truveta.spec
 
       - name: Build standalone executable (Linux / Windows)
         if: runner.os != 'macOS'
@@ -151,11 +151,11 @@ jobs:
         run: |
           mkdir -p smoke
           cp src/test/resources/launch/sample.csv smoke/input.csv
-          ./dist/olt --help
-          ./dist/olt truveta --help
-          ./dist/olt generate-key-pair --name recipient --force
-          ./dist/olt initiate-exchange --name smoke --public-key "$HOME/.openlinktoken/recipient.public.pem" --output smoke/smoke.exchange.json --hashingsecret secret
-          ./dist/olt tokenize -i smoke/input.csv -o smoke/out.csv --exchange-config smoke/smoke.exchange.json --private-key "$HOME/.openlinktoken/smoke.private.pem"
+          ./dist/olt/olt --help
+          ./dist/olt/olt truveta --help
+          ./dist/olt/olt generate-key-pair --name recipient --force
+          ./dist/olt/olt initiate-exchange --name smoke --public-key "$HOME/.openlinktoken/recipient.public.pem" --output smoke/smoke.exchange.json --hashingsecret secret
+          ./dist/olt/olt tokenize -i smoke/input.csv -o smoke/out.csv --exchange-config smoke/smoke.exchange.json --private-key "$HOME/.openlinktoken/smoke.private.pem"
 
       - name: Smoke test (Windows)
         if: runner.os == 'Windows'
@@ -163,11 +163,11 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path smoke | Out-Null
           Copy-Item src\test\resources\launch\sample.csv smoke\input.csv
-          .\dist\olt.exe --help
-          .\dist\olt.exe truveta --help
-          .\dist\olt.exe generate-key-pair --name recipient --force
-          .\dist\olt.exe initiate-exchange --name smoke --public-key "$HOME/.openlinktoken/recipient.public.pem" --output smoke\smoke.exchange.json --hashingsecret secret
-          .\dist\olt.exe tokenize -i smoke\input.csv -o smoke\out.csv --exchange-config smoke\smoke.exchange.json --private-key "$HOME/.openlinktoken/smoke.private.pem"
+          .\dist\olt\olt.exe --help
+          .\dist\olt\olt.exe truveta --help
+          .\dist\olt\olt.exe generate-key-pair --name recipient --force
+          .\dist\olt\olt.exe initiate-exchange --name smoke --public-key "$HOME/.openlinktoken/recipient.public.pem" --output smoke\smoke.exchange.json --hashingsecret secret
+          .\dist\olt\olt.exe tokenize -i smoke\input.csv -o smoke\out.csv --exchange-config smoke\smoke.exchange.json --private-key "$HOME/.openlinktoken/smoke.private.pem"
 
       - name: Prepare release assets
         shell: bash

@@ -42,6 +42,9 @@ if not inferencing_assets_source:
         "resources/inferencing/ml1 directory"
     )
 datas += collect_ml1_assets(inferencing_assets_source)
+datas += [
+    (os.path.join(base_dir, "standalone", "registry.json"), "openlinktoken/extensions")
+]
 
 import importlib.util as _ilu
 import pathlib as _pl
@@ -56,7 +59,15 @@ a = Analysis(
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
-    runtime_hooks=[],
+    runtime_hooks=[
+        os.path.join(
+            base_dir,
+            "src",
+            "main",
+            "openlinktoken_ext_truveta",
+            "standalone_runtime_hook.py",
+        )
+    ],
     excludes=[],
     noarchive=False,
 )
@@ -64,9 +75,6 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
     name="olt",
     debug=False,
@@ -75,5 +83,17 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
+    target_arch=os.environ.get("OLT_TARGET_ARCH"),
     console=True,
+    exclude_binaries=True,
+)
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name="olt",
 )

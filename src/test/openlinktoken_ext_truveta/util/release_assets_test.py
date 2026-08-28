@@ -126,6 +126,27 @@ class TestCreateReleaseAssets:
             names = zf.namelist()
         assert any("olt" in n for n in names)
 
+    def test_zip_contains_complete_one_folder_bundle(self, tmp_path):
+        dist_dir = tmp_path / "dist"
+        bundle_dir = dist_dir / "olt"
+        internal_dir = bundle_dir / "_internal" / "openlinktoken"
+        internal_dir.mkdir(parents=True)
+        self._make_fake_executable(bundle_dir, "olt")
+        (internal_dir / "model.onnx.data").write_bytes(b"model-data")
+
+        output_dir = tmp_path / "release-assets"
+        assets = create_release_assets("1.0.0", "Linux", dist_dir, output_dir)
+
+        zip_path = next(p for p in assets if p.suffix == ".zip")
+        with zipfile.ZipFile(zip_path) as zf:
+            names = set(zf.namelist())
+
+        assert "olt-truveta-1.0.0-linux-x64/olt" in names
+        assert (
+            "olt-truveta-1.0.0-linux-x64/_internal/openlinktoken/model.onnx.data"
+            in names
+        )
+
     def test_sha256_sidecar_content(self, tmp_path):
         dist_dir = tmp_path / "dist"
         dist_dir.mkdir()

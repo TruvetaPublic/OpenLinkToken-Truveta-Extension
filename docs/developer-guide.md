@@ -133,7 +133,7 @@ The release workflow:
 4. Runs a tokenization smoke test against each executable to verify the embedded model.
 5. Attaches all artifacts to the GitHub Release.
 
-The standalone binary bundles the `openlinktoken` CLI, the Truveta extension, and the ML1 model/tokenizer assets into a single file — no Python installation required for end users. The release build pins OpenLinkToken to commit `cde35f290a2d57f1ac7c7056f78b1ff9f150a201`, which is the model-enabled source used for the build.
+The standalone bundle contains the `openlinktoken` CLI, the Truveta extension, and the ML1 model/tokenizer assets in a reusable one-folder distribution — no Python installation required for end users. The executable is `dist/olt/olt` on POSIX systems and `dist/olt/olt.exe` on Windows. The release build pins OpenLinkToken to commit `cde35f290a2d57f1ac7c7056f78b1ff9f150a201`, which includes the model-enabled source and lazy CLI startup changes.
 
 ### Building a Standalone Executable Locally
 
@@ -149,5 +149,12 @@ uv pip install -e ".[release]"
 uv pip install -r pyinstaller-requirements.txt
 pyinstaller --clean --noconfirm openlinktoken-ext-truveta.spec
 ```
+
+The build creates a reusable one-folder bundle under `dist/olt/`; run it with
+`./dist/olt/olt --help` on macOS or Linux.
+
+Set `OLT_TARGET_ARCH=universal2` for a macOS universal2 build; do not pass
+`--target-arch` when executing a `.spec` file. For a local Apple Silicon build with
+arm64-only native wheels, set `OLT_TARGET_ARCH=arm64` instead.
 
 The spec validates the manifest, sizes, and SHA-256 digests before embedding `asset-manifest.json`, `model.onnx`, `model.onnx.data`, and `tokenizer.json` under the runtime package path.
