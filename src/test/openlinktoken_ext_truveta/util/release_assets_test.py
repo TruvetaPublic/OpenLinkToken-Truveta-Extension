@@ -38,24 +38,21 @@ class TestNormalizeVersion:
 
 class TestResolveReleaseAssetSpec:
     @pytest.mark.parametrize(
-        "runner_os, expected_executable, expected_binary_prefix, expected_package_prefix",
+        "runner_os, expected_executable, expected_package_name",
         [
             (
                 "Linux",
                 "olt",
-                "olt-truveta-v1.0.0-linux-x86_64",
                 "olt-truveta-1.0.0-linux-x64",
             ),
             (
                 "macOS",
                 "olt",
-                "olt-truveta-v1.0.0-macos-universal",
-                "olt-truveta-1.0.0-macos-universal",
+                "olt-truveta-1.0.0-macos-arm64",
             ),
             (
                 "Windows",
                 "olt.exe",
-                "olt-truveta-v1.0.0-windows-x86_64.exe",
                 "olt-truveta-1.0.0-windows-x64",
             ),
         ],
@@ -64,13 +61,11 @@ class TestResolveReleaseAssetSpec:
         self,
         runner_os,
         expected_executable,
-        expected_binary_prefix,
-        expected_package_prefix,
+        expected_package_name,
     ):
         spec = _resolve_release_asset_spec("1.0.0", runner_os)
         assert spec.executable_name == expected_executable
-        assert spec.binary_asset_name == expected_binary_prefix
-        assert spec.package_name == expected_package_prefix
+        assert spec.package_name == expected_package_name
 
     def test_case_insensitive_runner_os(self):
         spec_lower = _resolve_release_asset_spec("1.0.0", "linux")
@@ -93,6 +88,13 @@ class TestCreateReleaseAssets:
         exe.write_bytes(b"fake-binary-content-for-testing")
         return exe
 
+    def _make_fake_bundle(self, dist_dir: Path, name: str) -> Path:
+        bundle_dir = dist_dir / "olt"
+        bundle_dir.mkdir(parents=True)
+        self._make_fake_executable(bundle_dir, name)
+        (bundle_dir / "_internal").mkdir()
+        return bundle_dir
+
     @pytest.mark.parametrize(
         "runner_os, exe_name",
         [
@@ -101,22 +103,25 @@ class TestCreateReleaseAssets:
             ("Windows", "olt.exe"),
         ],
     )
-    def test_creates_four_assets(self, tmp_path, runner_os, exe_name):
+    def test_creates_bundle_and_checksum_assets(self, tmp_path, runner_os, exe_name):
         dist_dir = tmp_path / "dist"
         dist_dir.mkdir()
-        self._make_fake_executable(dist_dir, exe_name)
+        self._make_fake_bundle(dist_dir, exe_name)
 
         output_dir = tmp_path / "release-assets"
         assets = create_release_assets("1.0.0", runner_os, dist_dir, output_dir)
 
-        assert len(assets) == 4
-        assert ".sha256" in str(assets[1].name)
-        assert ".zip" in str(assets[2].name)
+        assert len(assets) == 2
+        assert assets[0].name.endswith(".zip")
+        assert assets[1].name.endswith(".zip.sha256")
+        assert sorted(path.name for path in output_dir.iterdir()) == sorted(
+            path.name for path in assets
+        )
 
     def test_zip_contains_executable(self, tmp_path):
         dist_dir = tmp_path / "dist"
         dist_dir.mkdir()
-        self._make_fake_executable(dist_dir, "olt")
+        self._make_fake_bundle(dist_dir, "olt")
 
         output_dir = tmp_path / "release-assets"
         assets = create_release_assets("1.0.0", "Linux", dist_dir, output_dir)
@@ -150,31 +155,50 @@ class TestCreateReleaseAssets:
     def test_sha256_sidecar_content(self, tmp_path):
         dist_dir = tmp_path / "dist"
         dist_dir.mkdir()
-        self._make_fake_executable(dist_dir, "olt")
+        self._make_fake_bundle(dist_dir, "olt")
 
         output_dir = tmp_path / "release-assets"
         assets = create_release_assets("1.0.0", "Linux", dist_dir, output_dir)
 
-        raw_binary = assets[0]
+        zip_path = assets[0]
         checksum_file = assets[1]
 
-        expected_hash = hashlib.sha256(raw_binary.read_bytes()).hexdigest()
+        expected_hash = hashlib.sha256(zip_path.read_bytes()).hexdigest()
         checksum_content = checksum_file.read_text()
         assert checksum_content.startswith(expected_hash)
-        assert raw_binary.name in checksum_content
+        assert zip_path.name in checksum_content
+
+    def test_rejects_raw_executable(self, tmp_path):
+        dist_dir = tmp_path / "dist"
+        dist_dir.mkdir()
+        (dist_dir / "olt").write_bytes(b"raw executable")
+        output_dir = tmp_path / "release-assets"
+
+        with pytest.raises(FileNotFoundError, match="one-folder bundle"):
+            create_release_assets("1.0.0", "Linux", dist_dir, output_dir)
 
     def test_raises_when_executable_missing(self, tmp_path):
         dist_dir = tmp_path / "dist"
-        dist_dir.mkdir()
+        (dist_dir / "olt").mkdir(parents=True)
         output_dir = tmp_path / "release-assets"
 
         with pytest.raises(FileNotFoundError, match="Expected built executable"):
             create_release_assets("1.0.0", "Linux", dist_dir, output_dir)
 
+    def test_rejects_bundle_without_runtime_directory(self, tmp_path):
+        dist_dir = tmp_path / "dist"
+        bundle_dir = dist_dir / "olt"
+        bundle_dir.mkdir(parents=True)
+        (bundle_dir / "olt").write_bytes(b"binary")
+        output_dir = tmp_path / "release-assets"
+
+        with pytest.raises(FileNotFoundError, match="runtime directory"):
+            create_release_assets("1.0.0", "Linux", dist_dir, output_dir)
+
     def test_output_dir_created_if_absent(self, tmp_path):
         dist_dir = tmp_path / "dist"
         dist_dir.mkdir()
-        self._make_fake_executable(dist_dir, "olt")
+        self._make_fake_bundle(dist_dir, "olt")
 
         output_dir = tmp_path / "nonexistent" / "release-assets"
         create_release_assets("1.0.0", "Linux", dist_dir, output_dir)
@@ -209,7 +233,10 @@ class TestMain:
     def test_main_runs_end_to_end(self, tmp_path):
         dist_dir = tmp_path / "dist"
         dist_dir.mkdir()
-        (dist_dir / "olt").write_bytes(b"binary")
+        bundle_dir = dist_dir / "olt"
+        bundle_dir.mkdir()
+        (bundle_dir / "olt").write_bytes(b"binary")
+        (bundle_dir / "_internal").mkdir()
 
         output_dir = tmp_path / "out"
         result = main(
@@ -226,4 +253,4 @@ class TestMain:
         )
         assert result == 0
         assert output_dir.is_dir()
-        assert len(list(output_dir.iterdir())) == 4
+        assert len(list(output_dir.iterdir())) == 2

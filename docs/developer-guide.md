@@ -129,11 +129,12 @@ The release workflow:
 
 1. Builds the wheel and sdist, then publishes them to GitHub Releases.
 2. Checks out the pinned OpenLinkToken model assets with Git LFS.
-3. Builds standalone executables for Linux, Windows, and macOS using PyInstaller.
+3. Builds one-folder standalone bundles for Linux, Windows, and macOS using PyInstaller.
 4. Runs a tokenization smoke test against each executable to verify the embedded model.
-5. Attaches all artifacts to the GitHub Release.
+5. Packages each complete bundle as a ZIP with a SHA-256 checksum.
+6. Attaches the ZIP bundles and checksums to the GitHub Release.
 
-The standalone bundle contains the `openlinktoken` CLI, the Truveta extension, and the ML1 model/tokenizer assets in a reusable one-folder distribution — no Python installation required for end users. The executable is `dist/olt/olt` on POSIX systems and `dist/olt/olt.exe` on Windows. The release build pins OpenLinkToken to commit `54f85797046373bf2e661f8e8865327ba73d5d75`, which includes the model-enabled source and lazy CLI startup changes. Help-oriented invocations load the installed extension registry so extension commands appear in the main menu. Heavy processing dependencies remain lazy until tokenization or packaging runs.
+The standalone build contains the `openlinktoken` CLI, the Truveta extension, and the ML1 model/tokenizer assets in a reusable one-folder distribution — no Python installation required for end users. The local bundle is `dist/olt/` with executable `dist/olt/olt` on POSIX systems or `dist/olt/olt.exe` on Windows. Release assets are complete ZIP bundles plus `.sha256` files; the raw executable is not published separately because it requires the adjacent `_internal/` directory. The release build pins OpenLinkToken to commit `55f9fbe839ddb06f579d4cfd728b99a85ceff20e`, which includes the model-enabled source and lazy CLI startup changes. Help-oriented invocations load the installed extension registry so extension commands appear in the main menu. Heavy processing dependencies remain lazy until tokenization or packaging runs.
 
 ### Building a Standalone Executable Locally
 
@@ -142,7 +143,7 @@ The standalone spec requires a hydrated checkout of OpenLinkToken's ML1 assets. 
 ```bash
 git clone --filter=blob:none --sparse https://github.com/TruvetaPublic/OpenLinkToken.git openlinktoken-source
 git -C openlinktoken-source sparse-checkout set resources/inferencing/ml1
-git -C openlinktoken-source checkout 54f85797046373bf2e661f8e8865327ba73d5d75
+git -C openlinktoken-source checkout 55f9fbe839ddb06f579d4cfd728b99a85ceff20e
 git -C openlinktoken-source lfs pull
 export OLT_INFERENCING_ASSETS_SOURCE="$PWD/openlinktoken-source/resources/inferencing/ml1"
 uv pip install -e ".[release]"
@@ -153,8 +154,9 @@ pyinstaller --clean --noconfirm openlinktoken-ext-truveta.spec
 The build creates a reusable one-folder bundle under `dist/olt/`; run it with
 `./dist/olt/olt --help` on macOS or Linux.
 
-Set `OLT_TARGET_ARCH=universal2` for a macOS universal2 build; do not pass
-`--target-arch` when executing a `.spec` file. For a local Apple Silicon build with
-arm64-only native wheels, set `OLT_TARGET_ARCH=arm64` instead.
+The released macOS bundle targets Apple Silicon arm64 only. Set
+`OLT_TARGET_ARCH=arm64` for macOS builds; do not pass `--target-arch` when
+executing a `.spec` file. The build must run on an arm64 macOS environment
+because the native dependencies are not universal2.
 
 The spec validates the manifest, sizes, and SHA-256 digests before embedding `asset-manifest.json`, `model.onnx`, `model.onnx.data`, and `tokenizer.json` under the runtime package path.

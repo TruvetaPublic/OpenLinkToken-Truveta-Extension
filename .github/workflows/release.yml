@@ -103,7 +103,7 @@ jobs:
       TAG: ${{ needs.release-info.outputs.tag }}
       RELEASE_FOUND: ${{ needs.release-info.outputs['release-found'] }}
       RELEASE_ID: ${{ needs.release-info.outputs['release-id'] }}
-      OPENLINKTOKEN_SOURCE_REF: cde35f290a2d57f1ac7c7056f78b1ff9f150a201
+      OPENLINKTOKEN_SOURCE_REF: 55f9fbe839ddb06f579d4cfd728b99a85ceff20e
       OLT_INFERENCING_ASSETS_SOURCE: ${{ github.workspace }}/openlinktoken-source/resources/inferencing/ml1
     steps:
       - name: Checkout
@@ -138,11 +138,19 @@ jobs:
           uv pip install --system -e ".[release]"
           uv pip install --system -r pyinstaller-requirements.txt
 
-      - name: Build standalone executable (macOS universal2)
+      - name: Verify macOS arm64 runner
         if: runner.os == 'macOS'
-        run: OLT_TARGET_ARCH=universal2 pyinstaller --clean --noconfirm openlinktoken-ext-truveta.spec
+        run: |
+          if [ "$(uname -m)" != "arm64" ]; then
+            echo "This release requires an arm64 macOS runner; found $(uname -m)." >&2
+            exit 1
+          fi
 
-      - name: Build standalone executable (Linux / Windows)
+      - name: Build standalone bundle (macOS arm64)
+        if: runner.os == 'macOS'
+        run: OLT_TARGET_ARCH=arm64 pyinstaller --clean --noconfirm openlinktoken-ext-truveta.spec
+
+      - name: Build standalone bundle (Linux / Windows)
         if: runner.os != 'macOS'
         run: pyinstaller --clean --noconfirm openlinktoken-ext-truveta.spec
 

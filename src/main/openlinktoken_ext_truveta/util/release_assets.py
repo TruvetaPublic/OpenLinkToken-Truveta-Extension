@@ -6,8 +6,6 @@ Helpers for preparing CLI release assets in the GitHub Actions build workflow.
 
 import argparse
 import hashlib
-import shutil
-import tempfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,24 +18,20 @@ class ReleaseAssetSpec:
 
     executable_name: str
     package_name: str
-    binary_asset_name: str
 
 
 _RELEASE_ASSET_SPECS = {
     "linux": ReleaseAssetSpec(
         executable_name="olt",
         package_name="olt-truveta-{version}-linux-x64",
-        binary_asset_name="olt-truveta-v{version}-linux-x86_64",
     ),
     "macos": ReleaseAssetSpec(
         executable_name="olt",
-        package_name="olt-truveta-{version}-macos-universal",
-        binary_asset_name="olt-truveta-v{version}-macos-universal",
+        package_name="olt-truveta-{version}-macos-arm64",
     ),
     "windows": ReleaseAssetSpec(
         executable_name="olt.exe",
         package_name="olt-truveta-{version}-windows-x64",
-        binary_asset_name="olt-truveta-v{version}-windows-x86_64.exe",
     ),
 }
 
@@ -45,28 +39,33 @@ _RELEASE_ASSET_SPECS = {
 def create_release_assets(
     version: str, runner_os: str, dist_dir: Path, output_dir: Path
 ) -> list[Path]:
-    """Create versioned CLI binaries, complete bundle ZIPs, and SHA-256 sidecars."""
+    """Create a complete one-folder bundle ZIP and its SHA-256 sidecar."""
     spec = _resolve_release_asset_spec(version, runner_os)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    built_executable = dist_dir / spec.executable_name
-    bundle_root = dist_dir
-    if not built_executable.is_file():
-        bundle_root = dist_dir / "olt"
-        built_executable = bundle_root / spec.executable_name
+    bundle_root = dist_dir / "olt"
+    if not bundle_root.is_dir() and dist_dir.name == "olt":
+        bundle_root = dist_dir
+    if not bundle_root.is_dir():
+        raise FileNotFoundError(
+            f"Expected one-folder bundle directory at {bundle_root}"
+        )
+
+    built_executable = bundle_root / spec.executable_name
     if not built_executable.is_file():
         raise FileNotFoundError(f"Expected built executable at {built_executable}")
-
-    raw_binary_path = output_dir / spec.binary_asset_name
-    shutil.copy2(built_executable, raw_binary_path)
+    runtime_directory = bundle_root / "_internal"
+    if not runtime_directory.is_dir():
+        raise FileNotFoundError(
+            f"Expected one-folder runtime directory at {runtime_directory}"
+        )
 
     zip_path = output_dir / f"{spec.package_name}.zip"
     _create_zip_archive(bundle_root, spec.package_name, zip_path)
 
-    binary_checksum_path = _write_checksum_file(raw_binary_path)
     zip_checksum_path = _write_checksum_file(zip_path)
 
-    return [raw_binary_path, binary_checksum_path, zip_path, zip_checksum_path]
+    return [zip_path, zip_checksum_path]
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -119,7 +118,6 @@ def _resolve_release_asset_spec(version: str, runner_os: str) -> ReleaseAssetSpe
     return ReleaseAssetSpec(
         executable_name=template.executable_name,
         package_name=template.package_name.format(version=normalized_version),
-        binary_asset_name=template.binary_asset_name.format(version=normalized_version),
     )
 
 
@@ -133,25 +131,14 @@ def _normalize_version(version: str) -> str:
 
 def _create_zip_archive(bundle_root: Path, package_name: str, zip_path: Path) -> None:
     """Create a ZIP containing the complete one-folder bundle."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        package_root = Path(temp_dir) / package_name
-        package_root.mkdir(parents=True, exist_ok=True)
-        for source_path in bundle_root.rglob("*"):
+    package_root = Path(package_name)
+    with zipfile.ZipFile(
+        zip_path, mode="w", compression=zipfile.ZIP_DEFLATED
+    ) as archive:
+        for source_path in sorted(bundle_root.rglob("*")):
             if source_path.is_file():
                 relative_path = source_path.relative_to(bundle_root)
-                packaged_path = package_root / relative_path
-                packaged_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source_path, packaged_path)
-
-        with zipfile.ZipFile(
-            zip_path, mode="w", compression=zipfile.ZIP_DEFLATED
-        ) as archive:
-            for packaged_path in sorted(package_root.rglob("*")):
-                if packaged_path.is_file():
-                    archive.write(
-                        packaged_path,
-                        arcname=packaged_path.relative_to(Path(temp_dir)),
-                    )
+                archive.write(source_path, arcname=package_root / relative_path)
 
 
 def _write_checksum_file(asset_path: Path) -> Path:
