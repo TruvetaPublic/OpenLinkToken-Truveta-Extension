@@ -26,6 +26,9 @@ for package_name in (
     "pandas",
     "csv2parquet",
     "cryptography",
+    "numpy",
+    "onnxruntime",
+    "tokenizers",
 ):
     package_datas, package_binaries, package_hiddenimports = collect_all(package_name)
     datas += package_datas

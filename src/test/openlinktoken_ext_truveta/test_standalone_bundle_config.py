@@ -30,3 +30,10 @@ def test_spec_embeds_registry_and_runtime_hook():
     assert "standalone_runtime_hook.py" in spec
     assert "exclude_binaries=True" in spec
     assert "COLLECT(" in spec
+
+
+def test_spec_collects_ml1_runtime_dependencies():
+    spec = SPEC_PATH.read_text(encoding="utf-8")
+
+    assert '"onnxruntime"' in spec
+    assert '"tokenizers"' in spec
