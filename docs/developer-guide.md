@@ -133,7 +133,7 @@ The release workflow:
 4. Runs a tokenization smoke test against each executable to verify the embedded model.
 5. Attaches all artifacts to the GitHub Release.
 
-The standalone bundle contains the `openlinktoken` CLI, the Truveta extension, and the ML1 model/tokenizer assets in a reusable one-folder distribution — no Python installation required for end users. The executable is `dist/olt/olt` on POSIX systems and `dist/olt/olt.exe` on Windows. The release build pins OpenLinkToken to commit `cde35f290a2d57f1ac7c7056f78b1ff9f150a201`, which includes the model-enabled source and lazy CLI startup changes.
+The standalone bundle contains the `openlinktoken` CLI, the Truveta extension, and the ML1 model/tokenizer assets in a reusable one-folder distribution — no Python installation required for end users. The executable is `dist/olt/olt` on POSIX systems and `dist/olt/olt.exe` on Windows. The release build pins OpenLinkToken to commit `54f85797046373bf2e661f8e8865327ba73d5d75`, which includes the model-enabled source and lazy CLI startup changes. Help-oriented invocations load the installed extension registry so extension commands appear in the main menu. Heavy processing dependencies remain lazy until tokenization or packaging runs.
 
 ### Building a Standalone Executable Locally
 
@@ -142,7 +142,7 @@ The standalone spec requires a hydrated checkout of OpenLinkToken's ML1 assets. 
 ```bash
 git clone --filter=blob:none --sparse https://github.com/TruvetaPublic/OpenLinkToken.git openlinktoken-source
 git -C openlinktoken-source sparse-checkout set resources/inferencing/ml1
-git -C openlinktoken-source checkout cde35f290a2d57f1ac7c7056f78b1ff9f150a201
+git -C openlinktoken-source checkout 54f85797046373bf2e661f8e8865327ba73d5d75
 git -C openlinktoken-source lfs pull
 export OLT_INFERENCING_ASSETS_SOURCE="$PWD/openlinktoken-source/resources/inferencing/ml1"
 uv pip install -e ".[release]"

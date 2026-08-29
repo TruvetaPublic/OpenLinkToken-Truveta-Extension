@@ -20,9 +20,9 @@ dev = [
 # Pin the model-enabled OpenLinkToken source so the standalone build includes the
 # same CLI/core-AI code and assets as the upstream self-contained build.
 release = [
-    "openlinktoken @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@cde35f290a2d57f1ac7c7056f78b1ff9f150a201#subdirectory=lib/python/openlinktoken",
-    "openlinktoken-core-ai @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@cde35f290a2d57f1ac7c7056f78b1ff9f150a201#subdirectory=lib/python/openlinktoken-core-ai",
-    "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@cde35f290a2d57f1ac7c7056f78b1ff9f150a201#subdirectory=lib/python/openlinktoken-cli",
+    "openlinktoken @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@54f85797046373bf2e661f8e8865327ba73d5d75#subdirectory=lib/python/openlinktoken",
+    "openlinktoken-core-ai @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@54f85797046373bf2e661f8e8865327ba73d5d75#subdirectory=lib/python/openlinktoken-core-ai",
+    "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@54f85797046373bf2e661f8e8865327ba73d5d75#subdirectory=lib/python/openlinktoken-cli",
 ]
 
 [build-system]
