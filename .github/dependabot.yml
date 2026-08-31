@@ -22,7 +22,7 @@ updates:
       - "dependencies"
       - "python"
 
-  # The uv updater also manages the generated pip requirements files above.
+  # The uv updater also manages the generated pip requirements files in this repository.
   # Keep this entry commented out to avoid duplicate Python update PRs.
   # - package-ecosystem: "pip"
   #   directory: "/"
