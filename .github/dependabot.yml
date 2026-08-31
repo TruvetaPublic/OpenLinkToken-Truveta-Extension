@@ -22,23 +22,23 @@ updates:
       - "dependencies"
       - "python"
 
-  # Keep pip-based updates for the package manifests while the repo also tracks
-  # a root uv.lock for contributor tooling and workspace automation.
-  - package-ecosystem: "pip"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    cooldown:
-      default-days: 7
-    groups:
-      weekly-batch:
-        patterns:
-          - "*"
-    open-pull-requests-limit: 1
-    target-branch: "develop"
-    labels:
-      - "dependencies"
-      - "python"
+  # The uv updater also manages the generated pip requirements files above.
+  # Keep this entry commented out to avoid duplicate Python update PRs.
+  # - package-ecosystem: "pip"
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"
+  #   cooldown:
+  #     default-days: 7
+  #   groups:
+  #     weekly-batch:
+  #       patterns:
+  #         - "*"
+  #   open-pull-requests-limit: 1
+  #   target-branch: "develop"
+  #   labels:
+  #     - "dependencies"
+  #     - "python"
 
   - package-ecosystem: "github-actions"
     directory: "/"
