@@ -7,6 +7,7 @@ import os
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 
+from openlinktoken.core.ai.tokens.ml1_inference_config import ML1InferenceConfig
 from openlinktoken_cli.extension import OpenLinkTokenExtension
 
 from openlinktoken_ext_truveta.commands.auto_upload import _auto_upload
@@ -303,5 +304,26 @@ class _AutoUploadSubcommandRegistrar:
             "-i",
             required=True,
             help="Raw input file (CSV or Parquet) to package and upload",
+        )
+        auto_upload_parser.add_argument(
+            "--disable-inferencing",
+            action="store_true",
+            default=False,
+            help="Disable ML1 ONNX inference token generation",
+        )
+        auto_upload_parser.add_argument(
+            "--inferencing-batch-size",
+            type=int,
+            default=ML1InferenceConfig.DEFAULT_BATCH_SIZE,
+            help=(
+                "ML1 ONNX inference batch size "
+                f"(default: {ML1InferenceConfig.DEFAULT_BATCH_SIZE})"
+            ),
+        )
+        auto_upload_parser.add_argument(
+            "--inferencing-num-threads",
+            type=int,
+            default=None,
+            help="ORT intra/inter-op thread count for ML1 inference (default: auto-detect)",
         )
         auto_upload_parser.set_defaults(func=TruvetaExtension._auto_upload)

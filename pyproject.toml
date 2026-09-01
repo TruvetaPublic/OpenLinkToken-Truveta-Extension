@@ -17,10 +17,10 @@ dev = [
     "autoflake==2.3.3",
     "flake8==7.3.0",
 ]
-# Keep the release dependency aligned with the pinned OpenLinkToken release used by
-# this extension so the CLI surface remains compatible with the runtime.
+# Pin the release dependency to the OpenLinkToken commit that introduced the
+# inferencing options used by this extension; no tagged release contains them yet.
 release = [
-    "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@v2.1.2#subdirectory=lib/python/openlinktoken-cli",
+    "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@00a234fa01f50c50dddc308dbba8df6a22cab52e#subdirectory=lib/python/openlinktoken-cli",
 ]
 
 [build-system]
