@@ -8,6 +8,7 @@ import argparse
 from pathlib import Path
 from unittest.mock import patch
 
+from openlinktoken.core.ai.tokens.ml1_inference_config import ML1InferenceConfig
 from openlinktoken_ext_truveta.commands.auto_upload import _auto_upload
 
 _PACKAGE_EXECUTE = (
@@ -17,8 +18,8 @@ _INITIATE_EXCHANGE = "openlinktoken_ext_truveta.commands.auto_upload._initiate_e
 _UPLOAD = "openlinktoken_ext_truveta.commands.auto_upload._upload"
 
 
-def _args(file_path: str) -> argparse.Namespace:
-    return argparse.Namespace(input=file_path)
+def _args(file_path: str, **kwargs) -> argparse.Namespace:
+    return argparse.Namespace(input=file_path, **kwargs)
 
 
 class TestAutoUploadCommand:
@@ -118,6 +119,57 @@ class TestAutoUploadCommand:
         assert pa.input_path == str(input_file)
         assert "demo_input_packaged.zip" in pa.output_path
         assert pa.exchange_config is not None
+
+    def test_package_receives_inferencing_args(self, tmp_path):
+        input_file = tmp_path / "demo_input.csv"
+        input_file.write_text("data")
+
+        captured_package_args = {}
+
+        def _capture_package(package_args):
+            captured_package_args["args"] = package_args
+            return 0
+
+        with (
+            patch(_INITIATE_EXCHANGE, return_value=0),
+            patch(_PACKAGE_EXECUTE, side_effect=_capture_package),
+            patch(_UPLOAD, return_value=0),
+        ):
+            _auto_upload(
+                _args(
+                    str(input_file),
+                    disable_inferencing=True,
+                    inferencing_batch_size=32,
+                    inferencing_num_threads=2,
+                )
+            )
+
+        pa = captured_package_args["args"]
+        assert pa.disable_inferencing is True
+        assert pa.inferencing_batch_size == 32
+        assert pa.inferencing_num_threads == 2
+
+    def test_package_uses_base_inferencing_defaults(self, tmp_path):
+        input_file = tmp_path / "demo_input.csv"
+        input_file.write_text("data")
+
+        captured_package_args = {}
+
+        def _capture_package(package_args):
+            captured_package_args["args"] = package_args
+            return 0
+
+        with (
+            patch(_INITIATE_EXCHANGE, return_value=0),
+            patch(_PACKAGE_EXECUTE, side_effect=_capture_package),
+            patch(_UPLOAD, return_value=0),
+        ):
+            _auto_upload(_args(str(input_file)))
+
+        pa = captured_package_args["args"]
+        assert pa.disable_inferencing is False
+        assert pa.inferencing_batch_size == ML1InferenceConfig.DEFAULT_BATCH_SIZE
+        assert pa.inferencing_num_threads is None
 
     def test_upload_receives_zip_path(self, tmp_path):
         input_file = tmp_path / "demo_input.csv"

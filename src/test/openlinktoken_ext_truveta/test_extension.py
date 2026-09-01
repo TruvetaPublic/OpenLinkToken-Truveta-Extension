@@ -8,6 +8,7 @@ import argparse
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from openlinktoken.core.ai.tokens.ml1_inference_config import ML1InferenceConfig
 from openlinktoken_ext_truveta.extension import TruvetaExtension
 
 # ---------------------------------------------------------------------------
@@ -370,6 +371,34 @@ class TestAutoUploadSubcommand:
         root = self._build_parser()
         parsed = root.parse_args(["truveta", "auto-upload", "-i", "input.csv"])
         assert parsed.input == "input.csv"
+
+    def test_auto_upload_accepts_package_inferencing_flags(self):
+        root = self._build_parser()
+        parsed = root.parse_args(
+            [
+                "truveta",
+                "auto-upload",
+                "--input",
+                "input.csv",
+                "--disable-inferencing",
+                "--inferencing-batch-size",
+                "32",
+                "--inferencing-num-threads",
+                "2",
+            ]
+        )
+
+        assert parsed.disable_inferencing is True
+        assert parsed.inferencing_batch_size == 32
+        assert parsed.inferencing_num_threads == 2
+
+    def test_auto_upload_uses_package_inferencing_defaults(self):
+        root = self._build_parser()
+        parsed = root.parse_args(["truveta", "auto-upload", "--input", "input.csv"])
+
+        assert parsed.disable_inferencing is False
+        assert parsed.inferencing_batch_size == ML1InferenceConfig.DEFAULT_BATCH_SIZE
+        assert parsed.inferencing_num_threads is None
 
     def test_auto_upload_requires_input_flag(self):
         root = self._build_parser()
