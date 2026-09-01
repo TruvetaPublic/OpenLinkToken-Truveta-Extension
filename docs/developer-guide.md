@@ -42,7 +42,9 @@ git lfs install --skip-repo
 pip install -e ".[dev]"
 ```
 
-This installs the package in editable mode, pulls `openlinktoken-cli` from the `v2.1.2` release of `TruvetaPublic/OpenLinkToken`, and installs dev tools (`pytest`, `bump2version`, `build`, `autoflake`, `flake8`).
+This installs the package in editable mode, pulls `openlinktoken-cli` from the
+OpenLinkToken commit that provides the ML1 inferencing options, and installs
+dev tools (`pytest`, `bump2version`, `build`, `autoflake`, `flake8`).
 
 ### ML1 Assets
 

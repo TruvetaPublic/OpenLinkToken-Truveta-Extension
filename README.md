@@ -172,6 +172,9 @@ describing which chunks are missing. Re-run the same command to retry.
 Parameters:
 
 - -i FILE, --input FILE: raw CSV or Parquet input file.
+- --disable-inferencing: disable ML1 ONNX inference token generation.
+- --inferencing-batch-size SIZE: set the ML1 ONNX inference batch size.
+- --inferencing-num-threads COUNT: set the ORT inference thread count.
 
 Example:
 
