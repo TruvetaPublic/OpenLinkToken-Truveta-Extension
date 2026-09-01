@@ -1,11 +1,24 @@
 # Developer Guide
 
+- [Developer Guide](#developer-guide)
+  - [Local Development Setup](#local-development-setup)
+    - [Prerequisites](#prerequisites)
+    - [Install Dependencies](#install-dependencies)
+    - [ML1 Assets](#ml1-assets)
+    - [Run Tests](#run-tests)
+  - [Building a Wheel](#building-a-wheel)
+  - [Branching and Release Policy](#branching-and-release-policy)
+  - [Versioning](#versioning)
+  - [Continuous Integration](#continuous-integration)
+  - [Releases](#releases)
+
 ## Local Development Setup
 
 ### Prerequisites
 
 - Python 3.12
 - [uv](https://docs.astral.sh/uv/) (recommended) or `pip`
+- [ORAS](https://oras.land/) 1.3.3, required to retrieve OpenLinkToken's ML1 assets outside the dev container
 - Access to [TruvetaPublic/OpenLinkToken](https://github.com/TruvetaPublic/OpenLinkToken) on GitHub (the `openlinktoken-cli` dev dependency is installed from this repo)
 - Git LFS, required to retrieve OpenLinkToken's ML model files
 
@@ -30,6 +43,20 @@ pip install -e ".[dev]"
 ```
 
 This installs the package in editable mode, pulls `openlinktoken-cli` from the `v2.1.2` release of `TruvetaPublic/OpenLinkToken`, and installs dev tools (`pytest`, `bump2version`, `build`, `autoflake`, `flake8`).
+
+### ML1 Assets
+
+The dev container automatically pulls the matched ML1 model, external model data,
+tokenizer, and asset manifest from
+`ghcr.io/truvetapublic/openlinktoken-ml1-assets:v1` into the installed Core-AI
+package. The upstream OCI tag must be published before creating the container.
+For a manual setup, run the same `oras pull` command after installing the
+package, targeting the directory printed by:
+
+```bash
+ML1_PACKAGE_DIR="$(python -c 'from pathlib import Path; import openlinktoken.core.ai.tokens as tokens; print(Path(tokens.__file__).resolve().parent)')"
+oras pull ghcr.io/truvetapublic/openlinktoken-ml1-assets:v1 --output "$ML1_PACKAGE_DIR"
+```
 
 ### Run Tests
 
