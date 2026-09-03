@@ -6,6 +6,7 @@ import argparse
 import os
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
+from typing import NoReturn
 
 from openlinktoken.core.ai.tokens.ml1_inference_config import ML1InferenceConfig
 from openlinktoken_cli.extension import OpenLinkTokenExtension
@@ -16,6 +17,18 @@ from openlinktoken_ext_truveta.commands.login import _login
 from openlinktoken_ext_truveta.commands.logout import _logout
 from openlinktoken_ext_truveta.commands.upload import _upload
 from openlinktoken_ext_truveta.domain import DEFAULT_DOMAIN
+
+
+class _HelpOnMissingRequiredArgumentParser(argparse.ArgumentParser):
+    """Print command help instead of an argparse error for missing arguments."""
+
+    def error(self, message: str) -> NoReturn:
+        """Print this parser's help when a required argument is missing."""
+        if message.startswith("the following arguments are required:"):
+            self.print_help()
+            self.exit()
+
+        super().error(message)
 
 
 class TruvetaExtension(OpenLinkTokenExtension):
@@ -92,6 +105,7 @@ class TruvetaExtension(OpenLinkTokenExtension):
             dest="truveta_subcommand",
             metavar="<command>",
             help="Use 'olt truveta <command> --help' for command-specific help",
+            parser_class=_HelpOnMissingRequiredArgumentParser,
         )
 
         for registrar in (

@@ -8,6 +8,7 @@ import argparse
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from openlinktoken.core.ai.tokens.ml1_inference_config import ML1InferenceConfig
 from openlinktoken_ext_truveta.extension import TruvetaExtension
 
@@ -400,15 +401,21 @@ class TestAutoUploadSubcommand:
         assert parsed.inferencing_batch_size == ML1InferenceConfig.DEFAULT_BATCH_SIZE
         assert parsed.inferencing_num_threads is None
 
-    def test_auto_upload_requires_input_flag(self):
+    @pytest.mark.parametrize("subcommand", ["upload", "auto-upload"])
+    def test_missing_input_prints_same_help_as_help_flag(self, subcommand, capsys):
         root = self._build_parser()
-        with patch("sys.stderr"):
-            try:
-                root.parse_args(["truveta", "auto-upload"])
-            except SystemExit as exc:
-                assert exc.code == 2
-                return
-        raise AssertionError("Expected parse_args to reject missing --input")
+
+        with pytest.raises(SystemExit) as missing_input:
+            root.parse_args(["truveta", subcommand])
+        missing_output = capsys.readouterr()
+
+        with pytest.raises(SystemExit) as explicit_help:
+            root.parse_args(["truveta", subcommand, "--help"])
+        help_output = capsys.readouterr()
+
+        assert missing_input.value.code == 0
+        assert explicit_help.value.code == 0
+        assert missing_output == help_output
 
     def test_auto_upload_accepts_format_flag_rejected(self):
         root = self._build_parser()
