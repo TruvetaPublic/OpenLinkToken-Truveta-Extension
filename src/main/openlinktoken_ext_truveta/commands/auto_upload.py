@@ -10,6 +10,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+from openlinktoken.core.ai.tokens.ml1_inference_config import ML1InferenceConfig
 from openlinktoken_cli.commands.package_command import PackageCommand
 
 from openlinktoken_ext_truveta.commands.initiate_exchange import _initiate_exchange
@@ -49,7 +50,7 @@ def _auto_upload(args: argparse.Namespace) -> int:
     4. Upload the packaged output via the upload command
 
     Inputs:
-        args: Parsed CLI arguments containing --input.
+        args: Parsed CLI arguments containing --input and optional inferencing settings.
 
     Returns:
         Exit code (0 on success, non-zero on first failure).
@@ -84,19 +85,35 @@ def _auto_upload(args: argparse.Namespace) -> int:
     with tempfile.TemporaryDirectory() as tmp_dir:
         zip_path = Path(tmp_dir) / zip_name
 
+        package_cli_args = [
+            "package",
+            "--input",
+            str(input_path),
+            "--output",
+            str(zip_path),
+            "--exchange-config",
+            str(config_path),
+            "--inferencing-batch-size",
+            str(
+                getattr(
+                    args,
+                    "inferencing_batch_size",
+                    ML1InferenceConfig.DEFAULT_BATCH_SIZE,
+                )
+            ),
+        ]
+        if getattr(args, "disable_inferencing", False):
+            package_cli_args.append("--disable-inferencing")
+
+        inferencing_num_threads = getattr(args, "inferencing_num_threads", None)
+        if inferencing_num_threads is not None:
+            package_cli_args.extend(
+                ["--inferencing-num-threads", str(inferencing_num_threads)]
+            )
+
         pkg_parser = argparse.ArgumentParser()
         PackageCommand.register_subcommand(pkg_parser.add_subparsers())
-        package_args, _ = pkg_parser.parse_known_args(
-            [
-                "package",
-                "--input",
-                str(input_path),
-                "--output",
-                str(zip_path),
-                "--exchange-config",
-                str(config_path),
-            ]
-        )
+        package_args, _ = pkg_parser.parse_known_args(package_cli_args)
         rc = PackageCommand.execute(package_args)
         if rc != 0:
             print("Error: package step failed", file=sys.stderr)

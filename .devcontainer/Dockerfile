@@ -1,5 +1,7 @@
 FROM mcr.microsoft.com/devcontainers/python:3-3.12-trixie
 
+ARG ORAS_VERSION=1.3.3
+
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Fix Yarn repository GPG key issue - remove the Yarn repo to prevent
@@ -24,9 +26,14 @@ RUN apt-get update \
     # Make the script executable and run it
     chmod +x /tmp/detect_zscaler.sh && \
     /tmp/detect_zscaler.sh && \
+    ORAS_ARCH="$(dpkg --print-architecture)" && \
+    curl -fsSL "https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/oras_${ORAS_VERSION}_linux_${ORAS_ARCH}.tar.gz" \
+      -o /tmp/oras.tar.gz && \
+    tar -xzf /tmp/oras.tar.gz -C /tmp oras && \
+    install -m 0755 /tmp/oras /usr/local/bin/oras && \
     # Clean up temporary files
     echo "===> Cleaning up temporary files" && \
-    rm -rf /tmp/detect_zscaler.sh /tmp/zscaler_certs /tmp/host_zscaler_cert.pem && \
+    rm -rf /tmp/detect_zscaler.sh /tmp/oras /tmp/oras.tar.gz /tmp/zscaler_certs /tmp/host_zscaler_cert.pem && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt

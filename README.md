@@ -40,8 +40,8 @@ irm https://raw.githubusercontent.com/TruvetaPublic/OpenLinkToken-Truveta-Extens
 
 Both scripts:
 
-- Auto-detect your platform and download the correct binary from the [latest GitHub Release](https://github.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/releases/latest)
-- Install to `~/.local/bin/olt` (macOS/Linux) or `%USERPROFILE%\.local\bin\olt.exe` (Windows) — no administrator privileges required
+- Auto-detect your platform and download the correct bundle from the [latest GitHub Release](https://github.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/releases/latest)
+- Install the complete one-folder bundle and expose `~/.local/bin/olt` (macOS/Linux) or `%USERPROFILE%\.local\bin\olt.cmd` (Windows) — no administrator privileges required
 - Add the install directory to your PATH if it isn't already
 
 **Version pinning** — install a specific release instead of the latest:
@@ -56,38 +56,43 @@ $env:OLT_TRUVETA_VERSION="1.0.0"; irm https://raw.githubusercontent.com/TruvetaP
 
 ### Standalone Distributables
 
-Pre-built single-file executables that bundle the OLT CLI and the Truveta extension together — no Python required.
+Pre-built one-folder ZIP bundles that include the OLT CLI, the Truveta extension,
+and all runtime files — no Python required. The raw PyInstaller executable is not
+published separately because it requires the adjacent `_internal/` directory.
 
-Download the binary for your platform from the [Releases page](https://github.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/releases/latest):
+Download the ZIP bundle and its `.sha256` checksum from the [Releases page](https://github.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/releases/latest):
 
-| Platform | Binary                                      | Notes                                              |
-| -------- | ------------------------------------------- | -------------------------------------------------- |
-| macOS    | `olt-truveta-v{version}-macos-universal`    | Universal binary — runs on Intel and Apple Silicon |
-| Linux    | `olt-truveta-v{version}-linux-x86_64`       | x86_64                                             |
-| Windows  | `olt-truveta-v{version}-windows-x86_64.exe` | x86_64                                             |
+| Platform | Bundle                                  | Notes               |
+| -------- | --------------------------------------- | ------------------- |
+| macOS    | `olt-truveta-{version}-macos-arm64.zip` | Apple Silicon arm64 |
+| Linux    | `olt-truveta-{version}-linux-x64.zip`   | x86_64              |
+| Windows  | `olt-truveta-{version}-windows-x64.zip` | x86_64              |
 
-Each binary is accompanied by a `.zip` archive and a `.sha256` checksum file.
+The checksum file is named `<bundle>.zip.sha256`. Keep the extracted bundle
+directory intact so the executable can find its `_internal/` runtime directory.
 
-After downloading, make the binary executable and optionally move it onto your PATH:
+After downloading, verify the checksum and extract the complete bundle:
 
 ```bash
 # macOS
-chmod +x olt-truveta-v*-macos-universal
-mv olt-truveta-v*-macos-universal ~/.local/bin/olt
-olt --help
+shasum -a 256 -c olt-truveta-{version}-macos-arm64.zip.sha256
+unzip -q olt-truveta-{version}-macos-arm64.zip
+chmod +x olt-truveta-{version}-macos-arm64/olt
+./olt-truveta-{version}-macos-arm64/olt --help
 ```
 
 ```bash
 # Linux
-chmod +x olt-truveta-v*-linux-x86_64
-mv olt-truveta-v*-linux-x86_64 ~/.local/bin/olt
-olt --help
+sha256sum -c olt-truveta-{version}-linux-x64.zip.sha256
+unzip -q olt-truveta-{version}-linux-x64.zip
+chmod +x olt-truveta-{version}-linux-x64/olt
+./olt-truveta-{version}-linux-x64/olt --help
 ```
 
 ```powershell
-# Windows — rename and move to a directory on your PATH
-Move-Item olt-truveta-v*-windows-x86_64.exe "$env:USERPROFILE\.local\bin\olt.exe"
-olt --help
+# Windows
+Expand-Archive olt-truveta-{version}-windows-x64.zip
+& ".\olt-truveta-{version}-windows-x64\olt.exe" --help
 ```
 
 ### Python Extension Install
@@ -172,6 +177,9 @@ describing which chunks are missing. Re-run the same command to retry.
 Parameters:
 
 - -i FILE, --input FILE: raw CSV or Parquet input file.
+- --disable-inferencing: disable ML1 ONNX inference token generation.
+- --inferencing-batch-size SIZE: set the ML1 ONNX inference batch size.
+- --inferencing-num-threads COUNT: set the ORT inference thread count.
 
 Example:
 
