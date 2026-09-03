@@ -41,9 +41,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configure Git LFS
-        run: git lfs install --skip-repo
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -106,12 +103,25 @@ jobs:
       TAG: ${{ needs.release-info.outputs.tag }}
       RELEASE_FOUND: ${{ needs.release-info.outputs['release-found'] }}
       RELEASE_ID: ${{ needs.release-info.outputs['release-id'] }}
+      OPENLINKTOKEN_SOURCE_REF: 55f9fbe839ddb06f579d4cfd728b99a85ceff20e
+      OLT_INFERENCING_ASSETS_SOURCE: ${{ github.workspace }}/openlinktoken-source/resources/inferencing/ml1
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Configure Git LFS
         run: git lfs install --skip-repo
+
+      - name: Checkout OpenLinkToken model assets
+        uses: actions/checkout@v4
+        with:
+          repository: TruvetaPublic/OpenLinkToken
+          ref: ${{ env.OPENLINKTOKEN_SOURCE_REF }}
+          path: openlinktoken-source
+          sparse-checkout: |
+            resources/inferencing/ml1
+          sparse-checkout-cone-mode: true
+          lfs: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -128,26 +138,44 @@ jobs:
           uv pip install --system -e ".[release]"
           uv pip install --system -r pyinstaller-requirements.txt
 
-      - name: Build standalone executable (macOS universal2)
+      - name: Verify macOS arm64 runner
         if: runner.os == 'macOS'
-        run: pyinstaller --clean --noconfirm --target-arch universal2 openlinktoken-ext-truveta.spec
+        run: |
+          if [ "$(uname -m)" != "arm64" ]; then
+            echo "This release requires an arm64 macOS runner; found $(uname -m)." >&2
+            exit 1
+          fi
 
-      - name: Build standalone executable (Linux / Windows)
+      - name: Build standalone bundle (macOS arm64)
+        if: runner.os == 'macOS'
+        run: OLT_TARGET_ARCH=arm64 pyinstaller --clean --noconfirm openlinktoken-ext-truveta.spec
+
+      - name: Build standalone bundle (Linux / Windows)
         if: runner.os != 'macOS'
         run: pyinstaller --clean --noconfirm openlinktoken-ext-truveta.spec
 
       - name: Smoke test (macOS / Linux)
         if: runner.os != 'Windows'
         run: |
-          ./dist/olt --help
-          ./dist/olt truveta --help
+          mkdir -p smoke
+          cp src/test/resources/launch/sample.csv smoke/input.csv
+          ./dist/olt/olt --help
+          ./dist/olt/olt truveta --help
+          ./dist/olt/olt generate-key-pair --name recipient --force
+          ./dist/olt/olt initiate-exchange --name smoke --public-key "$HOME/.openlinktoken/recipient.public.pem" --output smoke/smoke.exchange.json --hashingsecret secret
+          ./dist/olt/olt tokenize -i smoke/input.csv -o smoke/out.csv --exchange-config smoke/smoke.exchange.json --private-key "$HOME/.openlinktoken/smoke.private.pem"
 
       - name: Smoke test (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          .\dist\olt.exe --help
-          .\dist\olt.exe truveta --help
+          New-Item -ItemType Directory -Force -Path smoke | Out-Null
+          Copy-Item src\test\resources\launch\sample.csv smoke\input.csv
+          .\dist\olt\olt.exe --help
+          .\dist\olt\olt.exe truveta --help
+          .\dist\olt\olt.exe generate-key-pair --name recipient --force
+          .\dist\olt\olt.exe initiate-exchange --name smoke --public-key "$HOME/.openlinktoken/recipient.public.pem" --output smoke\smoke.exchange.json --hashingsecret secret
+          .\dist\olt\olt.exe tokenize -i smoke\input.csv -o smoke\out.csv --exchange-config smoke\smoke.exchange.json --private-key "$HOME/.openlinktoken/smoke.private.pem"
 
       - name: Prepare release assets
         shell: bash

@@ -5,7 +5,10 @@ Unit tests for TruvetaExtension.
 """
 
 import argparse
+import os
 from pathlib import Path
+import subprocess
+import sys
 from unittest.mock import MagicMock, patch
 
 from openlinktoken.core.ai.tokens.ml1_inference_config import ML1InferenceConfig
@@ -32,6 +35,36 @@ class TestTruvetaProperties:
         from importlib.metadata import version as _pkg_version
 
         assert self.ext.version == _pkg_version("openlinktoken-ext-truveta")
+
+
+class TestLazyExtensionImports:
+    """Tests that extension discovery does not import command dependencies."""
+
+    def test_import_does_not_load_heavy_command_dependencies(self):
+        """Importing the extension metadata should keep processing dependencies lazy."""
+        source_root = Path(__file__).parents[2] / "main"
+        environment = os.environ.copy()
+        environment["PYTHONPATH"] = os.pathsep.join(
+            [str(source_root), environment.get("PYTHONPATH", "")]
+        )
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import sys; "
+                    "import openlinktoken_ext_truveta.extension; "
+                    "assert not any(name in sys.modules for name in "
+                    "('pandas', 'pyarrow', 'cryptography'))"
+                ),
+            ],
+            capture_output=True,
+            text=True,
+            env=environment,
+            check=False,
+        )
+
+        assert result.returncode == 0, result.stderr
 
 
 # ---------------------------------------------------------------------------
