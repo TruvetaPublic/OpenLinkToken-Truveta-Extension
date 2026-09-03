@@ -161,7 +161,7 @@ chunk 1/8 (12%)
 chunk 2/8 (25%)
 ...
 chunk 8/8 (100%)
-✓ Upload accepted.
+✓ Upload accepted. Exchange ID: <exchange-id>
 ```
 
 If an upload is interrupted or a chunk is rejected, a clear error is shown
