@@ -1,6 +1,6 @@
 {
   "name": "OpenLinkToken-Truveta-Extension",
-  "dockerComposeFile": ["docker-compose.yml"],
+  "dockerComposeFile": ["docker-compose.yml", "docker-compose.worktree.yml"],
   "service": "app",
   "workspaceFolder": "/workspaces/OpenLinkToken-Truveta-Extension",
   "features": {
@@ -52,6 +52,7 @@
   "updateContentCommand": {
     "fix-mount-permissions": "for d in /home/vscode/.copilot /home/vscode/.cache /home/vscode/.local /home/vscode/.vscode-server /home/vscode/.vscode-server-insiders; do [ -d \"$d\" ] || continue; sudo chown -R vscode:vscode \"$d\"; done"
   },
+  "initializeCommand": "bash -lc '${localWorkspaceFolder}/.devcontainer/scripts/prepare-worktree-mount.sh'",
   "postCreateCommand": "bash -lc '${containerWorkspaceFolder}/.devcontainer/scripts/unified-setup.sh post-create'",
   "postStartCommand": "bash -lc '${containerWorkspaceFolder}/.devcontainer/scripts/unified-setup.sh post-start'",
   "postAttachCommand": "bash -lc '${containerWorkspaceFolder}/.devcontainer/scripts/unified-setup.sh post-attach'",

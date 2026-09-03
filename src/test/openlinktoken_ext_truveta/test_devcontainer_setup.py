@@ -129,3 +129,58 @@ def test_worktree_repair_repairs_linked_checkout(tmp_path):
         "repair",
         str(repo_root),
     ]
+
+
+def test_prepare_worktree_mount_exposes_common_git_directory(tmp_path):
+    """Generate a compose mount for linked worktree Git metadata."""
+    main_repo = tmp_path / "main"
+    main_repo.mkdir()
+    subprocess.run(
+        ["git", "init", "--initial-branch=main", str(main_repo)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=main_repo,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=main_repo,
+        check=True,
+    )
+    (main_repo / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=main_repo, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=main_repo, check=True)
+
+    worktree = tmp_path / "worktrees" / "feature"
+    subprocess.run(
+        ["git", "worktree", "add", "-b", "feature", str(worktree), "HEAD"],
+        cwd=main_repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    (worktree / ".devcontainer").mkdir()
+
+    script_path = (
+        Path(__file__).parents[3]
+        / ".devcontainer"
+        / "scripts"
+        / "prepare-worktree-mount.sh"
+    )
+    result = subprocess.run(
+        ["bash", str(script_path), str(worktree)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    compose_override = (
+        worktree / ".devcontainer" / "docker-compose.worktree.yml"
+    ).read_text(encoding="utf-8")
+    assert f"source: '{main_repo / '.git'}'" in compose_override
+    assert f"target: '{main_repo / '.git'}'" in compose_override

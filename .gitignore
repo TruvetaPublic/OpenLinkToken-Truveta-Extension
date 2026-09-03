@@ -61,6 +61,7 @@ uv.lock
 
 # DevContainer
 .devcontainer/.env
+.devcontainer/docker-compose.worktree.yml
 .devcontainer/host-ca-certificates.crt
 
 # APM dependencies
