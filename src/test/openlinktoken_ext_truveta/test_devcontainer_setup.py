@@ -74,3 +74,58 @@ done
             "asset-manifest.json",
         )
     )
+
+
+def test_worktree_repair_repairs_linked_checkout(tmp_path):
+    """Repair linked worktree metadata before running container setup."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / ".git").write_text(
+        "gitdir: /host/repository/.git/worktrees/example\n", encoding="utf-8"
+    )
+
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    git_log = tmp_path / "git.log"
+    fake_git = fake_bin / "git"
+    fake_git.write_text(
+        "#!/bin/sh\n"
+        'if [ "${GIT_DIR-}" = "(null)" ]; then\n'
+        '  echo "fatal: not a git repository: (null)" >&2\n'
+        "  exit 1\n"
+        "fi\n"
+        'printf "%s\\n" "$@" > "$GIT_LOG"\n',
+        encoding="utf-8",
+    )
+    fake_git.chmod(0o755)
+
+    script_path = (
+        Path(__file__).parents[3] / ".devcontainer" / "scripts" / "unified-setup.sh"
+    )
+    environment = os.environ.copy()
+    environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
+    environment["GIT_LOG"] = str(git_log)
+    environment["GIT_DIR"] = "(null)"
+    environment["UV_PROJECT_ENVIRONMENT"] = str(tmp_path / "venv")
+
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f"source '{script_path}'; REPO_ROOT='{repo_root}'; "
+            "step_repair_git_worktree",
+        ],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert git_log.read_text(encoding="utf-8").splitlines() == [
+        "-C",
+        str(repo_root),
+        "worktree",
+        "repair",
+        str(repo_root),
+    ]

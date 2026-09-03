@@ -80,6 +80,19 @@ step_activate_venv() {
   source "$VENV_DIR/bin/activate"
 }
 
+step_repair_git_worktree() {
+  if [ ! -f "$REPO_ROOT/.git" ]; then
+    return 0
+  fi
+
+  echo "→ Repairing Git worktree metadata"
+  if ! env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR \
+    git -C "$REPO_ROOT" worktree repair "$REPO_ROOT"; then
+    echo "Error: Could not repair Git worktree metadata at $REPO_ROOT." >&2
+    return 1
+  fi
+}
+
 step_configure_git_lfs() {
   if ! command -v git-lfs >/dev/null 2>&1; then
     echo "Error: Git LFS is required to install the OpenLinkToken ML model." >&2
@@ -243,6 +256,7 @@ run_refresh_setup() {
 }
 
 main() {
+  step_repair_git_worktree
   cd "$REPO_ROOT"
   echo "Phase: $PHASE"
   case "$PHASE" in
