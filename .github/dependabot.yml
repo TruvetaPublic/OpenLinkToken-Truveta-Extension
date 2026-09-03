@@ -9,20 +9,48 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 2
+    # Delay routine version updates without delaying security updates.
+    cooldown:
+      default-days: 7
+    groups:
+      weekly-batch:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 1
     target-branch: "develop"
     labels:
       - "dependencies"
       - "python"
 
-  # Keep pip-based updates for the package manifests while the repo also tracks
-  # a root uv.lock for contributor tooling and workspace automation.
-  - package-ecosystem: "pip"
+  # The uv updater also manages the generated pip requirements files in this repository.
+  # Keep this entry commented out to avoid duplicate Python update PRs.
+  # - package-ecosystem: "pip"
+  #   directory: "/"
+  #   schedule:
+  #     interval: "weekly"
+  #   cooldown:
+  #     default-days: 7
+  #   groups:
+  #     weekly-batch:
+  #       patterns:
+  #         - "*"
+  #   open-pull-requests-limit: 1
+  #   target-branch: "develop"
+  #   labels:
+  #     - "dependencies"
+  #     - "python"
+
+  - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 2
+    cooldown:
+      default-days: 7
+    groups:
+      weekly-batch:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 1
     target-branch: "develop"
     labels:
       - "dependencies"
-      - "python"
