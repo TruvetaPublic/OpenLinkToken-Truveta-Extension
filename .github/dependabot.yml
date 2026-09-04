@@ -21,6 +21,10 @@ updates:
     labels:
       - "dependencies"
       - "python"
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
 
   # The uv updater also manages the generated pip requirements files in this repository.
   # Keep this entry commented out to avoid duplicate Python update PRs.
