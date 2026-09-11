@@ -9,9 +9,9 @@ anyio==4.14.2 \
     --hash=sha256:9f505dda5ac9f0c8309b5e8bd445a8c2bf7246f3ce950121e45ea15bc41d1494 \
     --hash=sha256:cfa139f3ed1a23ee8f88a145ddb5ac7605b8bbfd8592baacd7ce3d8bb4313c7f
     # via httpx
-autoflake==2.3.1 \
-    --hash=sha256:3ae7495db9084b7b32818b4140e6dc4fc280b712fb414f5b8fe57b0a8e85a840 \
-    --hash=sha256:c98b75dc5b0a86459c4f01a1d32ac7eb4338ec4317a4469515ff1e687ecd909e
+autoflake==2.4.0 \
+    --hash=sha256:85df69176550d5e070bdf4a12a1bcdad062998ed458b20a605630e74b758c7ce \
+    --hash=sha256:ef7c496d9bce9d2cef049f24e482d1d3090c37fbd44e5e85dfb00db3c78ee16c
     # via openlinktoken-ext-truveta
 build==1.2.2 \
     --hash=sha256:119b2fb462adef986483438377a13b2f42064a2a3a4161f24a0cca698a07ac8c \
