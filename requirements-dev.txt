@@ -437,9 +437,9 @@ iniconfig==2.3.0 \
     --hash=sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730 \
     --hash=sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12
     # via pytest
-jwcrypto==1.5.8 \
-    --hash=sha256:85aeb475f808d56bbc2f2ed1f6f73e6a317c4011a4321505f02f0aed695a3742 \
-    --hash=sha256:c3d7114b6f6e65b52f6b7da817eb8cb8423e1da31e1ef13508447c81ecbdcc34
+jwcrypto==1.6.0 \
+    --hash=sha256:02a82b0a3a36b2553309d78c65e1c0e3350b640fe4091f53f66f582b11f49378 \
+    --hash=sha256:09ece277d48620079c90af7dfe84be085a229c1cbe06baa295de41e5019ac998
     # via
     #   openlinktoken
     #   openlinktoken-cli
