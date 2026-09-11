@@ -14,7 +14,7 @@ dev = [
     "pytest==9.1.1",
     "bump2version==1.0.1",
     "build==1.5.0",
-    "autoflake==2.3.3",
+    "autoflake==2.4.0",
     "flake8==7.3.0",
 ]
 # Pin the model-enabled OpenLinkToken source so the standalone build includes the
