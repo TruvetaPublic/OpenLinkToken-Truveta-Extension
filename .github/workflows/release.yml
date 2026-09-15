@@ -103,7 +103,7 @@ jobs:
       TAG: ${{ needs.release-info.outputs.tag }}
       RELEASE_FOUND: ${{ needs.release-info.outputs['release-found'] }}
       RELEASE_ID: ${{ needs.release-info.outputs['release-id'] }}
-      OPENLINKTOKEN_SOURCE_REF: 55f9fbe839ddb06f579d4cfd728b99a85ceff20e
+      OPENLINKTOKEN_SOURCE_REF: main
       OLT_INFERENCING_ASSETS_SOURCE: ${{ github.workspace }}/openlinktoken-source/resources/inferencing/ml1
     steps:
       - name: Checkout

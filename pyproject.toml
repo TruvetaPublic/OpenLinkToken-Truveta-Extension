@@ -17,12 +17,11 @@ dev = [
     "autoflake==2.4.0",
     "flake8==7.3.0",
 ]
-# Pin the model-enabled OpenLinkToken source so the standalone build includes the
-# same CLI/core-AI code and assets as the upstream self-contained build.
+# Use OpenLinkToken's main branch so release packages and assets stay aligned.
 release = [
-    "openlinktoken @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@55f9fbe839ddb06f579d4cfd728b99a85ceff20e#subdirectory=lib/python/openlinktoken",
-    "openlinktoken-core-ai @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@55f9fbe839ddb06f579d4cfd728b99a85ceff20e#subdirectory=lib/python/openlinktoken-core-ai",
-    "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@55f9fbe839ddb06f579d4cfd728b99a85ceff20e#subdirectory=lib/python/openlinktoken-cli",
+    "openlinktoken @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@main#subdirectory=lib/python/openlinktoken",
+    "openlinktoken-core-ai @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@main#subdirectory=lib/python/openlinktoken-core-ai",
+    "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@main#subdirectory=lib/python/openlinktoken-cli",
 ]
 
 [build-system]
