@@ -102,7 +102,7 @@ bump2version minor
 bump2version major
 ```
 
-`bump2version` updates the version in `pyproject.toml`, `README.md`, and the version assertions in `src/main/openlinktoken_ext_truveta/extension.py` / `src/test/openlinktoken_ext_truveta/test_extension.py`, creates a commit, and tags the commit as `v<new_version>`.
+`bump2version` updates the version in `.bumpversion.cfg`, `pyproject.toml`, and the README wheel examples, creates a commit, and tags the commit as `v<new_version>`.
 
 For release branches, `.github/workflows/auto-version-bump.yml` automatically extracts the target version from the `release/x.y.z` branch name and pushes the version bump back to that branch before the PR is merged.
 
