@@ -6,7 +6,7 @@ Unit tests for the upload command.
 
 import argparse
 import hashlib
-import io
+import os
 import zipfile
 from unittest.mock import patch
 
@@ -16,9 +16,8 @@ from openlinktoken_ext_truveta.commands.common import (
     AuthenticatedCommandContext,
     SessionResolutionError,
 )
+from openlinktoken_ext_truveta.commands import upload_validation
 from openlinktoken_ext_truveta.commands.upload import (
-    UploadPackagingError,
-    UploadValidationError,
     _package_as_zip,
     _package_existing_zip,
     _upload,
@@ -76,14 +75,16 @@ class TestUploadCommand:
         data_file = tmp_path / "tokenized.csv"
         data_file.write_bytes(b"token\nabc")
 
-        prepared = _package_as_zip(data_file, b'{"metadata":true}', b'{"exchange":true}')
+        zip_path = _package_as_zip(
+            data_file, b'{"metadata":true}', b'{"exchange":true}'
+        )
 
-        assert isinstance(prepared.stream, io.BytesIO)
-        with zipfile.ZipFile(prepared.stream) as archive:
-            assert archive.read("metadata.json") == b'{"metadata":true}'
-            assert archive.read("exchange-config.json") == b'{"exchange":true}'
-        assert prepared.filename == "tokenized.zip"
-        assert prepared.size == len(prepared.stream.getvalue())
+        try:
+            with zipfile.ZipFile(zip_path) as archive:
+                assert archive.read("metadata.json") == b'{"metadata":true}'
+                assert archive.read("exchange-config.json") == b'{"exchange":true}'
+        finally:
+            zip_path.unlink(missing_ok=True)
 
     def test_existing_zip_gets_exchange_config(self, tmp_path):
         source_path = tmp_path / "input.zip"
@@ -91,57 +92,129 @@ class TestUploadCommand:
             archive.writestr("data.csv", b"token\nabc")
             archive.writestr("metadata.json", b"{}")
 
-        prepared = _package_existing_zip(source_path, b'{"exchange":true}')
+        with patch(
+            "openlinktoken_ext_truveta.commands.upload.zipfile.ZipFile.read",
+            side_effect=AssertionError("existing ZIP members should not be read"),
+        ):
+            output_path = _package_existing_zip(source_path, b'{"exchange":true}')
 
-        assert isinstance(prepared.stream, io.BytesIO)
-        with zipfile.ZipFile(prepared.stream) as archive:
-            assert archive.read("exchange-config.json") == b'{"exchange":true}'
+        try:
+            with zipfile.ZipFile(output_path) as archive:
+                assert archive.read("exchange-config.json") == b'{"exchange":true}'
+            with zipfile.ZipFile(source_path) as archive:
+                assert "exchange-config.json" not in archive.namelist()
+        finally:
+            output_path.unlink(missing_ok=True)
 
-    def test_existing_zip_with_exchange_config_is_reused(self, tmp_path):
+    def test_complete_existing_zip_is_reused(self, tmp_path):
         source_path = tmp_path / "input.zip"
         with zipfile.ZipFile(source_path, "w") as archive:
             archive.writestr("data.csv", b"token\nabc")
-            archive.writestr("exchange-config.json", b'{"existing":true}')
+            archive.writestr("exchange-config.json", b'{"exchange":true}')
 
-        prepared = _package_existing_zip(source_path, b'{"exchange":true}')
+        with patch(
+            "openlinktoken_ext_truveta.commands.upload.tempfile.mkstemp",
+            side_effect=AssertionError("complete ZIP should not be copied"),
+        ):
+            output_path = _package_existing_zip(source_path, b"{}")
 
-        try:
-            assert not isinstance(prepared.stream, io.BytesIO)
-            with zipfile.ZipFile(prepared.stream) as archive:
-                assert archive.read("exchange-config.json") == b'{"existing":true}'
-        finally:
-            prepared.close()
+        assert output_path == source_path
+
+    def test_existing_zip_cleanup_removes_partial_output(self, tmp_path):
+        source_path = tmp_path / "input.zip"
+        output_path = tmp_path / "output.zip"
+        with zipfile.ZipFile(source_path, "w") as archive:
+            archive.writestr("data.csv", b"token\nabc")
+
+        def create_output_file(*args, **kwargs):
+            fd = os.open(output_path, os.O_CREAT | os.O_RDWR)
+            return fd, str(output_path)
+
+        with (
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.tempfile.mkstemp",
+                side_effect=create_output_file,
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.shutil.copyfile",
+                side_effect=OSError("copy failed"),
+            ),
+            pytest.raises(OSError, match="copy failed"),
+        ):
+            _package_existing_zip(source_path, b"{}")
+
+        assert not output_path.exists()
 
     def test_existing_zip_rejects_unsafe_member_path(self, tmp_path):
         source_path = tmp_path / "input.zip"
         with zipfile.ZipFile(source_path, "w") as archive:
             archive.writestr("../data.csv", b"token\nabc")
 
-        with pytest.raises(UploadValidationError, match="unsafe member path"):
-            _package_existing_zip(source_path, b'{}')
+        with pytest.raises(
+            upload_validation.UploadValidationError, match="unsafe member path"
+        ):
+            _package_existing_zip(source_path, b"{}")
 
-    def test_package_as_zip_wraps_write_time_os_error(self, tmp_path):
+    def test_schema_validation_failure_stops_before_authentication(
+        self, tmp_path, capsys
+    ):
+        data_file = tmp_path / "invalid.csv"
+        data_file.write_text("Token\nplain-token\n", encoding="utf-8")
+
+        with (
+            patch(
+                "openlinktoken_ext_truveta.commands.upload_validation.validate_file",
+                return_value=(None, None, "Missing required columns"),
+            ) as validate_file,
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context"
+            ) as resolve_context,
+        ):
+            rc = _upload(_args(str(data_file)))
+
+        assert rc == 1
+        validate_file.assert_called_once()
+        resolve_context.assert_not_called()
+        assert "Missing required columns" in capsys.readouterr().err
+
+    def test_encryption_validation_failure_stops_before_upload(self, tmp_path, capsys):
         data_file = tmp_path / "tokenized.csv"
-        data_file.write_bytes(b"token\nabc")
+        data_file.write_text("RuleId,Token,RecordId\nr1,token,r1\n", encoding="utf-8")
 
-        with patch(
-            "openlinktoken_ext_truveta.commands.upload.zipfile.ZipFile.write",
-            side_effect=OSError("No space left on device"),
+        with (
+            patch(
+                "openlinktoken_ext_truveta.commands.upload_validation.validate_file",
+                return_value=("sample-token", None, None),
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload_validation.validate_token_encryption",
+                return_value="Token decryption failed",
+            ) as validate_encryption,
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
+                return_value=_context(),
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload._build_exchange_metadata",
+                return_value={
+                    "payload": {
+                        "exchangeId": "ex-1",
+                        "senderKeyFingerprint": "s",
+                        "recipientKeyFingerprint": "r",
+                        "curve": "P-256",
+                    }
+                },
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload._run_upload"
+            ) as run_upload,
         ):
-            with pytest.raises(UploadPackagingError, match="Unable to build upload ZIP"):
-                _package_as_zip(data_file, b"{}", b"{}")
+            rc = _upload(_args(str(data_file)))
 
-    def test_package_existing_zip_wraps_write_time_os_error(self, tmp_path):
-        source_path = tmp_path / "input.zip"
-        with zipfile.ZipFile(source_path, "w") as archive:
-            archive.writestr("data.csv", b"token\nabc")
-
-        with patch(
-            "openlinktoken_ext_truveta.commands.upload.zipfile.ZipFile.writestr",
-            side_effect=OSError("No space left on device"),
-        ):
-            with pytest.raises(UploadPackagingError, match="Unable to build upload ZIP"):
-                _package_existing_zip(source_path, b'{"exchange":true}')
+        assert rc == 1
+        validate_encryption.assert_called_once_with("sample-token")
+        run_upload.assert_not_called()
+        assert "Token decryption failed" in capsys.readouterr().err
 
     @pytest.fixture(autouse=True)
     def _bypass_file_validation(self, tmp_path_factory):
@@ -152,11 +225,12 @@ class TestUploadCommand:
         exchange_config.write_bytes(b"{}")
         with (
             patch(
-                "openlinktoken_ext_truveta.commands.upload._validate_schema_and_extract_sample_token",
-                return_value=(None, None),
+                "openlinktoken_ext_truveta.commands.upload_validation.validate_file",
+                return_value=(None, None, None),
             ),
             patch(
-                "openlinktoken_ext_truveta.commands.upload._validate_token_encryption"
+                "openlinktoken_ext_truveta.commands.upload_validation.validate_token_encryption",
+                return_value=None,
             ),
             patch(
                 "openlinktoken_ext_truveta.commands.upload.resolve_exchange_config_path",
@@ -164,6 +238,37 @@ class TestUploadCommand:
             ),
         ):
             yield
+
+    @pytest.mark.parametrize("upload_result", [0, 1])
+    def test_reused_input_zip_is_preserved_after_upload(self, tmp_path, upload_result):
+        input_zip = tmp_path / "input.zip"
+        with zipfile.ZipFile(input_zip, "w") as archive:
+            archive.writestr("data.csv", b"token\nabc")
+            archive.writestr("exchange-config.json", b'{"exchange":true}')
+
+        with (
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.resolve_exchange_payload",
+                return_value={
+                    "exchangeId": "ex-1",
+                    "senderKeyFingerprint": "s",
+                    "recipientKeyFingerprint": "r",
+                    "curve": "P-256",
+                },
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload.resolve_authenticated_context",
+                return_value=_context(),
+            ),
+            patch(
+                "openlinktoken_ext_truveta.commands.upload._run_upload",
+                return_value=upload_result,
+            ),
+        ):
+            rc = _upload(_args(str(input_zip)))
+
+        assert rc == upload_result
+        assert input_zip.exists()
 
     def _mock_3step(self, init_return=8_388_608):
         """Return a context manager that mocks all three upload API steps."""
@@ -205,7 +310,7 @@ class TestUploadCommand:
 
         assert rc == 0
         out = capsys.readouterr().out
-        assert "Upload accepted" in out
+        assert "\033[32m\u2713 Upload accepted.\033[0m" in out
 
     def test_progress_output_printed_per_chunk(self, tmp_path, capsys):
         # 2 * chunk_size + 1 bytes always needs exactly 3 chunks, regardless of the

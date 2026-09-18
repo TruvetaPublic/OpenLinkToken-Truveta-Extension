@@ -11,6 +11,9 @@ from urllib.parse import urlparse
 
 import httpx
 
+from openlinktoken_ext_truveta.openlink_token_service_client.client import (
+    OpenLinkTokenServiceClient,
+)
 from openlinktoken_ext_truveta.openlink_token_service_client.types import (
     ExchangeRequest,
     ExchangeResponse,
@@ -52,13 +55,13 @@ def _is_local_dev_url(domain_url: str) -> bool:
 
 def _resolve_exchange_url(domain_url: str) -> str:
     """
-    Resolve the exchange URL for local dev and hosted environments.
+    Resolve the fully qualified exchange endpoint URL.
 
     Inputs:
         domain_url: The normalized base API URL for the current target environment.
 
     Returns:
-        The fully qualified exchange endpoint URL for hosted or local-dev calls.
+        The fully qualified exchange endpoint URL.
     """
     return f"{domain_url.rstrip('/')}/v1/exchange"
 
@@ -84,8 +87,10 @@ def _normalize_response(response: ExchangeResponse) -> dict:
         "exchangeId": response.exchange_id,
         "hashingSecret": response.encrypted_hashing_key,
         "serverPublicKey": response.truveta_public_key,
-        "rotationCount": response.num_rotations,
-        "binWidth": response.bin_width,
+        "rotationCount": response.num_rotations
+        if response.num_rotations is not None
+        else 50,
+        "binWidth": response.bin_width if response.bin_width is not None else 0.05,
         "dimensionBias": response.dimension_bias or [],
     }
     if response.encrypted_rotation_iv:
@@ -119,13 +124,8 @@ async def _call_exchange_async(
         verify=verify_ssl,
         timeout=timeout,
     ) as client:
-        response = await client.post(
-            _resolve_exchange_url(base_url),
-            content=request.model_dump_json(by_alias=True),
-            headers={"Content-Type": "application/json"},
-        )
-        response.raise_for_status()
-        return ExchangeResponse.model_validate(response.json())
+        olt_client = OpenLinkTokenServiceClient(base_url, client)
+        return await olt_client.exchange_exchange("1", request)
 
 
 def call_exchange_endpoint(

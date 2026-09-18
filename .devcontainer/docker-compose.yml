@@ -17,19 +17,24 @@ services:
       - openlinktoken-copilot:/home/vscode/.copilot
       - openlinktoken-vscode-server:/home/vscode/.vscode-server
       - openlinktoken-vscode-insiders:/home/vscode/.vscode-server-insiders
-      - openlinktoken-opencode:/home/vscode/.opencode
       - openlinktoken-config:/home/vscode/.config
-      - openlinktoken-openhands:/home/vscode/.openhands
     user: vscode:vscode
+    environment:
+      PUBLIC_GH_TOKEN: ${PUBLIC_GH_TOKEN:-}
+      UV_PROJECT_ENVIRONMENT: /home/vscode/.local/share/openlinktoken-ext-truveta/.venv
     # Keeps the container running so devcontainer tooling can attach
     command: sleep infinity
 
 volumes:
   openlinktoken-local:
+    name: openlinktoken-local
   openlinktoken-cache:
+    name: openlinktoken-cache
   openlinktoken-copilot:
+    name: openlinktoken-copilot
   openlinktoken-vscode-server:
+    name: openlinktoken-vscode-server
   openlinktoken-vscode-insiders:
-  openlinktoken-opencode:
+    name: openlinktoken-vscode-insiders
   openlinktoken-config:
-  openlinktoken-openhands:
+    name: openlinktoken-config

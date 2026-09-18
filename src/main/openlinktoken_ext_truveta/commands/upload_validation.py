@@ -11,6 +11,7 @@ import json
 import zipfile
 from pathlib import Path
 
+import pyarrow as pa
 import pyarrow.parquet as pq
 from jwcrypto import jwe, jwk
 from openlinktoken.exchange_config import derive_transport_encryption_key
@@ -95,7 +96,7 @@ def _validate_data_bytes(
                     if token and token != Token.BLANK:
                         return token, None
             return None, None
-    except (ValueError, IOError) as exc:
+    except (ValueError, IOError, pa.ArrowException) as exc:
         return None, str(exc)
 
 
@@ -218,7 +219,7 @@ def _decrypt_sample_token(token: str, transport_key: bytes) -> str | None:
         )
 
 
-def validate_token_encryption(sample_token: str | None, domain: str) -> str | None:
+def validate_token_encryption(sample_token: str | None) -> str | None:
     """
     Validate that a sample token can be decrypted using the current exchange config.
 
@@ -227,7 +228,6 @@ def validate_token_encryption(sample_token: str | None, domain: str) -> str | No
 
     Inputs:
         sample_token: A token value from the data file to test decryption against.
-        domain: The storage domain used to locate the cached exchange config.
 
     Returns:
         None on success, or an error message string on failure.
@@ -236,7 +236,7 @@ def validate_token_encryption(sample_token: str | None, domain: str) -> str | No
         return None
 
     try:
-        exchange_config_raw = _load_exchange_config(domain)
+        exchange_config_raw = _load_exchange_config()
         private_key_file = _private_key_path()
         if not private_key_file.exists():
             return f"Private key not found at {private_key_file}"

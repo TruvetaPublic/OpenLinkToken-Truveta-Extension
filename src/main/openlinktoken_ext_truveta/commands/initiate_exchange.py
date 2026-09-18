@@ -70,7 +70,7 @@ def _initiate_exchange(args: argparse.Namespace) -> int:
         config = build_exchange_config(
             server_response, local_public_pem, local_private_pem
         )
-        config_path = write_exchange_config(context.storage_domain, config)
+        config_path = write_exchange_config(config)
 
         priv_key_path = private_key_path()
         pub_key_path = public_key_path()

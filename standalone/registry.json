@@ -1,0 +1,10 @@
+{
+  "truveta": {
+    "class": "TruvetaExtension",
+    "command_name": "truveta",
+    "dist_name": "openlinktoken-ext-truveta",
+    "module": "openlinktoken_ext_truveta.extension",
+    "source_path": "",
+    "version": "1.0.0"
+  }
+}

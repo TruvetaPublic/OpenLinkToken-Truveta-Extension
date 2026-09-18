@@ -10,7 +10,6 @@ import sys
 from openlinktoken_ext_truveta.auth import (
     AuthError,
     Credentials,
-    _cache_path,
     decode_jwt_payload,
     ensure_auth,
 )
@@ -18,6 +17,7 @@ from openlinktoken_ext_truveta.commands.common import (
     SessionResolutionError,
     resolve_domain,
 )
+from openlinktoken_ext_truveta.paths import credentials_cache_path
 from openlinktoken_ext_truveta.session import write_session_domain
 
 
@@ -44,7 +44,7 @@ def _authenticate(
 
     try:
         if force:
-            cache_file = _cache_path(domain)
+            cache_file = credentials_cache_path(domain)
             if cache_file.exists():
                 cache_file.unlink()
 

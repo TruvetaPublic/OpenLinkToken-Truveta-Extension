@@ -15,7 +15,6 @@ import sys
 import time
 import webbrowser
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional
 
 import requests
@@ -54,19 +53,6 @@ def _temporary_env(var_name: str, value: str):
             os.environ.pop(var_name, None)
         else:
             os.environ[var_name] = previous
-
-
-def _cache_path(domain: str) -> Path:
-    """
-    Return the path to the credentials cache file for a domain.
-
-    Inputs:
-        domain: The Truveta domain (e.g. "dev.truveta-int.com").
-
-    Returns:
-        Path to the credentials.json file under ~/.openlinktoken/truveta/<domain>/.
-    """
-    return credentials_cache_path(domain)
 
 
 def decode_jwt_payload(token: str) -> dict:
@@ -126,7 +112,7 @@ def _read_cache(domain: str) -> Optional[Credentials]:
     Returns:
         Credentials if valid cached tokens exist, None if missing, malformed, or expired.
     """
-    path = _cache_path(domain)
+    path = credentials_cache_path(domain)
     try:
         data = json.loads(path.read_text())
         access_token = data["access_token"]
@@ -152,7 +138,7 @@ def _write_cache(domain: str, credentials: Credentials) -> None:
     Returns:
         None. The credentials are written to the per-domain cache file.
     """
-    path = _cache_path(domain)
+    path = credentials_cache_path(domain)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(

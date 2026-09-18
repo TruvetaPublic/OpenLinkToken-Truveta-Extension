@@ -169,7 +169,7 @@ class TestInitiateExchangeCommand:
             _sample_keypair()[1],
             _sample_keypair()[0],
         )
-        mock_write.assert_called_once_with("truveta.com", {"payload": {"test": "data"}})
+        mock_write.assert_called_once_with({"payload": {"test": "data"}})
         out = capsys.readouterr().out
         assert "Exchange config: /path/to/config" in out
 
@@ -213,9 +213,7 @@ class TestInitiateExchangeCommand:
             "acc_token",
             timeout_seconds=180,
         )
-        mock_write.assert_called_once_with(
-            "localhost-18080", {"payload": {"test": "data"}}
-        )
+        mock_write.assert_called_once_with({"payload": {"test": "data"}})
 
     def test_requires_login_session_when_context_resolution_fails(self, capsys):
         with patch(

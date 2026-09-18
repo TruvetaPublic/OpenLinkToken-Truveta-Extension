@@ -7,14 +7,49 @@ import os
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 
+from openlinktoken.core.ai.tokens.ml1_inference_config import ML1InferenceConfig
 from openlinktoken_cli.extension import OpenLinkTokenExtension
 
-from openlinktoken_ext_truveta.commands.auto_upload import _auto_upload
-from openlinktoken_ext_truveta.commands.initiate_exchange import _initiate_exchange
-from openlinktoken_ext_truveta.commands.login import _login
-from openlinktoken_ext_truveta.commands.logout import _logout
-from openlinktoken_ext_truveta.commands.upload import _upload
 from openlinktoken_ext_truveta.domain import DEFAULT_DOMAIN
+
+
+def _login(args: argparse.Namespace) -> int:
+    """Load and invoke the login handler only when the command executes."""
+    from openlinktoken_ext_truveta.commands.login import _login as login
+
+    return login(args)
+
+
+def _initiate_exchange(args: argparse.Namespace) -> int:
+    """Load and invoke the exchange handler only when the command executes."""
+    from openlinktoken_ext_truveta.commands.initiate_exchange import (
+        _initiate_exchange as initiate_exchange,
+    )
+
+    return initiate_exchange(args)
+
+
+def _logout() -> int:
+    """Load and invoke the logout handler only when the command executes."""
+    from openlinktoken_ext_truveta.commands.logout import _logout as logout
+
+    return logout()
+
+
+def _upload(args: argparse.Namespace) -> int:
+    """Load and invoke the upload handler only when the command executes."""
+    from openlinktoken_ext_truveta.commands.upload import _upload as upload
+
+    return upload(args)
+
+
+def _auto_upload(args: argparse.Namespace) -> int:
+    """Load and invoke the auto-upload handler only when the command executes."""
+    from openlinktoken_ext_truveta.commands.auto_upload import (
+        _auto_upload as auto_upload,
+    )
+
+    return auto_upload(args)
 
 
 class TruvetaExtension(OpenLinkTokenExtension):
@@ -303,5 +338,26 @@ class _AutoUploadSubcommandRegistrar:
             "-i",
             required=True,
             help="Raw input file (CSV or Parquet) to package and upload",
+        )
+        auto_upload_parser.add_argument(
+            "--disable-inferencing",
+            action="store_true",
+            default=False,
+            help="Disable ML1 ONNX inference token generation",
+        )
+        auto_upload_parser.add_argument(
+            "--inferencing-batch-size",
+            type=int,
+            default=ML1InferenceConfig.DEFAULT_BATCH_SIZE,
+            help=(
+                "ML1 ONNX inference batch size "
+                f"(default: {ML1InferenceConfig.DEFAULT_BATCH_SIZE})"
+            ),
+        )
+        auto_upload_parser.add_argument(
+            "--inferencing-num-threads",
+            type=int,
+            default=None,
+            help="ORT intra/inter-op thread count for ML1 inference (default: auto-detect)",
         )
         auto_upload_parser.set_defaults(func=TruvetaExtension._auto_upload)

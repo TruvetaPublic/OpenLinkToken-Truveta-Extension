@@ -9,6 +9,8 @@ VENV_DIR="${UV_PROJECT_ENVIRONMENT:-/home/vscode/.local/share/openlinktoken-ext-
 WORKSPACE_VENV_DIR="$REPO_ROOT/.venv"
 STATE_DIR="${VENV_DIR}/.setup-state"
 PHASE="${1:-full}"
+ML1_ASSET_REF="ghcr.io/truvetapublic/openlinktoken-ml1-assets:v1"
+ML1_ASSET_FILENAMES=("model.onnx" "model.onnx.data" "tokenizer.json" "asset-manifest.json")
 
 mkdir -p "$STATE_DIR"
 
@@ -78,6 +80,15 @@ step_activate_venv() {
   source "$VENV_DIR/bin/activate"
 }
 
+step_configure_git_lfs() {
+  if ! command -v git-lfs >/dev/null 2>&1; then
+    echo "Error: Git LFS is required to install the OpenLinkToken ML model." >&2
+    echo "Rebuild the dev container to install the git-lfs package." >&2
+    return 1
+  fi
+  git lfs install --skip-repo
+}
+
 step_install_packages() {
   echo "→ Installing extension package with dev extras"
   cd "$REPO_ROOT"
@@ -89,6 +100,48 @@ step_refresh_packages() {
   cd "$REPO_ROOT"
   uv pip install -e ".[dev]"
   echo "✓ Packages refreshed"
+}
+
+step_hydrate_ml1_assets() {
+  local package_dir
+  if ! package_dir="$(python -c 'from pathlib import Path; import openlinktoken.core.ai.tokens as tokens; print(Path(tokens.__file__).resolve().parent)')"; then
+    echo "Error: Could not locate the installed OpenLinkToken Core-AI package." >&2
+    return 1
+  fi
+  if [ -z "$package_dir" ] || [ ! -d "$package_dir" ]; then
+    echo "Error: OpenLinkToken Core-AI package directory is unavailable: $package_dir" >&2
+    return 1
+  fi
+
+  local assets_ready=true
+  local filename
+  for filename in "${ML1_ASSET_FILENAMES[@]}"; do
+    if [ ! -f "$package_dir/$filename" ]; then
+      assets_ready=false
+      break
+    fi
+  done
+  if [ "$assets_ready" = true ]; then
+    echo "⊘ Skipping ML1 asset hydration (assets already present)"
+    return 0
+  fi
+
+  if ! command -v oras >/dev/null 2>&1; then
+    echo "Error: ORAS is required to download the OpenLinkToken ML1 assets." >&2
+    echo "Rebuild the dev container to install the pinned ORAS client." >&2
+    return 1
+  fi
+
+  echo "→ Downloading ML1 assets from $ML1_ASSET_REF"
+  oras pull "$ML1_ASSET_REF" --output "$package_dir"
+
+  for filename in "${ML1_ASSET_FILENAMES[@]}"; do
+    if [ ! -f "$package_dir/$filename" ]; then
+      echo "Error: ML1 asset pull did not provide $filename." >&2
+      return 1
+    fi
+  done
+  echo "✓ ML1 assets installed beside the Core-AI package"
 }
 
 step_activate_shell_init() {
@@ -169,7 +222,9 @@ run_core_setup() {
 
 run_full_setup() {
   run_core_setup
+  step_configure_git_lfs
   step_install_packages
+  step_hydrate_ml1_assets
   step_activate_shell_init
   step_install_prek
   step_install_apm_cli
@@ -179,7 +234,9 @@ run_full_setup() {
 
 run_refresh_setup() {
   run_core_setup
+  step_configure_git_lfs
   step_refresh_packages
+  step_hydrate_ml1_assets
   step_activate_shell_init
   step_install_apm_cli
   step_setup_apm
@@ -190,7 +247,10 @@ main() {
   echo "Phase: $PHASE"
   case "$PHASE" in
     full|post-create) run_full_setup ;;
-    post-start) run_core_setup ;;
+    post-start)
+      run_core_setup
+      step_hydrate_ml1_assets
+      ;;
     post-attach) run_refresh_setup ;;
     *) echo "Unknown setup phase: $PHASE" >&2; exit 1 ;;
   esac
@@ -199,4 +259,6 @@ main() {
   echo "To activate manually, run: source $VENV_DIR/bin/activate"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

@@ -8,6 +8,7 @@ import argparse
 from pathlib import Path
 from unittest.mock import patch
 
+from openlinktoken.core.ai.tokens.ml1_inference_config import ML1InferenceConfig
 from openlinktoken_ext_truveta.commands.auto_upload import _auto_upload
 
 _PACKAGE_EXECUTE = (
@@ -17,8 +18,8 @@ _INITIATE_EXCHANGE = "openlinktoken_ext_truveta.commands.auto_upload._initiate_e
 _UPLOAD = "openlinktoken_ext_truveta.commands.auto_upload._upload"
 
 
-def _args(file_path: str) -> argparse.Namespace:
-    return argparse.Namespace(input=file_path)
+def _args(file_path: str, **kwargs) -> argparse.Namespace:
+    return argparse.Namespace(input=file_path, **kwargs)
 
 
 class TestAutoUploadCommand:
@@ -116,10 +117,61 @@ class TestAutoUploadCommand:
 
         pa = captured_package_args["args"]
         assert pa.input_path == str(input_file)
-        assert "demo_input_packaged.parquet" in pa.output_path
+        assert "demo_input_packaged.zip" in pa.output_path
         assert pa.exchange_config is not None
 
-    def test_upload_receives_parquet_path(self, tmp_path):
+    def test_package_receives_inferencing_args(self, tmp_path):
+        input_file = tmp_path / "demo_input.csv"
+        input_file.write_text("data")
+
+        captured_package_args = {}
+
+        def _capture_package(package_args):
+            captured_package_args["args"] = package_args
+            return 0
+
+        with (
+            patch(_INITIATE_EXCHANGE, return_value=0),
+            patch(_PACKAGE_EXECUTE, side_effect=_capture_package),
+            patch(_UPLOAD, return_value=0),
+        ):
+            _auto_upload(
+                _args(
+                    str(input_file),
+                    disable_inferencing=True,
+                    inferencing_batch_size=32,
+                    inferencing_num_threads=2,
+                )
+            )
+
+        pa = captured_package_args["args"]
+        assert pa.disable_inferencing is True
+        assert pa.inferencing_batch_size == 32
+        assert pa.inferencing_num_threads == 2
+
+    def test_package_uses_base_inferencing_defaults(self, tmp_path):
+        input_file = tmp_path / "demo_input.csv"
+        input_file.write_text("data")
+
+        captured_package_args = {}
+
+        def _capture_package(package_args):
+            captured_package_args["args"] = package_args
+            return 0
+
+        with (
+            patch(_INITIATE_EXCHANGE, return_value=0),
+            patch(_PACKAGE_EXECUTE, side_effect=_capture_package),
+            patch(_UPLOAD, return_value=0),
+        ):
+            _auto_upload(_args(str(input_file)))
+
+        pa = captured_package_args["args"]
+        assert pa.disable_inferencing is False
+        assert pa.inferencing_batch_size == ML1InferenceConfig.DEFAULT_BATCH_SIZE
+        assert pa.inferencing_num_threads is None
+
+    def test_upload_receives_zip_path(self, tmp_path):
         input_file = tmp_path / "demo_input.csv"
         input_file.write_text("data")
 
@@ -136,45 +188,18 @@ class TestAutoUploadCommand:
         ):
             _auto_upload(_args(str(input_file)))
 
-        assert captured_upload_args["input"].endswith(".parquet")
+        assert captured_upload_args["input"].endswith(".zip")
         assert "demo_input_packaged" in captured_upload_args["input"]
 
-    def test_upload_receives_metadata_path_when_present(self, tmp_path):
-        input_file = tmp_path / "demo_input.csv"
-        input_file.write_text("data")
-
-        captured_upload_args = {}
-
-        def _write_metadata_and_capture(package_args):
-            Path(package_args.output_path).with_suffix(".metadata.json").write_text(
-                "{}"
-            )
-            return 0
-
-        def _capture_upload(upload_args):
-            captured_upload_args["metadata"] = upload_args.metadata
-            return 0
-
-        with (
-            patch(_INITIATE_EXCHANGE, return_value=0),
-            patch(_PACKAGE_EXECUTE, side_effect=_write_metadata_and_capture),
-            patch(_UPLOAD, side_effect=_capture_upload),
-        ):
-            _auto_upload(_args(str(input_file)))
-
-        assert captured_upload_args["metadata"] is not None
-        assert captured_upload_args["metadata"].endswith(
-            "demo_input_packaged.metadata.json"
-        )
-
-    def test_upload_metadata_is_none_when_not_present(self, tmp_path):
+    def test_upload_does_not_receive_external_metadata_for_zip(self, tmp_path):
+        """Zip output bundles metadata internally — upload receives no external metadata."""
         input_file = tmp_path / "demo_input.csv"
         input_file.write_text("data")
 
         captured_upload_args = {}
 
         def _capture_upload(upload_args):
-            captured_upload_args["metadata"] = upload_args.metadata
+            captured_upload_args["has_metadata"] = hasattr(upload_args, "metadata")
             return 0
 
         with (
@@ -184,7 +209,7 @@ class TestAutoUploadCommand:
         ):
             _auto_upload(_args(str(input_file)))
 
-        assert captured_upload_args["metadata"] is None
+        assert not captured_upload_args["has_metadata"]
 
     def test_temp_dir_cleaned_up_on_success(self, tmp_path):
         input_file = tmp_path / "input.csv"
