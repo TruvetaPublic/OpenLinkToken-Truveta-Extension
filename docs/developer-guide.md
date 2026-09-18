@@ -87,6 +87,8 @@ This produces `dist/openlinktoken_ext_truveta-<version>-py3-none-any.whl` and th
 
 Feature work and standard pull requests should target `develop`. `main` is reserved for release PRs created from `release/x.y.z` branches only. The repository includes `.github/workflows/retarget-pr-to-develop.yml`, which automatically moves any PR that targets `main` from a non-release branch back to `develop`, and `.github/workflows/validate-pr-target.yml`, which fails PR validation unless the PR comes from a `release/*` branch when targeting `main`.
 
+After a release is merged into `main`, `.github/workflows/sync-develop-on-merge.yml` synchronizes `develop` from `main`. If both branches changed the same file, the synchronization preserves the `main` version.
+
 ## Versioning
 
 This project follows [Semantic Versioning](https://semver.org/). Version bumps are managed with [`bump2version`](https://github.com/c4urself/bump2version) and configured in `.bumpversion.cfg`.

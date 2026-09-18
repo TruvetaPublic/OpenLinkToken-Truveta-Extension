@@ -34,5 +34,5 @@ jobs:
           git config user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
           git config user.email "${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
           git fetch origin main
-          git merge origin/main --no-edit
+          git merge origin/main --no-edit -X theirs
           git push origin develop
