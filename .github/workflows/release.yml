@@ -39,15 +39,15 @@ jobs:
       RELEASE_ID: ${{ needs.release-info.outputs['release-id'] }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: true
 
@@ -71,7 +71,7 @@ jobs:
           fi
 
       - name: Upload built distributions as workflow artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: openlinktoken-ext-truveta-${{ env.TAG }}
           path: |
@@ -79,7 +79,7 @@ jobs:
             dist/*.tar.gz
 
       - name: Publish to GitHub Releases
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ env.TAG }}
           generate_release_notes: true
@@ -107,13 +107,13 @@ jobs:
       OLT_INFERENCING_ASSETS_SOURCE: ${{ github.workspace }}/openlinktoken-source/resources/inferencing/ml1
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configure Git LFS
         run: git lfs install --skip-repo
 
       - name: Checkout OpenLinkToken model assets
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: TruvetaPublic/OpenLinkToken
           ref: ${{ env.OPENLINKTOKEN_SOURCE_REF }}
@@ -124,12 +124,12 @@ jobs:
           lfs: true
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
         with:
           enable-cache: true
 
@@ -187,7 +187,7 @@ jobs:
             --output-dir release-assets
 
       - name: Upload workflow artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: olt-truveta-${{ env.VERSION }}-${{ matrix.os }}
           path: release-assets/*
@@ -195,7 +195,7 @@ jobs:
 
       - name: Upload release assets to GitHub Release
         if: env.RELEASE_FOUND == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
