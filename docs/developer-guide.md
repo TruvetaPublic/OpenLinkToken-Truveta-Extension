@@ -102,7 +102,7 @@ bump2version minor
 bump2version major
 ```
 
-`bump2version` updates the version in `.bumpversion.cfg`, `pyproject.toml`, and the README wheel examples, creates a commit, and tags the commit as `v<new_version>`.
+`bump2version` updates the version in `.bumpversion.cfg`, `pyproject.toml`, and the README wheel examples. The release workflow uses the resulting `current_version` value when creating the GitHub Release.
 
 For release branches, `.github/workflows/auto-version-bump.yml` automatically extracts the target version from the `release/x.y.z` branch name and pushes the version bump back to that branch before the PR is merged.
 
@@ -120,14 +120,14 @@ CI is defined in `.github/workflows/ci.yml` and runs on every push and pull requ
 
 ## Releases
 
-Releases are defined in `.github/workflows/release.yml` and triggered in two ways:
+Releases are defined in `.github/workflows/auto-release.yml` and `.github/workflows/release.yml`:
 
-- **Tag push** — push a `v*` tag (created by `bump2version`) to build and publish.
-- **Manual dispatch** — enter a version number in the GitHub Actions UI.
+1. When a `release/x.y.z` pull request is merged into `main`, `Create Release on Merge` reads `current_version` from `.bumpversion.cfg`, creates the corresponding `v<version>` tag, and creates the GitHub Release.
+2. `Build Release Assets` runs after the release is created or published. It also supports manual dispatch for rebuilding assets for an existing release.
 
-The release workflow:
+The asset workflow:
 
-1. Builds the wheel and sdist, then publishes them to GitHub Releases.
+1. Builds the wheel and sdist and attaches them to the GitHub Release.
 2. Checks out the OpenLinkToken model assets from `main` with Git LFS.
 3. Builds one-folder standalone bundles for Linux, Windows, and macOS using PyInstaller.
 4. Runs a tokenization smoke test against each executable to verify the embedded model.
