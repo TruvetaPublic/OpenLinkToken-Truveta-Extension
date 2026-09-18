@@ -87,6 +87,8 @@ This produces `dist/openlinktoken_ext_truveta-<version>-py3-none-any.whl` and th
 
 Feature work and standard pull requests should target `develop`. `main` is reserved for release PRs created from `release/x.y.z` branches only. The repository includes `.github/workflows/retarget-pr-to-develop.yml`, which automatically moves any PR that targets `main` from a non-release branch back to `develop`, and `.github/workflows/validate-pr-target.yml`, which fails PR validation unless the PR comes from a `release/*` branch when targeting `main`.
 
+After a release is merged into `main`, `.github/workflows/sync-develop-on-merge.yml` synchronizes `develop` from `main`. If both branches changed the same file, the synchronization preserves the `main` version.
+
 ## Versioning
 
 This project follows [Semantic Versioning](https://semver.org/). Version bumps are managed with [`bump2version`](https://github.com/c4urself/bump2version) and configured in `.bumpversion.cfg`.
@@ -102,7 +104,7 @@ bump2version minor
 bump2version major
 ```
 
-`bump2version` updates the version in `.bumpversion.cfg`, `pyproject.toml`, and the README wheel examples, creates a commit, and tags the commit as `v<new_version>`.
+`bump2version` updates the version in `.bumpversion.cfg`, `pyproject.toml`, and the README wheel examples. The release workflow uses the resulting `current_version` value when creating the GitHub Release.
 
 For release branches, `.github/workflows/auto-version-bump.yml` automatically extracts the target version from the `release/x.y.z` branch name and pushes the version bump back to that branch before the PR is merged.
 
@@ -120,14 +122,14 @@ CI is defined in `.github/workflows/ci.yml` and runs on every push and pull requ
 
 ## Releases
 
-Releases are defined in `.github/workflows/release.yml` and triggered in two ways:
+Releases are defined in `.github/workflows/auto-release.yml` and `.github/workflows/release.yml`:
 
-- **Tag push** — push a `v*` tag (created by `bump2version`) to build and publish.
-- **Manual dispatch** — enter a version number in the GitHub Actions UI.
+1. When a `release/x.y.z` pull request is merged into `main`, `Create Release on Merge` reads `current_version` from `.bumpversion.cfg`, creates the corresponding `v<version>` tag, and creates the GitHub Release.
+2. `Build Release Assets` runs after the release is created or published. It also supports manual dispatch for rebuilding assets for an existing release.
 
-The release workflow:
+The asset workflow:
 
-1. Builds the wheel and sdist, then publishes them to GitHub Releases.
+1. Builds the wheel and sdist and attaches them to the GitHub Release.
 2. Checks out the OpenLinkToken model assets from `main` with Git LFS.
 3. Builds one-folder standalone bundles for Linux, Windows, and macOS using PyInstaller.
 4. Runs a tokenization smoke test against each executable to verify the embedded model.
