@@ -55,7 +55,7 @@ if [ -z "$VERSION" ]; then
   VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
     | grep '"tag_name"' \
     | head -1 \
-    | sed 's/.*"tag_name": *"v\?\([^"]*\)".*/\1/')"
+    | sed -nE 's/^[[:space:]]*"tag_name":[[:space:]]*"v?([^"]*)".*/\1/p')"
 fi
 
 if [ -z "$VERSION" ]; then
