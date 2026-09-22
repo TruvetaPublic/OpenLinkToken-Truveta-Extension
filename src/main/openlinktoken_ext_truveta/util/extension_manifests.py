@@ -21,7 +21,8 @@ DEFAULT_REPOSITORY = "TruvetaPublic/OpenLinkToken-Truveta-Extension"
 _EXTENSION_NAME = "truveta"
 _SEMVER_PATTERN = re.compile(
     r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
-    r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+    r"(?:-(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
+    r"(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?"
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
 )
 
@@ -113,23 +114,24 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _validate_version(version: str) -> str:
-    """Validate and return a normalized semantic version."""
+    """Validate and return a semantic version without normalizing it."""
     if not isinstance(version, str):
         raise ValueError("Version must be a semantic version string")
 
-    normalized_version = version.strip()
-    if not normalized_version:
+    if not version:
         raise ValueError("Version cannot be empty")
+    if version != version.strip():
+        raise ValueError("Version must not contain surrounding whitespace")
 
     try:
-        Version(normalized_version)
+        Version(version)
     except InvalidVersion as exc:
         raise ValueError(f"Invalid semantic version: {version!r}") from exc
 
-    if _SEMVER_PATTERN.fullmatch(normalized_version) is None:
+    if _SEMVER_PATTERN.fullmatch(version) is None:
         raise ValueError(f"Version is not semantic: {version!r}")
 
-    return normalized_version
+    return version
 
 
 def _core_version_bounds() -> dict[str, str]:
