@@ -16,18 +16,18 @@ truveta = "openlinktoken_ext_truveta.extension:TruvetaExtension"
 
 [project.optional-dependencies]
 dev = [
-    "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@v2.2.0#subdirectory=lib/python/openlinktoken-cli",
+    "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@f840e2f509d9ff634dc8a3039a429fa415619492#subdirectory=lib/python/openlinktoken-cli",
     "pytest==9.1.1",
     "bump2version==1.0.1",
     "build==1.6.1",
     "autoflake==2.4.0",
     "flake8==7.3.0",
 ]
-# Pin release packages to the same OpenLinkToken tag used for standalone assets.
+# Pin development and release sources to the merge containing PR #482 until it is tagged.
 release = [
-    "openlinktoken @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@v2.2.0#subdirectory=lib/python/openlinktoken",
-    "openlinktoken-core-ai @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@v2.2.0#subdirectory=lib/python/openlinktoken-core-ai",
-    "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@v2.2.0#subdirectory=lib/python/openlinktoken-cli",
+    "openlinktoken @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@f840e2f509d9ff634dc8a3039a429fa415619492#subdirectory=lib/python/openlinktoken",
+    "openlinktoken-core-ai @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@f840e2f509d9ff634dc8a3039a429fa415619492#subdirectory=lib/python/openlinktoken-core-ai",
+    "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@f840e2f509d9ff634dc8a3039a429fa415619492#subdirectory=lib/python/openlinktoken-cli",
 ]
 
 [build-system]
