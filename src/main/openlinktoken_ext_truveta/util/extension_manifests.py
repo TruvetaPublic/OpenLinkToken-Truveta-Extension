@@ -21,8 +21,7 @@ DEFAULT_REPOSITORY = "TruvetaPublic/OpenLinkToken-Truveta-Extension"
 _EXTENSION_NAME = "truveta"
 _SEMVER_PATTERN = re.compile(
     r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
-    r"(?:-(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
-    r"(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?"
+    r"(?:-(?P<prerelease>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
 )
 
@@ -128,7 +127,15 @@ def _validate_version(version: str) -> str:
     except InvalidVersion as exc:
         raise ValueError(f"Invalid semantic version: {version!r}") from exc
 
-    if _SEMVER_PATTERN.fullmatch(version) is None:
+    match = _SEMVER_PATTERN.fullmatch(version)
+    if match is None:
+        raise ValueError(f"Version is not semantic: {version!r}")
+
+    prerelease = match.group("prerelease")
+    if prerelease is not None and any(
+        identifier.isdigit() and len(identifier) > 1 and identifier.startswith("0")
+        for identifier in prerelease.split(".")
+    ):
         raise ValueError(f"Version is not semantic: {version!r}")
 
     return version
