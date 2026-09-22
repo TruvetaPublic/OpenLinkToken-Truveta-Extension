@@ -61,6 +61,31 @@ def test_create_extension_release_assets_writes_checksummed_manifests(tmp_path):
     )
 
 
+def test_prerelease_manifest_preserves_raw_version_and_normalized_wheel_name(
+    tmp_path,
+):
+    wheel_bytes = b"prerelease wheel contents"
+    wheel_path = tmp_path / "openlinktoken_ext_truveta-1.2.3rc1-py3-none-any.whl"
+    wheel_path.write_bytes(wheel_bytes)
+    output_dir = tmp_path / "release-assets"
+
+    create_extension_release_assets("1.2.3-rc.1", wheel_path, output_dir)
+
+    bootstrap = json.loads((output_dir / BOOTSTRAP_MANIFEST_NAME).read_text())
+    assert bootstrap["extension"]["version"] == "1.2.3-rc.1"
+    assert bootstrap["extension"]["artifact_url"].endswith(
+        f"/releases/download/v1.2.3-rc.1/{wheel_path.name}"
+    )
+
+    update = json.loads((output_dir / UPDATE_MANIFEST_NAME).read_text())
+    assert update["latest_version"] == "1.2.3-rc.1"
+    assert update["artifacts"][0]["version"] == "1.2.3-rc.1"
+    assert update["artifacts"][0]["url"].endswith(
+        f"/releases/download/v1.2.3-rc.1/{wheel_path.name}"
+    )
+    assert update["artifacts"][0]["sha256"] == hashlib.sha256(wheel_bytes).hexdigest()
+
+
 @pytest.mark.parametrize("version", ["", "not-a-version", "1.2", "1.2.3-01", " 1.2.3 "])
 def test_create_extension_release_assets_rejects_non_semver_before_writing(
     tmp_path, version
