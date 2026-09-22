@@ -102,7 +102,7 @@ bump2version minor
 bump2version major
 ```
 
-`bump2version` updates the version in `pyproject.toml`, `README.md`, and the version assertions in `src/main/openlinktoken_ext_truveta/extension.py` / `src/test/openlinktoken_ext_truveta/test_extension.py`, creates a commit, and tags the commit as `v<new_version>`.
+`bump2version` updates the version in `pyproject.toml`, `README.md`, and `standalone/registry.json`, creates a commit, and tags the commit as `v<new_version>`.
 
 For release branches, `.github/workflows/auto-version-bump.yml` automatically extracts the target version from the `release/x.y.z` branch name and pushes the version bump back to that branch before the PR is merged.
 
@@ -128,22 +128,23 @@ Releases are defined in `.github/workflows/release.yml` and triggered in two way
 The release workflow:
 
 1. Builds the wheel and sdist, then publishes them to GitHub Releases.
-2. Checks out the OpenLinkToken model assets from `main` with Git LFS.
+2. Checks out the OpenLinkToken model assets from `v2.2.0` with Git LFS.
 3. Builds one-folder standalone bundles for Linux, Windows, and macOS using PyInstaller.
 4. Runs a tokenization smoke test against each executable to verify the embedded model.
 5. Packages each complete bundle as a ZIP with a SHA-256 checksum.
-6. Attaches the ZIP bundles and checksums to the GitHub Release.
+6. Generates the extension update manifests and wheel checksum.
+7. Attaches the wheel, source distribution, update manifests, ZIP bundles, and checksums to the GitHub Release.
 
-The standalone build contains the `openlinktoken` CLI, the Truveta extension, and the ML1 model/tokenizer assets in a reusable one-folder distribution — no Python installation required for end users. The local bundle is `dist/olt/` with executable `dist/olt/olt` on POSIX systems or `dist/olt/olt.exe` on Windows. Release assets are complete ZIP bundles plus `.sha256` files; the raw executable is not published separately because it requires the adjacent `_internal/` directory. The release build uses OpenLinkToken's `main` branch for the model-enabled source and assets. Help-oriented invocations load the installed extension registry so extension commands appear in the main menu. Heavy processing dependencies remain lazy until tokenization or packaging runs.
+The standalone build contains the `openlinktoken` CLI, the Truveta extension, and the ML1 model/tokenizer assets in a reusable one-folder distribution — no Python installation required for end users. The local bundle is `dist/olt/` with executable `dist/olt/olt` on POSIX systems or `dist/olt/olt.exe` on Windows. Release assets are complete ZIP bundles plus `.sha256` files; the raw executable is not published separately because it requires the adjacent `_internal/` directory. The first compatible release uses OpenLinkToken `v2.2.0` for the model-enabled source and assets. Keep the three `.[release]` dependency references in `pyproject.toml` and the standalone workflow's `OPENLINKTOKEN_SOURCE_REF` on the same core release tag; update all four references together for a future core release. Help-oriented invocations load the installed extension registry so extension commands appear in the main menu. Heavy processing dependencies remain lazy until tokenization or packaging runs.
 
 ### Building a Standalone Executable Locally
 
-The standalone spec requires a hydrated checkout of OpenLinkToken's `main` branch and its ML1 assets. Clone the source, install the release dependencies, and point the spec at the assets:
+The standalone spec requires a hydrated checkout of OpenLinkToken `v2.2.0` and its ML1 assets. Clone the source, install the release dependencies, and point the spec at the assets. For a future core release, change the checkout ref, the three `.[release]` references in `pyproject.toml`, and `OPENLINKTOKEN_SOURCE_REF` in `.github/workflows/release.yml` together:
 
 ```bash
 git clone --filter=blob:none --sparse https://github.com/TruvetaPublic/OpenLinkToken.git openlinktoken-source
 git -C openlinktoken-source sparse-checkout set resources/inferencing/ml1
-git -C openlinktoken-source checkout main
+git -C openlinktoken-source checkout v2.2.0
 git -C openlinktoken-source lfs pull
 export OLT_INFERENCING_ASSETS_SOURCE="$PWD/openlinktoken-source/resources/inferencing/ml1"
 uv pip install -e ".[release]"

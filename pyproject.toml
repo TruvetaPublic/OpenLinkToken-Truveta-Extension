@@ -23,11 +23,11 @@ dev = [
     "autoflake==2.4.0",
     "flake8==7.3.0",
 ]
-# Use OpenLinkToken's main branch so release packages and assets stay aligned.
+# Pin release packages to the same OpenLinkToken tag used for standalone assets.
 release = [
-    "openlinktoken @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@main#subdirectory=lib/python/openlinktoken",
-    "openlinktoken-core-ai @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@main#subdirectory=lib/python/openlinktoken-core-ai",
-    "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@main#subdirectory=lib/python/openlinktoken-cli",
+    "openlinktoken @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@v2.2.0#subdirectory=lib/python/openlinktoken",
+    "openlinktoken-core-ai @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@v2.2.0#subdirectory=lib/python/openlinktoken-core-ai",
+    "openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@v2.2.0#subdirectory=lib/python/openlinktoken-cli",
 ]
 
 [build-system]

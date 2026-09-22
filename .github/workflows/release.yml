@@ -57,6 +57,14 @@ jobs:
       - name: Build wheel and sdist
         run: uv build
 
+      - name: Generate extension release manifests
+        run: |
+          mkdir -p release-assets
+          python -m openlinktoken_ext_truveta.util.extension_manifests \
+            --version "${VERSION}" \
+            --wheel "dist/openlinktoken_ext_truveta-${VERSION}-py3-none-any.whl" \
+            --output-dir release-assets
+
       - name: Create git tag (workflow_dispatch only)
         if: github.event_name == 'workflow_dispatch'
         run: |
@@ -77,6 +85,7 @@ jobs:
           path: |
             dist/*.whl
             dist/*.tar.gz
+            release-assets/*
 
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
@@ -86,6 +95,7 @@ jobs:
           files: |
             dist/*.whl
             dist/*.tar.gz
+            release-assets/*
 
   build-standalone:
     name: Build standalone distributable (${{ matrix.os }})
@@ -103,7 +113,7 @@ jobs:
       TAG: ${{ needs.release-info.outputs.tag }}
       RELEASE_FOUND: ${{ needs.release-info.outputs['release-found'] }}
       RELEASE_ID: ${{ needs.release-info.outputs['release-id'] }}
-      OPENLINKTOKEN_SOURCE_REF: main
+      OPENLINKTOKEN_SOURCE_REF: v2.2.0
       OLT_INFERENCING_ASSETS_SOURCE: ${{ github.workspace }}/openlinktoken-source/resources/inferencing/ml1
     steps:
       - name: Checkout
