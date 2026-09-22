@@ -15,11 +15,21 @@ SPEC_PATH = REPOSITORY_ROOT / "openlinktoken-ext-truveta.spec"
 
 def test_embedded_registry_declares_truveta_extension():
     registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+    entry = registry["truveta"]
 
-    assert registry["truveta"]["module"] == "openlinktoken_ext_truveta.extension"
-    assert registry["truveta"]["class"] == "TruvetaExtension"
-    assert registry["truveta"]["command_name"] == "truveta"
-    assert registry["truveta"]["source_path"] == ""
+    assert entry["module"] == "openlinktoken_ext_truveta.extension"
+    assert entry["class"] == "TruvetaExtension"
+    assert entry["command_name"] == "truveta"
+    assert entry["source_path"] == ""
+    assert entry["schema_version"] == 1
+    assert entry["supported_core"] == ">=2.2.0,<3.0.0"
+    assert entry["supported_core_version_range"] == ">=2.2.0,<3.0.0"
+    assert entry["core_range"] == ">=2.2.0,<3.0.0"
+    assert entry["update_manifest_url"].endswith(
+        "/releases/latest/download/openlinktoken-ext-truveta-update.json"
+    )
+    assert entry["disabled"] is False
+    assert entry["error"] is None
 
 
 def test_spec_embeds_registry_and_runtime_hook():
