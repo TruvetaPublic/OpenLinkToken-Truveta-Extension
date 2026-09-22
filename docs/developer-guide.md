@@ -13,6 +13,7 @@
   - [Continuous Integration](#continuous-integration)
   - [Releases](#releases)
   - [Independent Extension Updates](#independent-extension-updates)
+    - [Bootstrap, Inspection, and Recovery](#bootstrap-inspection-and-recovery)
     - [Release Assets](#release-assets)
     - [Frozen Installer Prerequisite](#frozen-installer-prerequisite)
   - [Building a Standalone Executable Locally](#building-a-standalone-executable-locally)
@@ -146,8 +147,46 @@ The standalone build contains the `openlinktoken` CLI, the Truveta extension, an
 The extension registry is persistent and core-managed so a standalone bundle can be
 replaced without silently replacing an extension that was installed or updated
 separately. The bootstrap manifest and the update manifest are generated from the
-release version and wheel digest; the core CLI performs non-blocking update checks and
-only changes the registry when an explicit update command is applied.
+release version and wheel digest.
+
+#### Bootstrap, Inspection, and Recovery
+
+For an existing OLT installation, bootstrap the Truveta extension from the stable
+latest-release manifest:
+
+```bash
+olt extension install --yes \
+  --manifest https://github.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/releases/latest/download/openlinktoken-ext-truveta-bootstrap.json
+```
+
+Standalone bundles seed the core CLI's persistent extension registry from their
+embedded registry on first launch, but only when that persistent registry is missing.
+An existing registry, including an intentionally empty one, is never overwritten. The
+persistent registry is outside the extracted bundle, so replacing a standalone core
+bundle later leaves that registry untouched. Inspect and apply updates explicitly:
+
+```bash
+olt extension list
+olt extension update truveta --dry-run
+olt extension update truveta --yes
+```
+
+Update checks are non-blocking and do not silently replace installed extension
+content. The registry is core-managed: explicit install, bootstrap, update, and
+uninstall operations can write it, and core discovery can persist `disabled` and
+`error` state for incompatible or failed frozen extensions.
+
+The Truveta extension supports OpenLinkToken core versions `>=2.2.0,<3.0.0`.
+For frozen standalone bundles, an incompatible extension is disabled instead of being
+allowed to break core commands. Update the extension to a compatible release, or roll
+back the core bundle to a version in the supported range.
+
+Python installations rely on the host-runtime compatibility diagnostic because the
+OpenLinkToken CLI and Core-AI distributions are host packages, not normal PyPI
+dependencies of this extension. The check runs when a Truveta command is invoked; if
+it reports a missing or incompatible core distribution, install a compatible
+OpenLinkToken core or update the extension while core CLI discovery and commands
+remain available.
 
 #### Release Assets
 
