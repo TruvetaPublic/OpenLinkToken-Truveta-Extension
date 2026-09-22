@@ -58,6 +58,14 @@ jobs:
       - name: Build wheel and sdist
         run: uv build
 
+      - name: Generate extension release manifests
+        run: |
+          mkdir -p release-assets
+          python -m openlinktoken_ext_truveta.util.extension_manifests \
+            --version "${VERSION}" \
+            --wheel "dist/openlinktoken_ext_truveta-${VERSION}-py3-none-any.whl" \
+            --output-dir release-assets
+
       - name: Upload built distributions as workflow artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -65,6 +73,7 @@ jobs:
           path: |
             dist/*.whl
             dist/*.tar.gz
+            release-assets/*
 
       - name: Upload distributions to GitHub Release
         if: env.RELEASE_FOUND == 'true'
@@ -86,9 +95,13 @@ jobs:
               releaseId = release.data.id;
             }
 
-            const files = fs.readdirSync('dist')
-              .filter((name) => name.endsWith('.whl') || name.endsWith('.tar.gz'))
-              .map((name) => path.join('dist', name));
+            const files = [
+              ...fs.readdirSync('dist')
+                .filter((name) => name.endsWith('.whl') || name.endsWith('.tar.gz'))
+                .map((name) => path.join('dist', name)),
+              ...fs.readdirSync('release-assets')
+                .map((name) => path.join('release-assets', name)),
+            ];
 
             if (files.length === 0) {
               throw new Error('No wheel or source distribution found in dist');
@@ -140,7 +153,7 @@ jobs:
       TAG: ${{ needs.release-info.outputs.tag }}
       RELEASE_FOUND: ${{ needs.release-info.outputs['release-found'] }}
       RELEASE_ID: ${{ needs.release-info.outputs['release-id'] }}
-      OPENLINKTOKEN_SOURCE_REF: main
+      OPENLINKTOKEN_SOURCE_REF: v2.2.0
       OLT_INFERENCING_ASSETS_SOURCE: ${{ github.workspace }}/openlinktoken-source/resources/inferencing/ml1
     steps:
       - name: Checkout

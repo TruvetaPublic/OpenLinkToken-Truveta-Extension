@@ -11,6 +11,8 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).parents[3]
 REGISTRY_PATH = REPOSITORY_ROOT / "standalone" / "registry.json"
 SPEC_PATH = REPOSITORY_ROOT / "openlinktoken-ext-truveta.spec"
+RELEASE_WORKFLOW_PATH = REPOSITORY_ROOT / ".github" / "workflows" / "release.yml"
+BUMPVERSION_PATH = REPOSITORY_ROOT / ".bumpversion.cfg"
 
 
 def test_embedded_registry_declares_truveta_extension():
@@ -47,3 +49,37 @@ def test_spec_collects_ml1_runtime_dependencies():
 
     assert '"onnxruntime"' in spec
     assert '"tokenizers"' in spec
+
+
+def test_release_workflow_generates_and_publishes_update_manifests():
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    build_index = workflow.index("run: uv build")
+    manifest_index = workflow.index(
+        "python -m openlinktoken_ext_truveta.util.extension_manifests"
+    )
+    assert build_index < manifest_index
+    assert '--version "${VERSION}"' in workflow
+    assert (
+        '--wheel "dist/openlinktoken_ext_truveta-${VERSION}-py3-none-any.whl"'
+        in workflow
+    )
+    assert "--output-dir release-assets" in workflow
+
+    artifact_start = workflow.index(
+        "name: Upload built distributions as workflow artifacts"
+    )
+    artifact_end = workflow.index("name: Publish to GitHub Releases", artifact_start)
+    assert "release-assets/*" in workflow[artifact_start:artifact_end]
+
+    publish_start = workflow.index("name: Publish to GitHub Releases")
+    publish_end = workflow.index("  build-standalone:", publish_start)
+    assert "release-assets/*" in workflow[publish_start:publish_end]
+
+
+def test_bumpversion_updates_embedded_registry_version():
+    bumpversion = BUMPVERSION_PATH.read_text(encoding="utf-8")
+
+    assert "[bumpversion:file:standalone/registry.json]" in bumpversion
+    assert 'search = "version": "{current_version}"' in bumpversion
+    assert 'replace = "version": "{new_version}"' in bumpversion
