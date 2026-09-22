@@ -17,6 +17,11 @@ PYPROJECT_PATH = REPOSITORY_ROOT / "pyproject.toml"
 REQUIREMENTS_DEV_PATH = REPOSITORY_ROOT / "requirements-dev.txt"
 
 CORE_SOURCE_REF = "f840e2f509d9ff634dc8a3039a429fa415619492"
+CORE_DISTRIBUTIONS = (
+    "openlinktoken",
+    "openlinktoken-cli",
+    "openlinktoken-core-ai",
+)
 
 
 def test_embedded_registry_declares_truveta_extension():
@@ -55,6 +60,15 @@ def test_spec_collects_ml1_runtime_dependencies():
     assert '"tokenizers"' in spec
 
 
+def test_spec_bundles_core_distribution_metadata():
+    spec = SPEC_PATH.read_text(encoding="utf-8")
+
+    assert "copy_metadata" in spec
+    assert "copy_metadata(distribution_name)" in spec
+    for distribution in CORE_DISTRIBUTIONS:
+        assert f'"{distribution}"' in spec
+
+
 def test_release_workflow_generates_and_publishes_update_manifests():
     workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
 
@@ -64,10 +78,9 @@ def test_release_workflow_generates_and_publishes_update_manifests():
     )
     assert build_index < manifest_index
     assert '--version "${VERSION}"' in workflow
-    assert (
-        '--wheel "dist/openlinktoken_ext_truveta-${VERSION}-py3-none-any.whl"'
-        in workflow
-    )
+    assert "find dist -maxdepth 1 -type f -name '*.whl' -print" in workflow
+    assert '--wheel "$wheel_path"' in workflow
+    assert "dist/openlinktoken_ext_truveta-${VERSION}-py3-none-any.whl" not in workflow
     assert "--output-dir release-assets" in workflow
 
     artifact_start = workflow.index(
@@ -79,6 +92,14 @@ def test_release_workflow_generates_and_publishes_update_manifests():
     publish_start = workflow.index("name: Publish to GitHub Releases")
     publish_end = workflow.index("  build-standalone:", publish_start)
     assert "release-assets/*" in workflow[publish_start:publish_end]
+
+
+def test_standalone_release_smokes_compatible_leaf_command():
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    assert 'SMOKE_HOME="$(mktemp -d)"' in workflow
+    assert 'HOME="$SMOKE_HOME"' in workflow
+    assert "./dist/olt/olt truveta logout" in workflow
 
 
 def test_bumpversion_updates_embedded_registry_version():

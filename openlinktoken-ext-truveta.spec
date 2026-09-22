@@ -4,7 +4,7 @@
 import os
 import sys
 
-from PyInstaller.utils.hooks import collect_all, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metadata
 
 block_cipher = None
 
@@ -34,6 +34,13 @@ for package_name in (
     datas += package_datas
     binaries += package_binaries
     hiddenimports += package_hiddenimports
+
+for distribution_name in (
+    "openlinktoken",
+    "openlinktoken-cli",
+    "openlinktoken-core-ai",
+):
+    datas += copy_metadata(distribution_name)
 
 for module in ("openlinktoken", "openlinktoken_cli", "openlinktoken_ext_truveta"):
     hiddenimports += collect_submodules(module)

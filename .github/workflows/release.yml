@@ -59,10 +59,22 @@ jobs:
 
       - name: Generate extension release manifests
         run: |
+          set -euo pipefail
           mkdir -p release-assets
+          mapfile -t wheel_paths < <(
+            find dist -maxdepth 1 -type f -name '*.whl' -print | sort
+          )
+          if [ "${#wheel_paths[@]}" -ne 1 ]; then
+            printf 'Expected exactly one wheel from uv build; found %s:\n' \
+              "${#wheel_paths[@]}" >&2
+            printf '  %s\n' "${wheel_paths[@]}" >&2
+            exit 1
+          fi
+          wheel_path="${wheel_paths[0]}"
+          test -f "$wheel_path"
           python -m openlinktoken_ext_truveta.util.extension_manifests \
             --version "${VERSION}" \
-            --wheel "dist/openlinktoken_ext_truveta-${VERSION}-py3-none-any.whl" \
+            --wheel "$wheel_path" \
             --output-dir release-assets
 
       - name: Create git tag (workflow_dispatch only)
@@ -171,6 +183,10 @@ jobs:
           cp src/test/resources/launch/sample.csv smoke/input.csv
           ./dist/olt/olt --help
           ./dist/olt/olt truveta --help
+          SMOKE_HOME="$(mktemp -d)"
+          trap 'rm -rf "$SMOKE_HOME"' EXIT
+          HOME="$SMOKE_HOME" XDG_CONFIG_HOME="$SMOKE_HOME/.config" \
+            ./dist/olt/olt truveta logout
           ./dist/olt/olt generate-key-pair --name recipient --force
           ./dist/olt/olt initiate-exchange --name smoke --public-key "$HOME/.openlinktoken/recipient.public.pem" --output smoke/smoke.exchange.json --hashingsecret secret
           ./dist/olt/olt tokenize -i smoke/input.csv -o smoke/out.csv --exchange-config smoke/smoke.exchange.json --private-key "$HOME/.openlinktoken/smoke.private.pem"
@@ -183,6 +199,12 @@ jobs:
           Copy-Item src\test\resources\launch\sample.csv smoke\input.csv
           .\dist\olt\olt.exe --help
           .\dist\olt\olt.exe truveta --help
+          $smokeHome = Join-Path $env:RUNNER_TEMP "olt-truveta-smoke"
+          New-Item -ItemType Directory -Force -Path $smokeHome | Out-Null
+          $env:HOME = $smokeHome
+          $env:APPDATA = $smokeHome
+          $env:XDG_CONFIG_HOME = Join-Path $smokeHome ".config"
+          .\dist\olt\olt.exe truveta logout
           .\dist\olt\olt.exe generate-key-pair --name recipient --force
           .\dist\olt\olt.exe initiate-exchange --name smoke --public-key "$HOME/.openlinktoken/recipient.public.pem" --output smoke\smoke.exchange.json --hashingsecret secret
           .\dist\olt\olt.exe tokenize -i smoke\input.csv -o smoke\out.csv --exchange-config smoke\smoke.exchange.json --private-key "$HOME/.openlinktoken/smoke.private.pem"
