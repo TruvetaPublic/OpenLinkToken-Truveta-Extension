@@ -13,6 +13,10 @@ REGISTRY_PATH = REPOSITORY_ROOT / "standalone" / "registry.json"
 SPEC_PATH = REPOSITORY_ROOT / "openlinktoken-ext-truveta.spec"
 RELEASE_WORKFLOW_PATH = REPOSITORY_ROOT / ".github" / "workflows" / "release.yml"
 BUMPVERSION_PATH = REPOSITORY_ROOT / ".bumpversion.cfg"
+PYPROJECT_PATH = REPOSITORY_ROOT / "pyproject.toml"
+REQUIREMENTS_DEV_PATH = REPOSITORY_ROOT / "requirements-dev.txt"
+
+CORE_SOURCE_REF = "f840e2f509d9ff634dc8a3039a429fa415619492"
 
 
 def test_embedded_registry_declares_truveta_extension():
@@ -83,3 +87,13 @@ def test_bumpversion_updates_embedded_registry_version():
     assert "[bumpversion:file:standalone/registry.json]" in bumpversion
     assert 'search = "version": "{current_version}"' in bumpversion
     assert 'replace = "version": "{new_version}"' in bumpversion
+
+
+def test_core_source_pins_use_the_immutable_merge_commit():
+    pyproject = PYPROJECT_PATH.read_text(encoding="utf-8")
+    requirements_dev = REQUIREMENTS_DEV_PATH.read_text(encoding="utf-8")
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+    assert pyproject.count(f"@{CORE_SOURCE_REF}#subdirectory=") == 4
+    assert requirements_dev.count(f"@{CORE_SOURCE_REF}#subdirectory=") == 3
+    assert f"OPENLINKTOKEN_SOURCE_REF: {CORE_SOURCE_REF}" in workflow
