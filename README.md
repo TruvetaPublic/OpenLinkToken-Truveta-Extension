@@ -6,6 +6,8 @@
     - [Quick Install (recommended)](#quick-install-recommended)
     - [Standalone Distributables](#standalone-distributables)
     - [Python Extension Install](#python-extension-install)
+    - [Extension Updates](#extension-updates)
+    - [Compatibility and Recovery](#compatibility-and-recovery)
     - [Subcommand Overview](#subcommand-overview)
     - [login](#login)
     - [initiate-exchange](#initiate-exchange)
@@ -106,6 +108,44 @@ olt extension install openlinktoken_ext_truveta-1.0.0-py3-none-any.whl
 # Pass --yes / -y to skip the security confirmation prompt
 olt extension install -y openlinktoken_ext_truveta-1.0.0-py3-none-any.whl
 ```
+
+### Extension Updates
+
+For an existing OLT installation, bootstrap the Truveta extension from the stable
+latest-release manifest:
+
+```bash
+olt extension install --yes \
+  --manifest https://github.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/releases/latest/download/openlinktoken-ext-truveta-bootstrap.json
+```
+
+Standalone bundles seed the core CLI's persistent extension registry from their
+embedded registry on first launch, but only when that persistent registry is missing.
+An existing registry, including an intentionally empty one, is never overwritten. The
+persistent registry is outside the extracted bundle, so replacing a standalone core
+bundle later leaves that registry untouched. Update checks are non-blocking: they can
+report an available extension update without changing the installed extension. Inspect
+and apply updates explicitly:
+
+```bash
+olt extension list
+olt extension update truveta --dry-run
+olt extension update truveta --yes
+```
+
+### Compatibility and Recovery
+
+The Truveta extension supports OpenLinkToken core versions `>=2.2.0,<3.0.0`.
+For frozen standalone bundles, an incompatible extension is disabled instead of being
+allowed to break core commands. Update the Truveta extension to a compatible release,
+or roll back the core bundle to a version in the supported range.
+
+Python installations use the host-runtime compatibility diagnostic because the
+OpenLinkToken CLI and Core-AI distributions are host packages, not normal PyPI
+dependencies of this extension. If the diagnostic reports a missing or incompatible
+core distribution, install a compatible OpenLinkToken core or update the extension.
+The check runs when a Truveta command is invoked, so core CLI discovery and commands
+remain available while the extension is incompatible.
 
 ### Subcommand Overview
 
