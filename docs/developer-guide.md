@@ -144,7 +144,7 @@ The release workflow:
 6. Generates the extension update manifests and wheel checksum.
 7. Attaches the wheel, source distribution, update manifests, ZIP bundles, and checksums to the GitHub Release.
 
-The standalone build contains the `openlinktoken` CLI, the Truveta extension, and the ML1 model/tokenizer assets in a reusable one-folder distribution — no Python installation required for end users. The local bundle is `dist/olt/` with executable `dist/olt/olt` on POSIX systems or `dist/olt/olt.exe` on Windows. Release assets are complete ZIP bundles plus `.sha256` files; the raw executable is not published separately because it requires the adjacent `_internal/` directory. The first compatible release uses immutable merge commit `f840e2f509d9ff634dc8a3039a429fa415619492` (merged PR #482) for the model-enabled source and assets. This is a temporary pin until OpenLinkToken publishes a tag containing PR #482. The core packages still report `2.2.0`, so the advertised extension compatibility range remains `>=2.2.0,<3.0.0`. Keep the three `.[release]` dependency references in `pyproject.toml` and the standalone workflow's `OPENLINKTOKEN_SOURCE_REF` on this same commit until that tag exists; update all four references together when moving to the tagged core. Help-oriented invocations load the installed extension registry so extension commands appear in the main menu. Heavy processing dependencies remain lazy until tokenization or packaging runs.
+The standalone build contains the `openlinktoken` CLI, the Truveta extension, and the ML1 model/tokenizer assets in a reusable one-folder distribution — no Python installation required for end users. The local bundle is `dist/olt/` with executable `dist/olt/olt` on POSIX systems or `dist/olt/olt.exe` on Windows. Release assets are complete ZIP bundles plus `.sha256` files; the raw executable is not published separately because it requires the adjacent `_internal/` directory. The first compatible release uses immutable merge commit `f840e2f509d9ff634dc8a3039a429fa415619492` (merged PR #482) for the model-enabled source and assets. This is a temporary pin until OpenLinkToken publishes a tag containing PR #482. The core packages still report `2.2.0`, so the advertised extension compatibility range remains `>=2.2.0,<3.0.0`. Keep every source surface aligned on this commit until that tag exists: the development `openlinktoken-cli` ref in `pyproject.toml`, the regenerated `requirements-dev.txt` pins, the three `.[release]` refs in `pyproject.toml`, the standalone workflow's `OPENLINKTOKEN_SOURCE_REF`, and the documented checkout ref. Update all of those together when moving to the tagged core. Help-oriented invocations load the installed extension registry so extension commands appear in the main menu. Heavy processing dependencies remain lazy until tokenization or packaging runs.
 
 ### Independent Extension Updates
 
@@ -223,8 +223,10 @@ references aligned when the prerequisite is released.
 The standalone spec requires a hydrated checkout of OpenLinkToken immutable merge commit
 `f840e2f509d9ff634dc8a3039a429fa415619492` and its ML1 assets. Clone the source, install
 the release dependencies, and point the spec at the assets. For a future core tag containing
-PR #482, change the checkout ref, the three `.[release]` references in `pyproject.toml`,
-and `OPENLINKTOKEN_SOURCE_REF` in `.github/workflows/release.yml` together:
+PR #482, update every source surface together: the development `openlinktoken-cli` ref in
+`pyproject.toml`, regenerated `requirements-dev.txt` pins, the three `.[release]` refs in
+`pyproject.toml`, `OPENLINKTOKEN_SOURCE_REF` in `.github/workflows/release.yml`, and this
+documented checkout ref:
 
 ```bash
 git clone --filter=blob:none --sparse https://github.com/TruvetaPublic/OpenLinkToken.git openlinktoken-source
