@@ -1,5 +1,7 @@
 import hashlib
 import json
+import subprocess
+import sys
 
 import pytest
 
@@ -124,6 +126,30 @@ def test_create_extension_release_assets_rejects_missing_wheel_before_writing(
         create_extension_release_assets("1.2.3", tmp_path / "missing.whl", output_dir)
 
     assert not output_dir.exists()
+
+
+def test_semver_pattern_rejects_pathological_prerelease_without_backtracking():
+    value = "0.0.0-0." + "--." * 24
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; "
+                "from openlinktoken_ext_truveta.util.extension_manifests "
+                "import _SEMVER_PATTERN; "
+                "print(_SEMVER_PATTERN.fullmatch(sys.argv[1]) is not None)"
+            ),
+            value,
+        ],
+        check=False,
+        capture_output=True,
+        timeout=1,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == b"False\n"
 
 
 def test_main_creates_release_assets(tmp_path):
