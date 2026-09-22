@@ -129,8 +129,11 @@ if ($UserPath -notlike "*$InstallDir*") {
     [Environment]::SetEnvironmentVariable("PATH", "$UserPath;$InstallDir", "User")
     Write-Host ""
     Write-Host "  Added $InstallDir to your user PATH."
-    Write-Host "  Restart your terminal (or run: `$env:PATH += `";$InstallDir`") for the change to take effect."
+    Write-Host "  The command is available in this PowerShell session and new terminals."
     Write-Host ""
+}
+if (($env:PATH -split ';') -notcontains $InstallDir) {
+    $env:PATH = "$InstallDir;$env:PATH"
 }
 
 # ---------------------------------------------------------------------------
