@@ -20,11 +20,12 @@ def _seed_persistent_registry(bundle_root: Path) -> None:
     """Copy the embedded registry into persistent storage on the first launch."""
     embedded_registry = bundle_root / "openlinktoken" / "extensions" / "registry.json"
     persistent_registry = ExtensionRegistry.get_registry_path()
-
-    if persistent_registry.exists():
-        return
+    destination_created = False
 
     try:
+        if persistent_registry.exists():
+            return
+
         persistent_registry.parent.mkdir(parents=True, exist_ok=True)
         with embedded_registry.open("rb") as source:
             try:
@@ -32,9 +33,15 @@ def _seed_persistent_registry(bundle_root: Path) -> None:
             except FileExistsError:
                 # A concurrent installer won the exclusive create; never overwrite it.
                 return
+            destination_created = True
             with destination:
                 destination.write(source.read())
     except OSError as exc:
+        if destination_created:
+            try:
+                persistent_registry.unlink(missing_ok=True)
+            except OSError:
+                pass
         logger.warning(
             "Could not seed persistent extension registry at %s: %s",
             persistent_registry,
