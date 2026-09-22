@@ -4,52 +4,88 @@ Copyright (c) Truveta. All rights reserved.
 
 import argparse
 import os
+import sys
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
+from typing import Callable
 
-from openlinktoken.core.ai.tokens.ml1_inference_config import ML1InferenceConfig
 from openlinktoken_cli.extension import OpenLinkTokenExtension
 
+from openlinktoken_ext_truveta.compatibility import (
+    ExtensionCompatibilityError,
+    validate_runtime_compatibility,
+)
 from openlinktoken_ext_truveta.domain import DEFAULT_DOMAIN
+
+
+def _run_if_compatible(command: Callable[[], int]) -> int:
+    """Run a leaf command only when the installed core is compatible."""
+    try:
+        validate_runtime_compatibility()
+    except ExtensionCompatibilityError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    return command()
 
 
 def _login(args: argparse.Namespace) -> int:
     """Load and invoke the login handler only when the command executes."""
-    from openlinktoken_ext_truveta.commands.login import _login as login
 
-    return login(args)
+    def _run() -> int:
+        from openlinktoken_ext_truveta.commands.login import _login as login
+
+        return login(args)
+
+    return _run_if_compatible(_run)
 
 
 def _initiate_exchange(args: argparse.Namespace) -> int:
     """Load and invoke the exchange handler only when the command executes."""
-    from openlinktoken_ext_truveta.commands.initiate_exchange import (
-        _initiate_exchange as initiate_exchange,
-    )
 
-    return initiate_exchange(args)
+    def _run() -> int:
+        from openlinktoken_ext_truveta.commands.initiate_exchange import (
+            _initiate_exchange as initiate_exchange,
+        )
+
+        return initiate_exchange(args)
+
+    return _run_if_compatible(_run)
 
 
 def _logout() -> int:
     """Load and invoke the logout handler only when the command executes."""
-    from openlinktoken_ext_truveta.commands.logout import _logout as logout
 
-    return logout()
+    def _run() -> int:
+        from openlinktoken_ext_truveta.commands.logout import _logout as logout
+
+        return logout()
+
+    return _run_if_compatible(_run)
 
 
 def _upload(args: argparse.Namespace) -> int:
     """Load and invoke the upload handler only when the command executes."""
-    from openlinktoken_ext_truveta.commands.upload import _upload as upload
 
-    return upload(args)
+    def _run() -> int:
+        from openlinktoken_ext_truveta.commands.upload import _upload as upload
+
+        return upload(args)
+
+    return _run_if_compatible(_run)
 
 
 def _auto_upload(args: argparse.Namespace) -> int:
     """Load and invoke the auto-upload handler only when the command executes."""
-    from openlinktoken_ext_truveta.commands.auto_upload import (
-        _auto_upload as auto_upload,
-    )
 
-    return auto_upload(args)
+    def _run() -> int:
+        from openlinktoken_ext_truveta.commands.auto_upload import (
+            _auto_upload as auto_upload,
+        )
+
+        return auto_upload(args)
+
+    return _run_if_compatible(_run)
 
 
 class TruvetaExtension(OpenLinkTokenExtension):
@@ -348,10 +384,10 @@ class _AutoUploadSubcommandRegistrar:
         auto_upload_parser.add_argument(
             "--inferencing-batch-size",
             type=int,
-            default=ML1InferenceConfig.DEFAULT_BATCH_SIZE,
+            default=None,
             help=(
                 "ML1 ONNX inference batch size "
-                f"(default: {ML1InferenceConfig.DEFAULT_BATCH_SIZE})"
+                "(default comes from the installed core ML1 configuration)"
             ),
         )
         auto_upload_parser.add_argument(
