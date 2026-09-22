@@ -61,7 +61,7 @@ def test_create_extension_release_assets_writes_checksummed_manifests(tmp_path):
     )
 
 
-@pytest.mark.parametrize("version", ["", "not-a-version", "1.2"])
+@pytest.mark.parametrize("version", ["", "not-a-version", "1.2", "1.2.3-01", " 1.2.3 "])
 def test_create_extension_release_assets_rejects_non_semver_before_writing(
     tmp_path, version
 ):
@@ -70,6 +70,33 @@ def test_create_extension_release_assets_rejects_non_semver_before_writing(
 
     with pytest.raises(ValueError):
         create_extension_release_assets(version, wheel_path, output_dir)
+
+    assert not output_dir.exists()
+
+
+def test_create_extension_release_assets_writes_deterministic_bytes(tmp_path):
+    wheel_path, _ = _write_wheel(tmp_path)
+    first_output_dir = tmp_path / "first-release-assets"
+    second_output_dir = tmp_path / "second-release-assets"
+
+    create_extension_release_assets("1.2.3", wheel_path, first_output_dir)
+    create_extension_release_assets("1.2.3", wheel_path, second_output_dir)
+
+    first_assets = sorted(first_output_dir.iterdir(), key=lambda path: path.name)
+    second_assets = sorted(second_output_dir.iterdir(), key=lambda path: path.name)
+    assert [path.name for path in first_assets] == [path.name for path in second_assets]
+    assert [path.read_bytes() for path in first_assets] == [
+        path.read_bytes() for path in second_assets
+    ]
+
+
+def test_create_extension_release_assets_rejects_missing_wheel_before_writing(
+    tmp_path,
+):
+    output_dir = tmp_path / "release-assets"
+
+    with pytest.raises(FileNotFoundError, match="Wheel not found"):
+        create_extension_release_assets("1.2.3", tmp_path / "missing.whl", output_dir)
 
     assert not output_dir.exists()
 
