@@ -1,3 +1,5 @@
+"""Tests for the production Python docstring checker."""
+
 import subprocess
 import sys
 import tempfile
