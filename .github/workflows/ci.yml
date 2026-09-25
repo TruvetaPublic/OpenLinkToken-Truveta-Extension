@@ -48,13 +48,15 @@ jobs:
         run: autoflake --check --recursive --remove-all-unused-imports --remove-unused-variables src/main src/test
 
       - name: Run tests with pytest
-        run: pytest src/test -v --junitxml=test-results-${{ matrix.python-version }}.xml
+        run: |
+          pytest src/test -v --junitxml=test-results-${{ matrix.python-version }}.xml
+          pytest tools/tests -v --junitxml=test-results-tools-${{ matrix.python-version }}.xml
 
       - name: Publish unit test results
         if: always()
         uses: EnricoMi/publish-unit-test-result-action@d0a4676d0e0b938bc201470d88276b7c74c712b3 # v2.24.0
         with:
-          files: test-results-${{ matrix.python-version }}.xml
+          files: test-results-*.xml
           check_name: Test Results (Python ${{ matrix.python-version }})
           comment_mode: off
 

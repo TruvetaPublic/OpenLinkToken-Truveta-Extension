@@ -19,7 +19,14 @@ ML1_ASSET_FILES = (
 
 
 def collect_ml1_assets(source_dir: str | Path) -> list[tuple[str, str]]:
-    """Validate and return ML1 files for inclusion in a PyInstaller build."""
+    """Validate and return ML1 files for inclusion in a PyInstaller build.
+
+    Inputs:
+        source_dir: Directory containing the ML1 assets and manifest.
+
+    Returns:
+        Source-path and destination-directory pairs for the PyInstaller bundle.
+    """
     source_path = Path(source_dir).expanduser()
     manifest_path = source_path / "asset-manifest.json"
     if not manifest_path.is_file():
@@ -52,7 +59,12 @@ def collect_ml1_assets(source_dir: str | Path) -> list[tuple[str, str]]:
 
 
 def _validate_asset(asset_path: Path, metadata: Any) -> None:
-    """Verify an ML1 asset matches the size and digest in its manifest."""
+    """Verify an ML1 asset matches the size and digest in its manifest.
+
+    Inputs:
+        asset_path: Asset file to verify.
+        metadata: Expected size and SHA-256 digest from the asset manifest.
+    """
     if not isinstance(metadata, dict):
         raise ValueError(f"ML1 asset manifest has no metadata for {asset_path.name}")
 
@@ -73,7 +85,14 @@ def _validate_asset(asset_path: Path, metadata: Any) -> None:
 
 
 def _sha256_file(path: Path) -> str:
-    """Return the SHA-256 digest for a file."""
+    """Return the SHA-256 digest for a file.
+
+    Inputs:
+        path: File whose digest to calculate.
+
+    Returns:
+        The lowercase hexadecimal SHA-256 digest.
+    """
     digest = hashlib.sha256()
     with path.open("rb") as file_obj:
         for chunk in iter(lambda: file_obj.read(1024 * 1024), b""):

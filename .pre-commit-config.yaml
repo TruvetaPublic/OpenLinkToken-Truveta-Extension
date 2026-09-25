@@ -21,3 +21,13 @@ repos:
       - id: check-merge-conflict
       - id: check-added-large-files
         args: [--maxkb=1000]
+
+  - repo: local
+    hooks:
+      - id: python-docstrings
+        name: Check Python class and function docstrings
+        entry: python3 tools/check_python_docstrings.py
+        language: system
+        files: ^src/main/.*\.py$
+        exclude: ^src/main/openlinktoken_ext_truveta/openlink_token_service_client/(client|types)\.py$
+        types: [python]

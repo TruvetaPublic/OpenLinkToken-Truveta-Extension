@@ -21,6 +21,7 @@ source /home/vscode/.local/share/openlinktoken/.venv/bin/activate
 - Prefer clear, descriptive docstrings for functions; use inline comments sparingly to explain non-obvious intent or constraints, not obvious behavior.
 - Ensure functions have descriptive names and include type hints.
 - Provide docstrings following PEP 257 conventions.
+- Document every class, function, and method in production Python code. Describe parameters in an `Args:` or `Inputs:` section, and include a non-empty `Returns:` or `Yields:` section when applicable. Generated service-client files are excluded from this check.
 - Use the `typing` module for type annotations (e.g., `List[str]`, `Dict[str, int]`).
 - Break down complex functions into smaller, more manageable functions.
 
