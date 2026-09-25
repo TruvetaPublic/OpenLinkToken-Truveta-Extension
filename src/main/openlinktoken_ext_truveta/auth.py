@@ -42,7 +42,15 @@ class Credentials:
 
 @contextlib.contextmanager
 def _temporary_env(var_name: str, value: str):
-    """Temporarily set an environment variable and restore it afterward."""
+    """Temporarily set an environment variable and restore it afterward.
+
+    Inputs:
+        var_name: Name of the environment variable to override.
+        value: Temporary value to assign.
+
+    Yields:
+        Control to the caller while the environment variable is overridden.
+    """
     sentinel = object()
     previous = os.environ.get(var_name, sentinel)
     os.environ[var_name] = value

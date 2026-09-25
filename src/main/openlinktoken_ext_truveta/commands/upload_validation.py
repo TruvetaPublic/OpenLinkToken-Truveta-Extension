@@ -48,7 +48,14 @@ class UploadValidationError(Exception):
 
 
 def _extract_sample_token(reader: TokenReader) -> str | None:
-    """Return the first non-blank Token value from a TokenReader, or None if all tokens are blank."""
+    """Return the first non-blank Token value from a reader.
+
+    Inputs:
+        reader: Token data source to inspect.
+
+    Returns:
+        The first non-blank token, or None if all tokens are blank.
+    """
     for row in reader:
         token = row.get(TokenConstants.TOKEN, "")
         if token and token != Token.BLANK:
@@ -65,7 +72,13 @@ def _validate_data_bytes(
     CSV bytes are parsed via csv.DictReader and iterated lazily until the first token is found.
     Parquet bytes use read_schema for column validation and read_row_group to sample one token,
     avoiding loading the full dataset into memory.
-    Returns (sample_token, error) where error is None on success.
+
+    Inputs:
+        data_bytes: CSV or Parquet content to validate.
+        suffix: File extension identifying the data format.
+
+    Returns:
+        A tuple of sample token and error; the error is None on success.
     """
     required = {TokenConstants.RULE_ID, TokenConstants.TOKEN, TokenConstants.RECORD_ID}
     try:
@@ -105,7 +118,12 @@ def _validate_zip(zip_path: Path) -> tuple[str | None, dict | None, str | None]:
     Validate the contents of a ZIP and return a sample token and any embedded metadata.
 
     Expects exactly one CSV or Parquet data file inside the ZIP.
-    Returns (sample_token, zip_metadata, error) where error is None on success.
+
+    Inputs:
+        zip_path: Archive containing the data and optional metadata files.
+
+    Returns:
+        A tuple of sample token, embedded metadata, and error; the error is None on success.
     """
     try:
         with zipfile.ZipFile(zip_path, "r") as zf:
@@ -202,7 +220,12 @@ def _decrypt_sample_token(token: str, transport_key: bytes) -> str | None:
     """
     Attempt to decrypt a token using the given 32-byte AES-GCM transport key.
 
-    Returns None on success, or an error message string on decryption failure.
+    Inputs:
+        token: Encrypted token to verify.
+        transport_key: 32-byte key used to decrypt the token.
+
+    Returns:
+        None on success, or an error message on decryption failure.
     """
     jwe_body = strip_supported_v1_token_prefix(token)
     key_b64 = base64.urlsafe_b64encode(transport_key).decode().rstrip("=")

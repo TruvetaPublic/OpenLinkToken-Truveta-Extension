@@ -39,7 +39,17 @@ _RELEASE_ASSET_SPECS = {
 def create_release_assets(
     version: str, runner_os: str, dist_dir: Path, output_dir: Path
 ) -> list[Path]:
-    """Create a complete one-folder bundle ZIP and its SHA-256 sidecar."""
+    """Create a complete one-folder bundle ZIP and its SHA-256 sidecar.
+
+    Inputs:
+        version: Release version, with or without a leading ``v``.
+        runner_os: Operating system name of the build runner.
+        dist_dir: Directory containing the built one-folder executable.
+        output_dir: Directory where the ZIP and checksum are written.
+
+    Returns:
+        Paths to the generated ZIP archive and checksum file.
+    """
     spec = _resolve_release_asset_spec(version, runner_os)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -69,7 +79,14 @@ def create_release_assets(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """CLI entry point for GitHub Actions release asset preparation."""
+    """CLI entry point for GitHub Actions release asset preparation.
+
+    Inputs:
+        argv: Optional command-line arguments; defaults to process arguments.
+
+    Returns:
+        Zero after the release assets have been prepared.
+    """
     parser = argparse.ArgumentParser(
         description="Prepare CLI release assets and checksum files."
     )
@@ -106,7 +123,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _resolve_release_asset_spec(version: str, runner_os: str) -> ReleaseAssetSpec:
-    """Resolve the asset naming convention for the requested runner OS."""
+    """Resolve the asset naming convention for the requested runner OS.
+
+    Inputs:
+        version: Release version, with or without a leading ``v``.
+        runner_os: Operating system name of the build runner.
+
+    Returns:
+        Executable and package names for the requested platform.
+    """
     normalized_version = _normalize_version(version)
     normalized_runner = runner_os.strip().lower()
 
@@ -122,7 +147,14 @@ def _resolve_release_asset_spec(version: str, runner_os: str) -> ReleaseAssetSpe
 
 
 def _normalize_version(version: str) -> str:
-    """Drop the optional leading v prefix and validate the remaining version."""
+    """Drop the optional leading v prefix and validate the remaining version.
+
+    Inputs:
+        version: Release version to normalize.
+
+    Returns:
+        The version without surrounding whitespace or a leading ``v``.
+    """
     normalized_version = version.strip().lstrip("v")
     if not normalized_version:
         raise ValueError("Version cannot be empty")
@@ -130,7 +162,13 @@ def _normalize_version(version: str) -> str:
 
 
 def _create_zip_archive(bundle_root: Path, package_name: str, zip_path: Path) -> None:
-    """Create a ZIP containing the complete one-folder bundle."""
+    """Create a ZIP containing the complete one-folder bundle.
+
+    Inputs:
+        bundle_root: Directory whose files are added to the archive.
+        package_name: Top-level package directory name inside the archive.
+        zip_path: Destination path for the archive.
+    """
     package_root = Path(package_name)
     with zipfile.ZipFile(
         zip_path, mode="w", compression=zipfile.ZIP_DEFLATED
@@ -142,14 +180,28 @@ def _create_zip_archive(bundle_root: Path, package_name: str, zip_path: Path) ->
 
 
 def _write_checksum_file(asset_path: Path) -> Path:
-    """Create the .sha256 sidecar file for a release asset."""
+    """Create the .sha256 sidecar file for a release asset.
+
+    Inputs:
+        asset_path: Release asset whose checksum is written.
+
+    Returns:
+        Path to the checksum sidecar file.
+    """
     checksum_path = asset_path.parent / f"{asset_path.name}.sha256"
     checksum_path.write_text(f"{_sha256_file(asset_path)}  {asset_path.name}\n")
     return checksum_path
 
 
 def _sha256_file(path: Path) -> str:
-    """Compute the SHA-256 digest for the provided file."""
+    """Compute the SHA-256 digest for the provided file.
+
+    Inputs:
+        path: File whose digest to calculate.
+
+    Returns:
+        The lowercase hexadecimal SHA-256 digest.
+    """
     digest = hashlib.sha256()
     with path.open("rb") as file_obj:
         for chunk in iter(lambda: file_obj.read(65536), b""):
