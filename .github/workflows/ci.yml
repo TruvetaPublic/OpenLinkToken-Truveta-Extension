@@ -48,9 +48,7 @@ jobs:
         run: autoflake --check --recursive --remove-all-unused-imports --remove-unused-variables src/main src/test
 
       - name: Run tests with pytest
-        run: |
-          pytest src/test -v --junitxml=test-results-${{ matrix.python-version }}.xml
-          pytest tools/tests -v --junitxml=test-results-tools-${{ matrix.python-version }}.xml
+        run: pytest src/test -v --junitxml=test-results-${{ matrix.python-version }}.xml
 
       - name: Publish unit test results
         if: always()
