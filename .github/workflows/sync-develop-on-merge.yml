@@ -20,6 +20,7 @@ jobs:
         with:
           app-id: ${{ secrets.APP_TRUVETAPUBLIC_RELEASE_BOT_ID }}
           private-key: ${{ secrets.APP_TRUVETAPUBLIC_RELEASE_BOT_SECRET }}
+          permission-workflows: write
 
       - name: Check out repository
         uses: actions/checkout@v4
