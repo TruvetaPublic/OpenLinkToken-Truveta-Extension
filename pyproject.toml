@@ -15,7 +15,7 @@ dev = [
     "bump2version==1.0.1",
     "build==1.6.1",
     "autoflake==2.4.0",
-    "flake8==7.3.0",
+    "flake8==7.4.1",
 ]
 # Use OpenLinkToken's main branch so release packages and assets stay aligned.
 release = [
