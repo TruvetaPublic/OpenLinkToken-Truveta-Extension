@@ -21,3 +21,10 @@ repos:
       - id: check-merge-conflict
       - id: check-added-large-files
         args: [--maxkb=1000]
+
+  - repo: https://github.com/mattwise-42/pre-commit-hooks
+    rev: v0.1.1
+    hooks:
+      - id: python-docstrings
+        files: ^src/main/.*\.py$
+        exclude: ^src/main/openlinktoken_ext_truveta/openlink_token_service_client/(client|types)\.py$
