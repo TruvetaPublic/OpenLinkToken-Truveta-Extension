@@ -20,6 +20,7 @@ jobs:
         with:
           app-id: ${{ secrets.APP_TRUVETAPUBLIC_RELEASE_BOT_ID }}
           private-key: ${{ secrets.APP_TRUVETAPUBLIC_RELEASE_BOT_SECRET }}
+          permission-workflows: write
 
       - name: Check out repository
         uses: actions/checkout@v7
@@ -34,5 +35,5 @@ jobs:
           git config user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
           git config user.email "${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
           git fetch origin main
-          git merge origin/main --no-edit
+          git merge origin/main --no-edit -X theirs
           git push origin develop
