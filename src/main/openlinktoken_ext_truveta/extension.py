@@ -14,14 +14,28 @@ from openlinktoken_ext_truveta.domain import DEFAULT_DOMAIN
 
 
 def _login(args: argparse.Namespace) -> int:
-    """Load and invoke the login handler only when the command executes."""
+    """Load and invoke the login handler only when the command executes.
+
+    Inputs:
+        args: Parsed login command arguments.
+
+    Returns:
+        Exit code from the login handler.
+    """
     from openlinktoken_ext_truveta.commands.login import _login as login
 
     return login(args)
 
 
 def _initiate_exchange(args: argparse.Namespace) -> int:
-    """Load and invoke the exchange handler only when the command executes."""
+    """Load and invoke the exchange handler only when the command executes.
+
+    Inputs:
+        args: Parsed initiate-exchange command arguments.
+
+    Returns:
+        Exit code from the exchange handler.
+    """
     from openlinktoken_ext_truveta.commands.initiate_exchange import (
         _initiate_exchange as initiate_exchange,
     )
@@ -30,21 +44,39 @@ def _initiate_exchange(args: argparse.Namespace) -> int:
 
 
 def _logout() -> int:
-    """Load and invoke the logout handler only when the command executes."""
+    """Load and invoke the logout handler only when the command executes.
+
+    Returns:
+        Exit code from the logout handler.
+    """
     from openlinktoken_ext_truveta.commands.logout import _logout as logout
 
     return logout()
 
 
 def _upload(args: argparse.Namespace) -> int:
-    """Load and invoke the upload handler only when the command executes."""
+    """Load and invoke the upload handler only when the command executes.
+
+    Inputs:
+        args: Parsed upload command arguments.
+
+    Returns:
+        Exit code from the upload handler.
+    """
     from openlinktoken_ext_truveta.commands.upload import _upload as upload
 
     return upload(args)
 
 
 def _auto_upload(args: argparse.Namespace) -> int:
-    """Load and invoke the auto-upload handler only when the command executes."""
+    """Load and invoke the auto-upload handler only when the command executes.
+
+    Inputs:
+        args: Parsed auto-upload command arguments.
+
+    Returns:
+        Exit code from the auto-upload handler.
+    """
     from openlinktoken_ext_truveta.commands.auto_upload import (
         _auto_upload as auto_upload,
     )
@@ -223,6 +255,8 @@ class TruvetaExtension(OpenLinkTokenExtension):
 
 
 class _LoginSubcommandRegistrar:
+    """Register the login subcommand and its arguments."""
+
     @staticmethod
     def register(sub: argparse._SubParsersAction) -> None:
         """
@@ -252,6 +286,8 @@ class _LoginSubcommandRegistrar:
 
 
 class _InitiateExchangeSubcommandRegistrar:
+    """Register the initiate-exchange subcommand and its arguments."""
+
     @staticmethod
     def register(sub: argparse._SubParsersAction) -> None:
         """
@@ -271,6 +307,8 @@ class _InitiateExchangeSubcommandRegistrar:
 
 
 class _LogoutSubcommandRegistrar:
+    """Register the logout subcommand."""
+
     @staticmethod
     def register(sub: argparse._SubParsersAction) -> None:
         """
@@ -289,6 +327,8 @@ class _LogoutSubcommandRegistrar:
 
 
 class _UploadSubcommandRegistrar:
+    """Register the upload subcommand and its arguments."""
+
     @staticmethod
     def register(sub: argparse._SubParsersAction) -> None:
         """
@@ -318,6 +358,8 @@ class _UploadSubcommandRegistrar:
 
 
 class _AutoUploadSubcommandRegistrar:
+    """Register the auto-upload subcommand and its arguments."""
+
     @staticmethod
     def register(sub: argparse._SubParsersAction) -> None:
         """

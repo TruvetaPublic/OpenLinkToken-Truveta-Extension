@@ -82,6 +82,14 @@ def _pem_to_spki_b64(public_key_pem: str) -> str:
 
 
 def _normalize_response(response: ExchangeResponse) -> dict:
+    """Convert the service response to the exchange-config payload.
+
+    Inputs:
+        response: The parsed exchange response from the service.
+
+    Returns:
+        A dictionary containing exchange keys and rotation settings.
+    """
     result: dict = {
         "exchangeName": "",
         "exchangeId": response.exchange_id,
