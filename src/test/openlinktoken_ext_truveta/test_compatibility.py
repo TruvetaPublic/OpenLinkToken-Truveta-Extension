@@ -13,7 +13,7 @@ from openlinktoken_ext_truveta.compatibility import (
 
 def test_declares_supported_core_contract():
     """The extension declares the supported core version range and distributions."""
-    assert SUPPORTED_CORE_SPECIFIER == ">=2.2.0,<3.0.0"
+    assert SUPPORTED_CORE_SPECIFIER == ">=2.2.1,<3.0.0"
     assert CORE_DISTRIBUTIONS == (
         "openlinktoken",
         "openlinktoken-cli",
@@ -24,7 +24,7 @@ def test_declares_supported_core_contract():
 def test_accepts_core_distributions_in_supported_range(monkeypatch):
     """Runtime validation accepts every required distribution in the supported range."""
     versions = {
-        "openlinktoken": "2.2.0",
+        "openlinktoken": "2.2.1",
         "openlinktoken-cli": "2.4.1",
         "openlinktoken-core-ai": "2.9.0",
     }
@@ -36,12 +36,28 @@ def test_accepts_core_distributions_in_supported_range(monkeypatch):
     validate_runtime_compatibility()
 
 
+def test_rejects_core_distribution_below_supported_floor(monkeypatch):
+    """Runtime validation rejects the last core release before the supported floor."""
+    versions = {
+        "openlinktoken": "2.2.0",
+        "openlinktoken-cli": "2.2.1",
+        "openlinktoken-core-ai": "2.2.1",
+    }
+    monkeypatch.setattr(
+        "openlinktoken_ext_truveta.compatibility.version",
+        versions.__getitem__,
+    )
+
+    with pytest.raises(ExtensionCompatibilityError, match="openlinktoken 2.2.0"):
+        validate_runtime_compatibility()
+
+
 def test_rejects_core_distribution_outside_supported_range(monkeypatch):
     """Runtime validation reports a required distribution outside the supported range."""
     versions = {
         "openlinktoken": "3.0.0",
-        "openlinktoken-cli": "2.2.0",
-        "openlinktoken-core-ai": "2.2.0",
+        "openlinktoken-cli": "2.2.1",
+        "openlinktoken-core-ai": "2.2.1",
     }
     monkeypatch.setattr(
         "openlinktoken_ext_truveta.compatibility.version",
@@ -58,7 +74,7 @@ def test_rejects_missing_core_distribution(monkeypatch):
     def missing(name):
         if name == "openlinktoken-cli":
             raise PackageNotFoundError(name)
-        return "2.2.0"
+        return "2.2.1"
 
     monkeypatch.setattr(
         "openlinktoken_ext_truveta.compatibility.version",
@@ -72,7 +88,7 @@ def test_rejects_missing_core_distribution(monkeypatch):
 def test_lists_only_installed_core_distribution_versions(monkeypatch):
     """Version discovery returns only the installed distributions in the core contract."""
     versions = {
-        "openlinktoken": "2.2.0",
+        "openlinktoken": "2.2.1",
         "openlinktoken-cli": "2.4.1",
         "openlinktoken-core-ai": "2.9.0",
     }
@@ -88,8 +104,8 @@ def test_rejects_invalid_core_distribution_version(monkeypatch):
     """Runtime validation reports an installed distribution with an invalid version."""
     versions = {
         "openlinktoken": "not-a-version",
-        "openlinktoken-cli": "2.2.0",
-        "openlinktoken-core-ai": "2.2.0",
+        "openlinktoken-cli": "2.2.1",
+        "openlinktoken-core-ai": "2.2.1",
     }
     monkeypatch.setattr(
         "openlinktoken_ext_truveta.compatibility.version",
@@ -105,7 +121,7 @@ def test_rejects_invalid_core_distribution_version(monkeypatch):
 def test_accepts_core_metadata_available_on_frozen_search_path(tmp_path, monkeypatch):
     """Runtime validation reads distribution metadata copied into a frozen bundle."""
     for distribution, installed_version in {
-        "openlinktoken": "2.2.0",
+        "openlinktoken": "2.2.1",
         "openlinktoken-cli": "2.4.1",
         "openlinktoken-core-ai": "2.9.0",
     }.items():

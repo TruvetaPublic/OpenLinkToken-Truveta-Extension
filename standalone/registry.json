@@ -8,9 +8,9 @@
     "version": "1.0.0",
     "schema_version": 1,
     "update_manifest_url": "https://github.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/releases/latest/download/openlinktoken-ext-truveta-update.json",
-    "supported_core": ">=2.2.0,<3.0.0",
-    "supported_core_version_range": ">=2.2.0,<3.0.0",
-    "core_range": ">=2.2.0,<3.0.0",
+    "supported_core": ">=2.2.1,<3.0.0",
+    "supported_core_version_range": ">=2.2.1,<3.0.0",
+    "core_range": ">=2.2.1,<3.0.0",
     "disabled": false,
     "error": null
   }

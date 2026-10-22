@@ -16,7 +16,7 @@ BUMPVERSION_PATH = REPOSITORY_ROOT / ".bumpversion.cfg"
 PYPROJECT_PATH = REPOSITORY_ROOT / "pyproject.toml"
 REQUIREMENTS_DEV_PATH = REPOSITORY_ROOT / "requirements-dev.txt"
 
-CORE_SOURCE_REF = "f840e2f509d9ff634dc8a3039a429fa415619492"
+CORE_SOURCE_REF = "v2.2.1"
 CORE_DISTRIBUTIONS = (
     "openlinktoken",
     "openlinktoken-cli",
@@ -33,9 +33,9 @@ def test_embedded_registry_declares_truveta_extension():
     assert entry["command_name"] == "truveta"
     assert entry["source_path"] == ""
     assert entry["schema_version"] == 1
-    assert entry["supported_core"] == ">=2.2.0,<3.0.0"
-    assert entry["supported_core_version_range"] == ">=2.2.0,<3.0.0"
-    assert entry["core_range"] == ">=2.2.0,<3.0.0"
+    assert entry["supported_core"] == ">=2.2.1,<3.0.0"
+    assert entry["supported_core_version_range"] == ">=2.2.1,<3.0.0"
+    assert entry["core_range"] == ">=2.2.1,<3.0.0"
     assert entry["update_manifest_url"].endswith(
         "/releases/latest/download/openlinktoken-ext-truveta-update.json"
     )
@@ -100,6 +100,8 @@ def test_standalone_release_smokes_compatible_leaf_command():
     assert 'SMOKE_HOME="$(mktemp -d)"' in workflow
     assert 'HOME="$SMOKE_HOME"' in workflow
     assert "./dist/olt/olt truveta logout" in workflow
+    assert workflow.count("smoke_independent_extension_update.py") == 2
+    assert workflow.count("--manifest-url") == 2
 
 
 def test_bumpversion_updates_embedded_registry_version():
@@ -110,11 +112,28 @@ def test_bumpversion_updates_embedded_registry_version():
     assert 'replace = "version": "{new_version}"' in bumpversion
 
 
-def test_core_source_pins_use_the_immutable_merge_commit():
+def test_core_source_pins_use_the_v221_release():
     pyproject = PYPROJECT_PATH.read_text(encoding="utf-8")
     requirements_dev = REQUIREMENTS_DEV_PATH.read_text(encoding="utf-8")
     workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
 
     assert pyproject.count(f"@{CORE_SOURCE_REF}#subdirectory=") == 4
-    assert requirements_dev.count(f"@{CORE_SOURCE_REF}#subdirectory=") == 3
+    locked_core_lines = [
+        line
+        for line in requirements_dev.splitlines()
+        if line.startswith(
+            (
+                "openlinktoken @ ",
+                "openlinktoken-cli @ ",
+                "openlinktoken-core-ai @ ",
+            )
+        )
+    ]
+    locked_core_refs = [
+        line.split("@")[-1].split("#", 1)[0] for line in locked_core_lines
+    ]
+    assert len(locked_core_lines) == 3
+    assert len(set(locked_core_refs)) == 1
+    assert len(locked_core_refs[0]) == 40
+    int(locked_core_refs[0], 16)
     assert f"OPENLINKTOKEN_SOURCE_REF: {CORE_SOURCE_REF}" in workflow

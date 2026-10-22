@@ -47,7 +47,7 @@ def test_create_extension_release_assets_writes_checksummed_manifests(tmp_path):
     )
     assert bootstrap["extension"]["sha256"] == hashlib.sha256(wheel_bytes).hexdigest()
     assert bootstrap["core"] == {
-        "min_version": "2.2.0",
+        "min_version": "2.2.1",
         "max_version": "<3.0.0",
     }
 
@@ -55,7 +55,7 @@ def test_create_extension_release_assets_writes_checksummed_manifests(tmp_path):
     assert update["schema_version"] == 1
     assert update["extension"] == "truveta"
     assert update["latest_version"] == "1.2.3"
-    assert update["requires_core"] == ">=2.2.0,<3.0.0"
+    assert update["requires_core"] == ">=2.2.1,<3.0.0"
     assert update["artifacts"][0]["sha256"] == hashlib.sha256(wheel_bytes).hexdigest()
     assert update["artifacts"][0]["version"] == "1.2.3"
     assert update["artifacts"][0]["url"].endswith(

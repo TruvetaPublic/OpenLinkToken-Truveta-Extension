@@ -133,9 +133,12 @@ olt extension update truveta --dry-run
 olt extension update truveta --yes
 ```
 
+These operations update the Truveta extension only; they do not replace or
+upgrade the OpenLinkToken CLI.
+
 ### Compatibility and Recovery
 
-The Truveta extension supports OpenLinkToken core versions `>=2.2.0,<3.0.0`.
+The Truveta extension supports OpenLinkToken core versions `>=2.2.1,<3.0.0`.
 For frozen standalone bundles, an incompatible extension is disabled instead of being
 allowed to break core commands. Update the Truveta extension to a compatible release,
 or roll back the core bundle to a version in the supported range.

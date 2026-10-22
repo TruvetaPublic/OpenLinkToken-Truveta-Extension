@@ -7,7 +7,7 @@ from packaging.specifiers import SpecifierSet
 from packaging.version import InvalidVersion
 from packaging.version import Version
 
-SUPPORTED_CORE_SPECIFIER: str = ">=2.2.0,<3.0.0"
+SUPPORTED_CORE_SPECIFIER: str = ">=2.2.1,<3.0.0"
 CORE_DISTRIBUTIONS: tuple[str, ...] = (
     "openlinktoken",
     "openlinktoken-cli",
