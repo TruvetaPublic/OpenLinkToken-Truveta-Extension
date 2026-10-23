@@ -12,6 +12,10 @@
   - [Versioning](#versioning)
   - [Continuous Integration](#continuous-integration)
   - [Releases](#releases)
+  - [Independent Extension Updates](#independent-extension-updates)
+    - [Bootstrap, Inspection, and Recovery](#bootstrap-inspection-and-recovery)
+    - [Release Assets](#release-assets)
+    - [Frozen Installer Prerequisite](#frozen-installer-prerequisite)
   - [Building a Standalone Executable Locally](#building-a-standalone-executable-locally)
 
 ## Local Development Setup
@@ -44,9 +48,10 @@ git lfs install --skip-repo
 pip install -e ".[dev]"
 ```
 
-This installs the package in editable mode, pulls the model-enabled `openlinktoken-cli`
-from OpenLinkToken's `develop` branch, and installs dev tools (`pytest`, `bump2version`,
-`build`, `autoflake`, `flake8`). Release builds use OpenLinkToken's `main` branch.
+This installs the package in editable mode, pulls `openlinktoken-cli` from the
+OpenLinkToken `develop` branch, and installs dev tools (`pytest`, `bump2version`,
+`build`, `autoflake`, `flake8`). The Truveta extension supports OpenLinkToken core
+versions `>=2.2.1,<3.0.0`.
 
 ### ML1 Assets
 
@@ -105,6 +110,7 @@ bump2version major
 ```
 
 `bump2version` updates the version in `.bumpversion.cfg`, `pyproject.toml`, and the README wheel examples. The release workflow uses the resulting `current_version` value when creating the GitHub Release.
+It also updates `standalone/registry.json` so bootstrap metadata stays aligned with the extension package version.
 
 For release branches, `.github/workflows/auto-version-bump.yml` automatically extracts the target version from the `release/x.y.z` branch name and pushes the version bump back to that branch before the PR is merged.
 
@@ -129,18 +135,81 @@ Releases are defined in `.github/workflows/auto-release.yml` and `.github/workfl
 
 The asset workflow:
 
-1. Builds the wheel and sdist and attaches them to the GitHub Release.
+1. Builds the wheel and sdist, generates extension update manifests and a wheel checksum, then attaches them to the GitHub Release.
 2. Checks out the OpenLinkToken model assets from `main` with Git LFS.
 3. Builds one-folder standalone bundles for Linux, Windows, and macOS using PyInstaller.
 4. Runs a tokenization smoke test against each executable to verify the embedded model.
 5. Packages each complete bundle as a ZIP with a SHA-256 checksum.
-6. Attaches the ZIP bundles and checksums to the GitHub Release.
+6. Attaches the wheel, source distribution, update manifests, ZIP bundles, and checksums to the GitHub Release.
 
-The standalone build contains the `openlinktoken` CLI, the Truveta extension, and the ML1 model/tokenizer assets in a reusable one-folder distribution — no Python installation required for end users. The local bundle is `dist/olt/` with executable `dist/olt/olt` on POSIX systems or `dist/olt/olt.exe` on Windows. Release assets are complete ZIP bundles plus `.sha256` files; the raw executable is not published separately because it requires the adjacent `_internal/` directory. The release build uses OpenLinkToken's `main` branch for the model-enabled source and assets. Help-oriented invocations load the installed extension registry so extension commands appear in the main menu. Heavy processing dependencies remain lazy until tokenization or packaging runs.
+The standalone build contains the `openlinktoken` CLI, the Truveta extension, and the ML1 model/tokenizer assets in a reusable one-folder distribution — no Python installation required for end users. The local bundle is `dist/olt/` with executable `dist/olt/olt` on POSIX systems or `dist/olt/olt.exe` on Windows. Release assets are complete ZIP bundles plus `.sha256` files; the raw executable is not published separately because it requires the adjacent `_internal/` directory. Release dependencies and model assets use OpenLinkToken `main`; development tooling uses the `develop` branch. The extension runtime compatibility range remains `>=2.2.1,<3.0.0`. Help-oriented invocations load the installed extension registry so extension commands appear in the main menu. Heavy processing dependencies remain lazy until tokenization or packaging runs.
+
+### Independent Extension Updates
+
+The extension registry is persistent and core-managed so a standalone bundle can be
+replaced without silently replacing an extension that was installed or updated
+separately. The bootstrap manifest and the update manifest are generated from the
+release version and wheel digest.
+
+#### Bootstrap, Inspection, and Recovery
+
+For an existing OLT installation, bootstrap the Truveta extension from the stable
+latest-release manifest:
+
+```bash
+olt extension install --yes \
+  --manifest https://github.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/releases/latest/download/openlinktoken-ext-truveta-bootstrap.json
+```
+
+Standalone bundles seed the core CLI's persistent extension registry from their
+embedded registry on first launch, but only when that persistent registry is missing.
+An existing registry, including an intentionally empty one, is never overwritten. The
+persistent registry is outside the extracted bundle, so replacing a standalone core
+bundle later leaves that registry untouched. Inspect and apply updates explicitly:
+
+```bash
+olt extension list
+olt extension update truveta --dry-run
+olt extension update truveta --yes
+```
+
+Update checks are non-blocking and do not silently replace installed extension
+content. The registry is core-managed: explicit install, bootstrap, update, and
+uninstall operations can write it, and core discovery can persist `disabled` and
+`error` state for incompatible or failed frozen extensions.
+
+The Truveta extension supports OpenLinkToken core versions `>=2.2.1,<3.0.0`.
+For frozen standalone bundles, an incompatible extension is disabled instead of being
+allowed to break core commands. Update the extension to a compatible release, or roll
+back the core bundle to a version in the supported range.
+
+Python installations rely on the host-runtime compatibility diagnostic because the
+OpenLinkToken CLI and Core-AI distributions are host packages, not normal PyPI
+dependencies of this extension. The check runs when a Truveta command is invoked; if
+it reports a missing or incompatible core distribution, install a compatible
+OpenLinkToken core or update the extension while core CLI discovery and commands
+remain available.
+
+#### Release Assets
+
+After `uv build`, the release workflow generates these extension assets in
+`release-assets/`:
+
+- `openlinktoken_ext_truveta-<version>-py3-none-any.whl.sha256`
+- `openlinktoken-ext-truveta-bootstrap.json`
+- `openlinktoken-ext-truveta-update.json`
+
+The workflow publishes those files together with `dist/*.whl` and `dist/*.tar.gz` to
+the same GitHub Release. Each standalone build additionally publishes the complete
+bundle and checksum pair for every supported platform:
+
+- `olt-truveta-<version>-linux-x64.zip` and `.zip.sha256`
+- `olt-truveta-<version>-macos-arm64.zip` and `.zip.sha256`
+- `olt-truveta-<version>-windows-x64.zip` and `.zip.sha256`
 
 ### Building a Standalone Executable Locally
 
-The standalone spec requires a hydrated checkout of OpenLinkToken's `main` branch and its ML1 assets. Clone the source, install the release dependencies, and point the spec at the assets:
+The standalone spec requires a hydrated checkout of OpenLinkToken `main` and its ML1 assets. Clone the source, install the release dependencies, and point the spec at the assets:
 
 ```bash
 git clone --filter=blob:none --sparse https://github.com/TruvetaPublic/OpenLinkToken.git openlinktoken-source

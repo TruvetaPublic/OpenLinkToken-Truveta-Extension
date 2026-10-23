@@ -11,7 +11,7 @@ import subprocess
 import sys
 from unittest.mock import MagicMock, patch
 
-from openlinktoken.core.ai.tokens.ml1_inference_config import ML1InferenceConfig
+from openlinktoken_ext_truveta.compatibility import ExtensionCompatibilityError
 from openlinktoken_ext_truveta.extension import TruvetaExtension
 
 # ---------------------------------------------------------------------------
@@ -55,7 +55,9 @@ class TestLazyExtensionImports:
                     "import sys; "
                     "import openlinktoken_ext_truveta.extension; "
                     "assert not any(name in sys.modules for name in "
-                    "('pandas', 'pyarrow', 'cryptography'))"
+                    "('pandas', 'pyarrow', 'cryptography', "
+                    "'openlinktoken.core.ai.tokens.ml1_inference_config', "
+                    "'onnxruntime'))"
                 ),
             ],
             capture_output=True,
@@ -65,6 +67,31 @@ class TestLazyExtensionImports:
         )
 
         assert result.returncode == 0, result.stderr
+
+    def test_mismatch_returns_error_before_importing_command_module(self, capsys):
+        """An incompatible core prevents the selected command from being imported."""
+        root = argparse.ArgumentParser()
+        subparsers = root.add_subparsers(dest="command")
+        TruvetaExtension().register_subcommand(subparsers)
+        parsed = root.parse_args(["truveta", "logout"])
+
+        command_module = "openlinktoken_ext_truveta.commands.logout"
+        sys.modules.pop(command_module, None)
+        mismatch = ExtensionCompatibilityError(
+            "installed core 1.0.0 is unsupported; upgrade the extension"
+        )
+        with patch(
+            "openlinktoken_ext_truveta.extension.validate_runtime_compatibility",
+            side_effect=mismatch,
+            create=True,
+        ):
+            result = parsed.func(parsed)
+
+        assert result == 1
+        assert capsys.readouterr().err == (
+            "Error: installed core 1.0.0 is unsupported; upgrade the extension\n"
+        )
+        assert command_module not in sys.modules
 
 
 # ---------------------------------------------------------------------------
@@ -430,7 +457,7 @@ class TestAutoUploadSubcommand:
         parsed = root.parse_args(["truveta", "auto-upload", "--input", "input.csv"])
 
         assert parsed.disable_inferencing is False
-        assert parsed.inferencing_batch_size == ML1InferenceConfig.DEFAULT_BATCH_SIZE
+        assert parsed.inferencing_batch_size is None
         assert parsed.inferencing_num_threads is None
 
     def test_auto_upload_requires_input_flag(self):

@@ -67,3 +67,5 @@ uv.lock
 apm_modules/
 .agents/
 apm.lock.yaml
+
+.superpowers/

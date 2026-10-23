@@ -8,7 +8,6 @@ import argparse
 from pathlib import Path
 from unittest.mock import patch
 
-from openlinktoken.core.ai.tokens.ml1_inference_config import ML1InferenceConfig
 from openlinktoken_ext_truveta.commands.auto_upload import _auto_upload
 
 _PACKAGE_EXECUTE = (
@@ -164,7 +163,14 @@ class TestAutoUploadCommand:
             patch(_PACKAGE_EXECUTE, side_effect=_capture_package),
             patch(_UPLOAD, return_value=0),
         ):
-            _auto_upload(_args(str(input_file)))
+            _auto_upload(
+                _args(
+                    str(input_file),
+                    inferencing_batch_size=None,
+                )
+            )
+
+        from openlinktoken.core.ai.tokens.ml1_inference_config import ML1InferenceConfig
 
         pa = captured_package_args["args"]
         assert pa.disable_inferencing is False
