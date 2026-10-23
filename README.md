@@ -45,6 +45,20 @@ Both scripts:
 - Auto-detect your platform and download the correct bundle from the [latest GitHub Release](https://github.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/releases/latest)
 - Install the complete one-folder bundle and expose `~/.local/bin/olt` (macOS/Linux) or `%USERPROFILE%\.local\bin\olt.cmd` (Windows) — no administrator privileges required
 - Add the install directory to your PATH if it isn't already
+- Download ML1 model assets from the public OpenLinkToken OCI package and verify each asset against its manifest before installation
+
+To select a different immutable model version, set `OLT_ML1_MODEL_TAG` before
+running the installer (`v1` is the default):
+
+```bash
+export OLT_ML1_MODEL_TAG=v2
+curl -fsSL https://raw.githubusercontent.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/main/scripts/install.sh | bash
+```
+
+```powershell
+$env:OLT_ML1_MODEL_TAG = "v2"
+irm https://raw.githubusercontent.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/main/scripts/install.ps1 | iex
+```
 
 **Version pinning** — install a specific release instead of the latest:
 
@@ -59,8 +73,14 @@ $env:OLT_TRUVETA_VERSION="1.0.0"; irm https://raw.githubusercontent.com/TruvetaP
 ### Standalone Distributables
 
 Pre-built one-folder ZIP bundles that include the OLT CLI, the Truveta extension,
-and all runtime files — no Python required. The raw PyInstaller executable is not
-published separately because it requires the adjacent `_internal/` directory.
+and runtime files — no Python required. The model payload is distributed
+separately through OpenLinkToken's public OCI package, so extracting a ZIP by
+itself does not install ML1. Use the official installers above for a complete
+installation, or follow the [manual model setup](docs/developer-guide.md#manual-model-setup)
+instructions in the developer guide or OpenLinkToken's [manual ZIP installation
+guide](https://github.com/TruvetaPublic/OpenLinkToken/blob/main/pages/quickstarts/cli-quickstart.md#manual-zip-installation).
+The raw PyInstaller executable is not published separately because it requires
+the adjacent `_internal/` directory.
 
 Download the ZIP bundle and its `.sha256` checksum from the [Releases page](https://github.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/releases/latest):
 
@@ -72,6 +92,12 @@ Download the ZIP bundle and its `.sha256` checksum from the [Releases page](http
 
 The checksum file is named `<bundle>.zip.sha256`. Keep the extracted bundle
 directory intact so the executable can find its `_internal/` runtime directory.
+The ZIP itself does not contain ML1 model files; direct extraction is suitable
+for core CLI commands, but ML1 tokenization requires completing model setup.
+The installer defaults to model tag `v1`; set `OLT_ML1_MODEL_TAG` to select
+another immutable model tag. The installer downloads ORAS 1.3.3, verifies its
+SHA-256 digest, pulls the model artifact without registry credentials, and
+checks the model file sizes and SHA-256 digests against `asset-manifest.json`.
 
 After downloading, verify the checksum and extract the complete bundle:
 

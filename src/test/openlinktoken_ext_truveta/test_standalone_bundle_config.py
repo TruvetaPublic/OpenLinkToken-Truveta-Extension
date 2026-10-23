@@ -12,13 +12,14 @@ REPOSITORY_ROOT = Path(__file__).parents[3]
 REGISTRY_PATH = REPOSITORY_ROOT / "standalone" / "registry.json"
 SPEC_PATH = REPOSITORY_ROOT / "openlinktoken-ext-truveta.spec"
 RELEASE_WORKFLOW_PATH = REPOSITORY_ROOT / ".github" / "workflows" / "release.yml"
+INSTALL_SH_PATH = REPOSITORY_ROOT / "scripts" / "install.sh"
+INSTALL_PS1_PATH = REPOSITORY_ROOT / "scripts" / "install.ps1"
 BUMPVERSION_PATH = REPOSITORY_ROOT / ".bumpversion.cfg"
 PYPROJECT_PATH = REPOSITORY_ROOT / "pyproject.toml"
 REQUIREMENTS_DEV_PATH = REPOSITORY_ROOT / "requirements-dev.txt"
 
 DEV_CORE_SOURCE_REF = "develop"
 RELEASE_CORE_SOURCE_REF = "main"
-ASSET_SOURCE_REF = "main"
 CORE_DISTRIBUTIONS = (
     "openlinktoken",
     "openlinktoken-cli",
@@ -60,6 +61,13 @@ def test_spec_collects_ml1_runtime_dependencies():
 
     assert '"onnxruntime"' in spec
     assert '"tokenizers"' in spec
+
+
+def test_spec_does_not_collect_ml1_model_payloads():
+    spec = SPEC_PATH.read_text(encoding="utf-8")
+
+    assert "collect_ml1_assets" not in spec
+    assert "OLT_INFERENCING_ASSETS_SOURCE" not in spec
 
 
 def test_spec_bundles_core_distribution_metadata():
@@ -108,6 +116,44 @@ def test_standalone_release_smokes_compatible_leaf_command():
     assert workflow.count("--manifest-url") == 2
 
 
+def test_release_workflow_verifies_oci_assets_and_supported_platforms():
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    standalone_workflow = workflow[workflow.index("  build-standalone:") :]
+    matrix = standalone_workflow.split("      matrix:", 1)[1].split("    env:", 1)[0]
+
+    assert "os: [ubuntu-latest, macos-15, windows-latest]" in matrix
+    assert "macos-latest" not in matrix
+    assert "intel" not in matrix.lower()
+    assert "OLT_ML1_MODEL_TAG: v1" in standalone_workflow
+    assert "Install ORAS" in standalone_workflow
+    assert "version: 1.3.3" in standalone_workflow
+    assert "oras pull" in standalone_workflow
+    assert "copy_ml1_assets" in standalone_workflow
+    assert "Verify release ZIP omits ML1 assets" in standalone_workflow
+    assert "git lfs" not in standalone_workflow.lower()
+
+
+def test_official_installers_retrieve_and_verify_model_assets_before_install():
+    install_sh = INSTALL_SH_PATH.read_text(encoding="utf-8")
+    install_ps1 = INSTALL_PS1_PATH.read_text(encoding="utf-8")
+
+    for installer in (install_sh, install_ps1):
+        assert "ghcr.io/truvetapublic/openlinktoken-ml1-assets" in installer
+        assert "1.3.3" in installer
+        assert "OLT_ML1_MODEL_TAG" in installer or "$ModelTag" in installer
+        assert "asset-manifest.json" in installer
+        assert "model.onnx.data" in installer
+        assert "SHA-256" in installer
+        assert "unexpected size" in installer.lower()
+
+    assert install_sh.index('install_ml1_assets "$BUNDLE_DIR"') < install_sh.index(
+        "INSTALLED_BUNDLE_DIR="
+    )
+    assert install_ps1.index("Install-Ml1Assets -BundleRoot $ExtractedBundle") < (
+        install_ps1.index("Move-Item -LiteralPath $ExtractedBundle")
+    )
+
+
 def test_bumpversion_updates_embedded_registry_version():
     bumpversion = BUMPVERSION_PATH.read_text(encoding="utf-8")
 
@@ -130,6 +176,7 @@ def test_dev_and_release_core_sources_use_expected_branches():
     assert (
         "uv export --frozen --format requirements-txt --extra dev" in requirements_dev
     )
+    assert "ghcr.io/truvetapublic/openlinktoken-ml1-assets" in workflow
     locked_core_lines = [
         line
         for line in requirements_dev.splitlines()
@@ -148,4 +195,3 @@ def test_dev_and_release_core_sources_use_expected_branches():
     assert len(set(locked_core_refs)) == 1
     assert len(locked_core_refs[0]) == 40
     int(locked_core_refs[0], 16)
-    assert f"OPENLINKTOKEN_SOURCE_REF: {ASSET_SOURCE_REF}" in workflow

@@ -131,13 +131,26 @@ class TestCreateReleaseAssets:
             names = zf.namelist()
         assert any("olt" in n for n in names)
 
-    def test_zip_contains_complete_one_folder_bundle(self, tmp_path):
+    def test_zip_omits_model_assets_from_complete_one_folder_bundle(self, tmp_path):
         dist_dir = tmp_path / "dist"
         bundle_dir = dist_dir / "olt"
-        internal_dir = bundle_dir / "_internal" / "openlinktoken"
+        internal_dir = (
+            bundle_dir / "_internal" / "openlinktoken" / "core" / "ai" / "tokens"
+        )
         internal_dir.mkdir(parents=True)
         self._make_fake_executable(bundle_dir, "olt")
-        (internal_dir / "model.onnx.data").write_bytes(b"model-data")
+        model_files = (
+            "asset-manifest.json",
+            "model.onnx",
+            "model.onnx.data",
+            "tokenizer.json",
+        )
+        for filename in model_files:
+            (internal_dir / filename).write_bytes(b"model-data")
+        (bundle_dir / "_internal" / "openlinktoken" / "core" / "runtime.py").write_text(
+            "runtime",
+            encoding="utf-8",
+        )
 
         output_dir = tmp_path / "release-assets"
         assets = create_release_assets("1.0.0", "Linux", dist_dir, output_dir)
@@ -148,9 +161,10 @@ class TestCreateReleaseAssets:
 
         assert "olt-truveta-1.0.0-linux-x64/olt" in names
         assert (
-            "olt-truveta-1.0.0-linux-x64/_internal/openlinktoken/model.onnx.data"
+            "olt-truveta-1.0.0-linux-x64/_internal/openlinktoken/core/runtime.py"
             in names
         )
+        assert not any(name.rsplit("/", 1)[-1] in model_files for name in names)
 
     def test_sha256_sidecar_content(self, tmp_path):
         dist_dir = tmp_path / "dist"
