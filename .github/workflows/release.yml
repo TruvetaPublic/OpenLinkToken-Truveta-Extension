@@ -159,33 +159,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-15, windows-latest]
     env:
       VERSION: ${{ needs.release-info.outputs.version }}
       TAG: ${{ needs.release-info.outputs.tag }}
       RELEASE_FOUND: ${{ needs.release-info.outputs['release-found'] }}
       RELEASE_ID: ${{ needs.release-info.outputs['release-id'] }}
-      OPENLINKTOKEN_SOURCE_REF: main
-      OLT_INFERENCING_ASSETS_SOURCE: ${{ github.workspace }}/openlinktoken-source/resources/inferencing/ml1
+      OLT_ML1_MODEL_TAG: v1
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           ref: ${{ needs.release-info.outputs['release-found'] == 'true' && needs.release-info.outputs.tag || github.sha }}
-
-      - name: Configure Git LFS
-        run: git lfs install --skip-repo
-
-      - name: Checkout OpenLinkToken model assets
-        uses: actions/checkout@v7
-        with:
-          repository: TruvetaPublic/OpenLinkToken
-          ref: ${{ env.OPENLINKTOKEN_SOURCE_REF }}
-          path: openlinktoken-source
-          sparse-checkout: |
-            resources/inferencing/ml1
-          sparse-checkout-cone-mode: true
-          lfs: true
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -217,6 +202,30 @@ jobs:
       - name: Build standalone bundle (Linux / Windows)
         if: runner.os != 'macOS'
         run: pyinstaller --clean --noconfirm openlinktoken-ext-truveta.spec
+
+      - name: Install ORAS
+        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+        with:
+          version: 1.3.3
+
+      - name: Retrieve and verify ML1 OCI assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p smoke/model-assets
+          oras pull "ghcr.io/truvetapublic/openlinktoken-ml1-assets:${OLT_ML1_MODEL_TAG}" \
+            --output smoke/model-assets
+          python - <<'PY'
+          from openlinktoken_ext_truveta.util.inferencing_assets import (
+              ML1_ASSET_DESTINATION,
+              copy_ml1_assets,
+          )
+
+          copy_ml1_assets(
+              "smoke/model-assets",
+              f"dist/olt/_internal/{ML1_ASSET_DESTINATION}",
+          )
+          PY
 
       - name: Smoke test (macOS / Linux)
         if: runner.os != 'Windows'
@@ -265,6 +274,43 @@ jobs:
             --runner-os "${{ runner.os }}" \
             --dist-dir dist \
             --output-dir release-assets
+
+      - name: Verify release ZIP omits ML1 assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import zipfile
+          from pathlib import Path
+
+          asset_suffix = (
+              "_internal",
+              "openlinktoken",
+              "core",
+              "ai",
+              "tokens",
+          )
+          model_files = {
+              "asset-manifest.json",
+              "model.onnx",
+              "model.onnx.data",
+              "tokenizer.json",
+          }
+          archives = sorted(Path("release-assets").glob("olt-truveta-*.zip"))
+          if len(archives) != 1:
+              raise SystemExit(f"Expected one standalone ZIP, found {len(archives)}")
+          with zipfile.ZipFile(archives[0]) as archive:
+              included_assets = [
+                  name
+                  for name in archive.namelist()
+                  if Path(name).parts[-6:-1] == asset_suffix
+                  and Path(name).name in model_files
+              ]
+          if included_assets:
+              raise SystemExit(
+                  f"Standalone release ZIP unexpectedly includes ML1 assets: {included_assets}"
+              )
+          PY
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v7

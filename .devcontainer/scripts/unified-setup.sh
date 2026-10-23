@@ -80,15 +80,6 @@ step_activate_venv() {
   source "$VENV_DIR/bin/activate"
 }
 
-step_configure_git_lfs() {
-  if ! command -v git-lfs >/dev/null 2>&1; then
-    echo "Error: Git LFS is required to install the OpenLinkToken ML model." >&2
-    echo "Rebuild the dev container to install the git-lfs package." >&2
-    return 1
-  fi
-  git lfs install --skip-repo
-}
-
 step_install_packages() {
   echo "→ Installing extension package with dev extras"
   cd "$REPO_ROOT"
@@ -122,8 +113,12 @@ step_hydrate_ml1_assets() {
     fi
   done
   if [ "$assets_ready" = true ]; then
-    echo "⊘ Skipping ML1 asset hydration (assets already present)"
-    return 0
+    if python -c 'import sys; from openlinktoken_ext_truveta.util.inferencing_assets import validate_ml1_assets; validate_ml1_assets(sys.argv[1])' \
+      "$package_dir"; then
+      echo "⊘ Skipping ML1 asset hydration (verified assets already present)"
+      return 0
+    fi
+    echo "Existing ML1 assets failed manifest validation; downloading verified assets."
   fi
 
   if ! command -v oras >/dev/null 2>&1; then
@@ -132,15 +127,21 @@ step_hydrate_ml1_assets() {
     return 1
   fi
 
+  local asset_staging_dir
+  asset_staging_dir="$(mktemp -d)"
   echo "→ Downloading ML1 assets from $ML1_ASSET_REF"
-  oras pull "$ML1_ASSET_REF" --output "$package_dir"
-
-  for filename in "${ML1_ASSET_FILENAMES[@]}"; do
-    if [ ! -f "$package_dir/$filename" ]; then
-      echo "Error: ML1 asset pull did not provide $filename." >&2
-      return 1
-    fi
-  done
+  if ! oras pull "$ML1_ASSET_REF" --output "$asset_staging_dir"; then
+    rm -rf "$asset_staging_dir"
+    echo "Error: unable to pull ML1 assets from $ML1_ASSET_REF." >&2
+    return 1
+  fi
+  if ! python -c 'import sys; from openlinktoken_ext_truveta.util.inferencing_assets import copy_ml1_assets; copy_ml1_assets(sys.argv[1], sys.argv[2])' \
+    "$asset_staging_dir" "$package_dir"; then
+    rm -rf "$asset_staging_dir"
+    echo "Error: ML1 assets failed manifest verification." >&2
+    return 1
+  fi
+  rm -rf "$asset_staging_dir"
   echo "✓ ML1 assets installed beside the Core-AI package"
 }
 
@@ -222,7 +223,6 @@ run_core_setup() {
 
 run_full_setup() {
   run_core_setup
-  step_configure_git_lfs
   step_install_packages
   step_hydrate_ml1_assets
   step_activate_shell_init
@@ -234,7 +234,6 @@ run_full_setup() {
 
 run_refresh_setup() {
   run_core_setup
-  step_configure_git_lfs
   step_refresh_packages
   step_hydrate_ml1_assets
   step_activate_shell_init

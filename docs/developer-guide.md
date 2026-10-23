@@ -5,6 +5,7 @@
     - [Prerequisites](#prerequisites)
     - [Install Dependencies](#install-dependencies)
     - [ML1 Assets](#ml1-assets)
+    - [Manual Model Setup](#manual-model-setup)
     - [Run Tests](#run-tests)
     - [Smoke Test](#smoke-test)
   - [Building a Wheel](#building-a-wheel)
@@ -26,7 +27,6 @@
 - [uv](https://docs.astral.sh/uv/) (recommended) or `pip`
 - [ORAS](https://oras.land/) 1.3.3, required to retrieve OpenLinkToken's ML1 assets outside the dev container
 - Access to [TruvetaPublic/OpenLinkToken](https://github.com/TruvetaPublic/OpenLinkToken) on GitHub (the `openlinktoken-cli` dev dependency is installed from this repo)
-- Git LFS, required to retrieve OpenLinkToken's ML model files
 
 > The repository ships with a VS Code dev container under `.devcontainer/` that provisions Python 3.12, installs dev tooling, and runs an editable install automatically. This is the recommended development environment.
 
@@ -35,7 +35,6 @@
 ```bash
 uv venv .venv
 source .venv/bin/activate
-git lfs install --skip-repo
 uv pip install -e ".[dev]"
 ```
 
@@ -44,7 +43,6 @@ Or with pip:
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-git lfs install --skip-repo
 pip install -e ".[dev]"
 ```
 
@@ -58,14 +56,37 @@ versions `>=2.2.1,<3.0.0`.
 The dev container automatically pulls the matched ML1 model, external model data,
 tokenizer, and asset manifest from
 `ghcr.io/truvetapublic/openlinktoken-ml1-assets:v1` into the installed Core-AI
-package. The upstream OCI tag must be published before creating the container.
-For a manual setup, run the same `oras pull` command after installing the
-package, targeting the directory printed by:
+package. The OCI package is public and model tags are independent of CLI
+releases. For a manual development setup, pull the model into a temporary
+directory and use the extension helper to validate and install it beside the
+Core-AI package:
 
 ```bash
 ML1_PACKAGE_DIR="$(python -c 'from pathlib import Path; import openlinktoken.core.ai.tokens as tokens; print(Path(tokens.__file__).resolve().parent)')"
-oras pull ghcr.io/truvetapublic/openlinktoken-ml1-assets:v1 --output "$ML1_PACKAGE_DIR"
+ML1_ASSET_DIR="$(mktemp -d)"
+oras pull "ghcr.io/truvetapublic/openlinktoken-ml1-assets:${OLT_ML1_MODEL_TAG:-v1}" \
+  --output "$ML1_ASSET_DIR"
+python -c 'import sys; from openlinktoken_ext_truveta.util.inferencing_assets import copy_ml1_assets; copy_ml1_assets(sys.argv[1], sys.argv[2])' \
+  "$ML1_ASSET_DIR" "$ML1_PACKAGE_DIR"
 ```
+
+The helper checks that all required files are present and match the sizes and
+SHA-256 digests in `asset-manifest.json` before copying them.
+
+### Manual Model Setup
+
+Standalone release ZIPs omit `asset-manifest.json`, `model.onnx`,
+`model.onnx.data`, and `tokenizer.json`. The official `scripts/install.sh` and
+`scripts/install.ps1` installers retrieve the selected OCI model tag and verify
+the downloaded assets before completing installation. They default to `v1`;
+select another `vN` tag with `OLT_ML1_MODEL_TAG` (or `--model-tag vN` on the
+POSIX installer, or `-ModelTag vN` on Windows).
+
+Users who manually extract a ZIP must install the model beside the frozen
+Core-AI package before using ML1 tokenization. Follow OpenLinkToken's
+[manual ZIP installation guide](https://github.com/TruvetaPublic/OpenLinkToken/blob/main/pages/quickstarts/cli-quickstart.md#manual-zip-installation)
+for the ORAS commands and platform-specific manifest verification. Do not mix
+files from different model tags.
 
 ### Run Tests
 
@@ -136,13 +157,13 @@ Releases are defined in `.github/workflows/auto-release.yml` and `.github/workfl
 The asset workflow:
 
 1. Builds the wheel and sdist, generates extension update manifests and a wheel checksum, then attaches them to the GitHub Release.
-2. Checks out the OpenLinkToken model assets from `main` with Git LFS.
-3. Builds one-folder standalone bundles for Linux, Windows, and macOS using PyInstaller.
-4. Runs a tokenization smoke test against each executable to verify the embedded model.
-5. Packages each complete bundle as a ZIP with a SHA-256 checksum.
+2. Builds one-folder standalone bundles for Linux x64, Windows x64, and macOS Apple Silicon arm64 using PyInstaller.
+3. Pulls the public OpenLinkToken ML1 OCI artifact with ORAS 1.3.3, verifies its manifest-declared sizes and SHA-256 digests, and installs it into the temporary smoke-test bundle.
+4. Runs a tokenization smoke test against each executable and verifies that the published ZIP does not contain any ML1 payload files.
+5. Packages each model-free bundle as a ZIP with a SHA-256 checksum.
 6. Attaches the wheel, source distribution, update manifests, ZIP bundles, and checksums to the GitHub Release.
 
-The standalone build contains the `openlinktoken` CLI, the Truveta extension, and the ML1 model/tokenizer assets in a reusable one-folder distribution — no Python installation required for end users. The local bundle is `dist/olt/` with executable `dist/olt/olt` on POSIX systems or `dist/olt/olt.exe` on Windows. Release assets are complete ZIP bundles plus `.sha256` files; the raw executable is not published separately because it requires the adjacent `_internal/` directory. Release dependencies and model assets use OpenLinkToken `main`; development tooling uses the `develop` branch. The extension runtime compatibility range remains `>=2.2.1,<3.0.0`. Help-oriented invocations load the installed extension registry so extension commands appear in the main menu. Heavy processing dependencies remain lazy until tokenization or packaging runs.
+The standalone build contains the `openlinktoken` CLI, the Truveta extension, and runtime dependencies in a reusable one-folder distribution — no Python installation required for end users. Model payloads are not included in release ZIPs; the official installers retrieve and verify them from `ghcr.io/truvetapublic/openlinktoken-ml1-assets:v1` by default. The local bundle is `dist/olt/` with executable `dist/olt/olt` on POSIX systems or `dist/olt/olt.exe` on Windows. Release assets are ZIP bundles plus `.sha256` files; the raw executable is not published separately because it requires the adjacent `_internal/` directory. Release dependencies and model assets use OpenLinkToken `main`; development tooling uses the `develop` branch. The extension runtime compatibility range remains `>=2.2.1,<3.0.0`. Standalone macOS releases support Apple Silicon arm64 only; Intel macOS is not supported. Help-oriented invocations load the installed extension registry so extension commands appear in the main menu. Heavy processing dependencies remain lazy until tokenization or packaging runs.
 
 ### Independent Extension Updates
 
@@ -209,14 +230,11 @@ bundle and checksum pair for every supported platform:
 
 ### Building a Standalone Executable Locally
 
-The standalone spec requires a hydrated checkout of OpenLinkToken `main` and its ML1 assets. Clone the source, install the release dependencies, and point the spec at the assets:
+The standalone spec requires the OpenLinkToken release dependencies from
+`main`, but no separate OpenLinkToken checkout or Git LFS model download.
+Install the release dependencies and build the model-free bundle:
 
 ```bash
-git clone --filter=blob:none --sparse https://github.com/TruvetaPublic/OpenLinkToken.git openlinktoken-source
-git -C openlinktoken-source sparse-checkout set resources/inferencing/ml1
-git -C openlinktoken-source checkout main
-git -C openlinktoken-source lfs pull
-export OLT_INFERENCING_ASSETS_SOURCE="$PWD/openlinktoken-source/resources/inferencing/ml1"
 uv pip install -e ".[release]"
 uv pip install -r pyinstaller-requirements.txt
 pyinstaller --clean --noconfirm openlinktoken-ext-truveta.spec
@@ -224,10 +242,18 @@ pyinstaller --clean --noconfirm openlinktoken-ext-truveta.spec
 
 The build creates a reusable one-folder bundle under `dist/olt/`; run it with
 `./dist/olt/olt --help` on macOS or Linux.
+For a local ML1 tokenization smoke test, pull and verify the OCI assets into the
+bundle before running tokenization:
+
+```bash
+MODEL_ASSET_DIR="$(mktemp -d)"
+oras pull "ghcr.io/truvetapublic/openlinktoken-ml1-assets:${OLT_ML1_MODEL_TAG:-v1}" \
+  --output "$MODEL_ASSET_DIR"
+python -c 'import sys; from openlinktoken_ext_truveta.util.inferencing_assets import copy_ml1_assets; copy_ml1_assets(sys.argv[1], sys.argv[2])' \
+  "$MODEL_ASSET_DIR" "dist/olt/_internal/openlinktoken/core/ai/tokens"
+```
 
 The released macOS bundle targets Apple Silicon arm64 only. Set
 `OLT_TARGET_ARCH=arm64` for macOS builds; do not pass `--target-arch` when
 executing a `.spec` file. The build must run on an arm64 macOS environment
 because the native dependencies are not universal2.
-
-The spec validates the manifest, sizes, and SHA-256 digests before embedding `asset-manifest.json`, `model.onnx`, `model.onnx.data`, and `tokenizer.json` under the runtime package path.
