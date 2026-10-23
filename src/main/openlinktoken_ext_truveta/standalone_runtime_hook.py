@@ -17,7 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 def _seed_persistent_registry(bundle_root: Path) -> None:
-    """Copy the embedded registry into persistent storage on the first launch."""
+    """Copy the embedded registry into persistent storage on the first launch.
+
+    Args:
+        bundle_root: Root directory of the frozen application bundle.
+    """
     embedded_registry = bundle_root / "openlinktoken" / "extensions" / "registry.json"
     persistent_registry = ExtensionRegistry.get_registry_path()
     destination_created = False

@@ -88,12 +88,14 @@ def test_release_workflow_generates_and_publishes_update_manifests():
     artifact_start = workflow.index(
         "name: Upload built distributions as workflow artifacts"
     )
-    artifact_end = workflow.index("name: Publish to GitHub Releases", artifact_start)
+    artifact_end = workflow.index(
+        "name: Upload distributions to GitHub Release", artifact_start
+    )
     assert "release-assets/*" in workflow[artifact_start:artifact_end]
 
-    publish_start = workflow.index("name: Publish to GitHub Releases")
+    publish_start = workflow.index("name: Upload distributions to GitHub Release")
     publish_end = workflow.index("  build-standalone:", publish_start)
-    assert "release-assets/*" in workflow[publish_start:publish_end]
+    assert "readdirSync('release-assets')" in workflow[publish_start:publish_end]
 
 
 def test_standalone_release_smokes_compatible_leaf_command():
@@ -125,7 +127,9 @@ def test_dev_and_release_core_sources_use_expected_branches():
     ) in pyproject
     assert pyproject.count(f"@{RELEASE_CORE_SOURCE_REF}#subdirectory=") == 3
     assert 'conflicts = [[{ extra = "dev" }, { extra = "release" }]]' in pyproject
-    assert "uv export --frozen --format requirements-txt --extra dev" in requirements_dev
+    assert (
+        "uv export --frozen --format requirements-txt --extra dev" in requirements_dev
+    )
     locked_core_lines = [
         line
         for line in requirements_dev.splitlines()

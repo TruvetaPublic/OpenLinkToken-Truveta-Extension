@@ -19,7 +19,14 @@ from openlinktoken_ext_truveta.domain import DEFAULT_DOMAIN
 
 
 def _run_if_compatible(command: Callable[[], int]) -> int:
-    """Run a leaf command only when the installed core is compatible."""
+    """Run a leaf command only when the installed core is compatible.
+
+    Args:
+        command: Leaf command to invoke after compatibility validation.
+
+    Returns:
+        The command's exit code, or 1 when core compatibility fails.
+    """
     try:
         validate_runtime_compatibility()
     except ExtensionCompatibilityError as exc:
@@ -40,6 +47,11 @@ def _login(args: argparse.Namespace) -> int:
     """
 
     def _run() -> int:
+        """Invoke the login command.
+
+        Returns:
+            Exit code from the login handler.
+        """
         from openlinktoken_ext_truveta.commands.login import _login as login
 
         return login(args)
@@ -58,6 +70,11 @@ def _initiate_exchange(args: argparse.Namespace) -> int:
     """
 
     def _run() -> int:
+        """Invoke the exchange command.
+
+        Returns:
+            Exit code from the exchange handler.
+        """
         from openlinktoken_ext_truveta.commands.initiate_exchange import (
             _initiate_exchange as initiate_exchange,
         )
@@ -75,6 +92,11 @@ def _logout() -> int:
     """
 
     def _run() -> int:
+        """Invoke the logout command.
+
+        Returns:
+            Exit code from the logout handler.
+        """
         from openlinktoken_ext_truveta.commands.logout import _logout as logout
 
         return logout()
@@ -93,6 +115,11 @@ def _upload(args: argparse.Namespace) -> int:
     """
 
     def _run() -> int:
+        """Invoke the upload command.
+
+        Returns:
+            Exit code from the upload handler.
+        """
         from openlinktoken_ext_truveta.commands.upload import _upload as upload
 
         return upload(args)
@@ -111,6 +138,11 @@ def _auto_upload(args: argparse.Namespace) -> int:
     """
 
     def _run() -> int:
+        """Invoke the automatic upload command.
+
+        Returns:
+            Exit code from the automatic upload handler.
+        """
         from openlinktoken_ext_truveta.commands.auto_upload import (
             _auto_upload as auto_upload,
         )

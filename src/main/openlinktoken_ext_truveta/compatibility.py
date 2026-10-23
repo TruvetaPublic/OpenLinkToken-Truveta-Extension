@@ -23,7 +23,11 @@ class ExtensionCompatibilityError(RuntimeError):
 
 
 def installed_distribution_versions() -> dict[str, str]:
-    """Return the installed versions of the OpenLinkToken core distributions."""
+    """Return the installed versions of the OpenLinkToken core distributions.
+
+    Returns:
+        Mapping of installed core distribution names to versions.
+    """
     installed_versions: dict[str, str] = {}
     for distribution in CORE_DISTRIBUTIONS:
         try:
