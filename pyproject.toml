@@ -41,3 +41,6 @@ where = ["src/main"]
 pythonpath = ["src/main"]
 testpaths = ["src/test"]
 norecursedirs = [".venv", "node_modules", "__pycache__", ".git"]
+
+[tool.uv]
+conflicts = [[{ extra = "dev" }, { extra = "release" }]]

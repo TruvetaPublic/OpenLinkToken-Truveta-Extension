@@ -16,7 +16,9 @@ BUMPVERSION_PATH = REPOSITORY_ROOT / ".bumpversion.cfg"
 PYPROJECT_PATH = REPOSITORY_ROOT / "pyproject.toml"
 REQUIREMENTS_DEV_PATH = REPOSITORY_ROOT / "requirements-dev.txt"
 
-CORE_SOURCE_REF = "v2.2.1"
+DEV_CORE_SOURCE_REF = "develop"
+RELEASE_CORE_SOURCE_REF = "main"
+ASSET_SOURCE_REF = "main"
 CORE_DISTRIBUTIONS = (
     "openlinktoken",
     "openlinktoken-cli",
@@ -112,12 +114,18 @@ def test_bumpversion_updates_embedded_registry_version():
     assert 'replace = "version": "{new_version}"' in bumpversion
 
 
-def test_core_source_pins_use_the_v221_release():
+def test_dev_and_release_core_sources_use_expected_branches():
     pyproject = PYPROJECT_PATH.read_text(encoding="utf-8")
     requirements_dev = REQUIREMENTS_DEV_PATH.read_text(encoding="utf-8")
     workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
 
-    assert pyproject.count(f"@{CORE_SOURCE_REF}#subdirectory=") == 4
+    assert (
+        f"openlinktoken-cli @ git+https://github.com/TruvetaPublic/OpenLinkToken.git"
+        f"@{DEV_CORE_SOURCE_REF}#subdirectory=lib/python/openlinktoken-cli"
+    ) in pyproject
+    assert pyproject.count(f"@{RELEASE_CORE_SOURCE_REF}#subdirectory=") == 3
+    assert 'conflicts = [[{ extra = "dev" }, { extra = "release" }]]' in pyproject
+    assert "uv export --frozen --format requirements-txt --extra dev" in requirements_dev
     locked_core_lines = [
         line
         for line in requirements_dev.splitlines()
@@ -136,4 +144,4 @@ def test_core_source_pins_use_the_v221_release():
     assert len(set(locked_core_refs)) == 1
     assert len(locked_core_refs[0]) == 40
     int(locked_core_refs[0], 16)
-    assert f"OPENLINKTOKEN_SOURCE_REF: {CORE_SOURCE_REF}" in workflow
+    assert f"OPENLINKTOKEN_SOURCE_REF: {ASSET_SOURCE_REF}" in workflow

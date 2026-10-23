@@ -88,7 +88,20 @@ def test_prerelease_manifest_preserves_raw_version_and_normalized_wheel_name(
     assert update["artifacts"][0]["sha256"] == hashlib.sha256(wheel_bytes).hexdigest()
 
 
-@pytest.mark.parametrize("version", ["", "not-a-version", "1.2", "1.2.3-01", " 1.2.3 "])
+@pytest.mark.parametrize(
+    "version",
+    [
+        "",
+        "not-a-version",
+        "1.2",
+        "1.2.3-01",
+        "1.2.3-foo..bar",
+        "1.2.3+foo..bar",
+        "1.2.3-.foo",
+        "1.2.3+foo.",
+        " 1.2.3 ",
+    ],
+)
 def test_create_extension_release_assets_rejects_non_semver_before_writing(
     tmp_path, version
 ):
@@ -128,18 +141,23 @@ def test_create_extension_release_assets_rejects_missing_wheel_before_writing(
     assert not output_dir.exists()
 
 
-def test_semver_pattern_rejects_pathological_prerelease_without_backtracking():
-    value = "0.0.0-0." + "--." * 24
+def test_version_validation_rejects_pathological_prerelease_without_backtracking():
+    value = "0.0.0-0." + "--." * 2_000
 
     result = subprocess.run(
         [
             sys.executable,
             "-c",
             (
-                "import sys; "
+                "import sys\n"
                 "from openlinktoken_ext_truveta.util.extension_manifests "
-                "import _SEMVER_PATTERN; "
-                "print(_SEMVER_PATTERN.fullmatch(sys.argv[1]) is not None)"
+                "import _validate_version\n"
+                "try:\n"
+                "    _validate_version(sys.argv[1])\n"
+                "except ValueError:\n"
+                "    print('rejected')\n"
+                "else:\n"
+                "    print('accepted')\n"
             ),
             value,
         ],
@@ -149,7 +167,7 @@ def test_semver_pattern_rejects_pathological_prerelease_without_backtracking():
     )
 
     assert result.returncode == 0
-    assert result.stdout == b"False\n"
+    assert result.stdout == b"rejected\n"
 
 
 def test_main_creates_release_assets(tmp_path):

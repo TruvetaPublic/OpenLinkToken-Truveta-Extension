@@ -20,9 +20,9 @@ DEFAULT_REPOSITORY = "TruvetaPublic/OpenLinkToken-Truveta-Extension"
 
 _EXTENSION_NAME = "truveta"
 _SEMVER_PATTERN = re.compile(
-    r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
-    r"(?:-(?P<prerelease>[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
-    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+    r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    r"(?:-(?P<prerelease>[0-9A-Za-z.-]+))?"
+    r"(?:\+(?P<build>[0-9A-Za-z.-]+))?$"
 )
 
 
@@ -32,7 +32,17 @@ def create_extension_release_assets(
     output_dir: Path,
     repository: str = DEFAULT_REPOSITORY,
 ) -> list[Path]:
-    """Create the wheel checksum, bootstrap manifest, and update manifest."""
+    """Create the wheel checksum, bootstrap manifest, and update manifest.
+
+    Args:
+        version: Semantic version of the extension release.
+        wheel_path: Built extension wheel to publish.
+        output_dir: Directory where release assets are written.
+        repository: GitHub repository in OWNER/REPOSITORY form.
+
+    Returns:
+        Paths to the checksum and generated manifests.
+    """
     normalized_version = _validate_version(version)
     wheel_path = Path(wheel_path)
     output_dir = Path(output_dir)
@@ -86,7 +96,14 @@ def create_extension_release_assets(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Generate extension release assets from a built wheel."""
+    """Generate extension release assets from a built wheel.
+
+    Args:
+        argv: Optional command-line arguments.
+
+    Returns:
+        Exit status.
+    """
     parser = argparse.ArgumentParser(
         description="Create extension checksum and update manifests."
     )
@@ -113,7 +130,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def _validate_version(version: str) -> str:
-    """Validate and return a semantic version without normalizing it."""
+    """Validate and return a semantic version without normalizing it.
+
+    Args:
+        version: Version string to validate.
+
+    Returns:
+        The validated version string.
+    """
     if not isinstance(version, str):
         raise ValueError("Version must be a semantic version string")
 
@@ -132,6 +156,15 @@ def _validate_version(version: str) -> str:
         raise ValueError(f"Version is not semantic: {version!r}")
 
     prerelease = match.group("prerelease")
+    build = match.group("build")
+    if any(
+        not identifier
+        for identifiers in (prerelease, build)
+        if identifiers is not None
+        for identifier in identifiers.split(".")
+    ):
+        raise ValueError(f"Version is not semantic: {version!r}")
+
     if prerelease is not None and any(
         identifier.isdigit() and len(identifier) > 1 and identifier.startswith("0")
         for identifier in prerelease.split(".")
@@ -142,7 +175,11 @@ def _validate_version(version: str) -> str:
 
 
 def _core_version_bounds() -> dict[str, str]:
-    """Split the shared core specifier into the bootstrap schema fields."""
+    """Split the shared core specifier into the bootstrap schema fields.
+
+    Returns:
+        Bootstrap manifest minimum and maximum core versions.
+    """
     specifiers = SUPPORTED_CORE_SPECIFIER.split(",")
     minimum = next(
         specifier.removeprefix(">=")
@@ -154,7 +191,14 @@ def _core_version_bounds() -> dict[str, str]:
 
 
 def _sha256_file(path: Path) -> str:
-    """Return a file's SHA-256 digest using bounded memory."""
+    """Return a file's SHA-256 digest using bounded memory.
+
+    Args:
+        path: File to hash.
+
+    Returns:
+        Hex-encoded SHA-256 digest.
+    """
     digest = hashlib.sha256()
     with path.open("rb") as file_obj:
         for chunk in iter(lambda: file_obj.read(1024 * 1024), b""):
@@ -163,7 +207,12 @@ def _sha256_file(path: Path) -> str:
 
 
 def _write_json(path: Path, payload: dict) -> None:
-    """Write a JSON payload with stable formatting."""
+    """Write a JSON payload with stable formatting.
+
+    Args:
+        path: Destination file.
+        payload: JSON-serializable content.
+    """
     path.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
