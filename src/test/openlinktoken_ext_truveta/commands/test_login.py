@@ -172,6 +172,7 @@ class TestInitiateExchangeCommand:
         mock_write.assert_called_once_with({"payload": {"test": "data"}})
         out = capsys.readouterr().out
         assert "Exchange config: /path/to/config" in out
+        assert "Exchange ID:     exch-12345" in out
 
     def test_uses_localhost_api_in_local_dev(self, monkeypatch):
         monkeypatch.setenv("OLT_TRV_LOCAL_DEV", "true")
