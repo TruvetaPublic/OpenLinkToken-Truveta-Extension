@@ -310,7 +310,7 @@ class TestUploadCommand:
 
         assert rc == 0
         out = capsys.readouterr().out
-        assert "\033[32m\u2713 Upload accepted.\033[0m" in out
+        assert "\033[32m\u2713 Upload accepted. Exchange ID: ex-1\033[0m" in out
 
     def test_progress_output_printed_per_chunk(self, tmp_path, capsys):
         # 2 * chunk_size + 1 bytes always needs exactly 3 chunks, regardless of the
