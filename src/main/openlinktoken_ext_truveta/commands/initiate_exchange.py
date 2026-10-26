@@ -77,6 +77,7 @@ def _initiate_exchange(args: argparse.Namespace) -> int:
         print(f"Private key:     {priv_key_path}")
         print(f"Public key:      {pub_key_path}")
         print(f"Exchange config: {config_path}")
+        print(f"Exchange ID:     {server_response['exchangeId']}")
     except ExchangeConfigError as exc:
         print(f"Exchange config build/write failed: {exc}", file=sys.stderr)
         return 1
