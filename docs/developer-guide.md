@@ -48,6 +48,14 @@ This installs the package in editable mode, pulls the model-enabled `openlinktok
 from OpenLinkToken's `develop` branch, and installs dev tools (`pytest`, `bump2version`,
 `build`, `autoflake`, `flake8`). Release builds use OpenLinkToken's `main` branch.
 
+Keep shared dependency pins in `pyproject.toml` compatible with OpenLinkToken.
+After changing a pin, regenerate both requirements files:
+
+```bash
+printf '%s\n' '-e .' | uv pip compile pyproject.toml - --universal --python-version 3.10 --generate-hashes --output-file requirements.txt
+printf '%s\n' '-e .' | uv pip compile pyproject.toml - --extra dev --universal --python-version 3.10 --generate-hashes --output-file requirements-dev.txt
+```
+
 ### ML1 Assets
 
 The dev container automatically pulls the matched ML1 model, external model data,
