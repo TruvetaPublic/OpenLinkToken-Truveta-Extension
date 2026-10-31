@@ -333,7 +333,24 @@ def _build_envelope_with_extensions(
     bin_width: float = DEFAULT_BIN_WIDTH,
     dimension_bias: list | None = None,
 ) -> dict[str, Any]:
-    """Build a JWE envelope and carry rotation metadata in the encrypted payload."""
+    """Build a JWE envelope and carry rotation metadata in the encrypted payload.
+
+    Inputs:
+        exchange_name: Name assigned to the exchange.
+        hashing_secret: Secret used to hash exchange tokens.
+        sender_public_pem: Sender's PEM-encoded public key.
+        recipient_public_pem: Recipient's PEM-encoded public key.
+        curve: OpenLinkToken curve identifier.
+        created_at: Exchange creation timestamp.
+        exchange_id: Identifier assigned to the exchange.
+        rotation_iv: Optional initialization vector for token rotation.
+        rotation_count: Number of rotations to configure.
+        bin_width: Width of each rotation bin.
+        dimension_bias: Optional per-dimension rotation bias.
+
+    Returns:
+        A serialized JWE envelope containing the exchange payload.
+    """
     from jwcrypto import jwe, jwk
 
     payload: dict[str, Any] = {
@@ -507,7 +524,15 @@ def _resolve_legacy_domain_and_config(
     config_or_domain: dict[str, Any] | str | None,
     maybe_config: dict[str, Any] | None = None,
 ) -> tuple[str | None, dict[str, Any]]:
-    """Support both the modern config-only API and the older domain+config API."""
+    """Support both the modern config-only and older domain-plus-config APIs.
+
+    Inputs:
+        config_or_domain: Config dictionary or legacy domain string.
+        maybe_config: Config dictionary required with the legacy form.
+
+    Returns:
+        The optional legacy domain and the resolved config dictionary.
+    """
     if isinstance(config_or_domain, dict):
         return None, config_or_domain
 
@@ -529,6 +554,13 @@ def write_exchange_config(
     Persist an exchange config to the current directory as openlinktoken-<YYYY-MM-DD>.exchange.json.
 
     The older domain-based calling convention is still accepted for compatibility.
+
+    Inputs:
+        config_or_domain: Config dictionary or legacy domain string.
+        maybe_config: Config dictionary required with the legacy form.
+
+    Returns:
+        Path to the written exchange config.
     """
     _, config = _resolve_legacy_domain_and_config(config_or_domain, maybe_config)
     try:
@@ -547,6 +579,12 @@ def load_exchange_config(domain: str | None = None) -> dict[str, Any]:
 
     The optional domain argument is accepted for backwards compatibility and ignored
     because the current CLI stores date-scoped exchange configs in the working directory.
+
+    Inputs:
+        domain: Ignored legacy domain argument.
+
+    Returns:
+        The exchange config loaded from the current directory.
     """
     del domain
     try:
@@ -575,6 +613,12 @@ def resolve_exchange_payload(domain: str | None = None) -> dict[str, Any]:
     Resolve a decrypted exchange payload from a JWE config.
 
     The optional domain argument is accepted for backwards compatibility.
+
+    Inputs:
+        domain: Ignored legacy domain argument.
+
+    Returns:
+        The decrypted exchange payload.
     """
     del domain
     config = load_exchange_config()
@@ -604,6 +648,12 @@ def resolve_exchange_config_path(domain: str | None = None) -> Path:
     Return the path for today's exchange config file in the current working directory.
 
     The optional domain argument is accepted for backwards compatibility.
+
+    Inputs:
+        domain: Ignored legacy domain argument.
+
+    Returns:
+        Path to today's exchange config file.
     """
     del domain
     today_stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")

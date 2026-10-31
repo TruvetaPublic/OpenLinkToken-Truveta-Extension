@@ -130,6 +130,13 @@ def _package_existing_zip(zip_path: Path, exchange_config_bytes: bytes) -> Path:
     The original path is returned when the required exchange config is already
     present. Otherwise, the archive is copied and the config is appended without
     loading existing members into memory.
+
+    Inputs:
+        zip_path: Existing archive to prepare.
+        exchange_config_bytes: Serialized exchange config to add when missing.
+
+    Returns:
+        The original archive path or the path to the prepared copy.
     """
     with zipfile.ZipFile(zip_path, "r") as source:
         names = source.namelist()
@@ -157,7 +164,11 @@ def _package_existing_zip(zip_path: Path, exchange_config_bytes: bytes) -> Path:
 
 
 def _validate_zip_member_names(names: list[str]) -> None:
-    """Reject archive members that could escape the logical ZIP root."""
+    """Reject archive members that could escape the logical ZIP root.
+
+    Inputs:
+        names: Member paths contained in the archive.
+    """
     if len(names) != len(set(names)):
         raise upload_validation.UploadValidationError(
             "ZIP contains duplicate member names"
@@ -414,5 +425,5 @@ def _run_upload(
         print(str(exc), file=sys.stderr)
         return 1
 
-    print(f"{_GREEN}\u2713 Upload accepted.{_RESET}")
+    print(f"{_GREEN}\u2713 Upload accepted. Exchange ID: {exchange_id}{_RESET}")
     return 0

@@ -36,6 +36,30 @@ class TestAutoUploadCommand:
 
         assert result == 0
 
+    def test_exchange_ids_from_steps_are_printed(self, tmp_path, capsys):
+        input_file = tmp_path / "demo_input.csv"
+        input_file.write_text("RecordId,FirstName\n1,Alice")
+
+        def _initiate_exchange(_args):
+            print("Exchange ID:     ex-12345")
+            return 0
+
+        def _upload(_args):
+            print("\033[32m\u2713 Upload accepted. Exchange ID: ex-12345\033[0m")
+            return 0
+
+        with (
+            patch(_INITIATE_EXCHANGE, side_effect=_initiate_exchange),
+            patch(_PACKAGE_EXECUTE, return_value=0),
+            patch(_UPLOAD, side_effect=_upload),
+        ):
+            result = _auto_upload(_args(str(input_file)))
+
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "Exchange ID:     ex-12345" in out
+        assert "Upload accepted. Exchange ID: ex-12345" in out
+
     def test_input_file_not_found_returns_one_without_network_calls(self, capsys):
         with (
             patch(_INITIATE_EXCHANGE) as mock_initiate,
