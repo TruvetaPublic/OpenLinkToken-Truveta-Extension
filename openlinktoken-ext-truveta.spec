@@ -13,8 +13,6 @@ block_cipher = None
 base_dir = os.path.abspath(SPECPATH)
 sys.path.insert(0, os.path.join(base_dir, "src", "main"))
 
-from openlinktoken_ext_truveta.util.inferencing_assets import collect_ml1_assets
-
 datas = []
 binaries = []
 hiddenimports = []
@@ -45,13 +43,6 @@ for distribution_name in (
 for module in ("openlinktoken", "openlinktoken_cli", "openlinktoken_ext_truveta"):
     hiddenimports += collect_submodules(module)
 
-inferencing_assets_source = os.environ.get("OLT_INFERENCING_ASSETS_SOURCE")
-if not inferencing_assets_source:
-    raise RuntimeError(
-        "OLT_INFERENCING_ASSETS_SOURCE must point to OpenLinkToken's "
-        "resources/inferencing/ml1 directory"
-    )
-datas += collect_ml1_assets(inferencing_assets_source)
 datas += [
     (os.path.join(base_dir, "standalone", "registry.json"), "openlinktoken/extensions")
 ]
