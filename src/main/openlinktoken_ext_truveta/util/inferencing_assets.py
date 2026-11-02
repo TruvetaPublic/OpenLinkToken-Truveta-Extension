@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 from pathlib import Path
-from typing import Any
 
 ML1_ASSET_DESTINATION = "openlinktoken/core/ai/tokens"
 ML1_ASSET_FILES = (
@@ -18,14 +18,14 @@ ML1_ASSET_FILES = (
 )
 
 
-def collect_ml1_assets(source_dir: str | Path) -> list[tuple[str, str]]:
-    """Validate and return ML1 files for inclusion in a PyInstaller build.
+def validate_ml1_assets(source_dir: str | Path) -> list[Path]:
+    """Validate the required ML1 files against their asset manifest.
 
     Inputs:
-        source_dir: Directory containing the ML1 assets and manifest.
+        source_dir: Directory containing an OCI pull of ML1 assets.
 
     Returns:
-        Source-path and destination-directory pairs for the PyInstaller bundle.
+        Paths to the validated manifest and model files.
     """
     source_path = Path(source_dir).expanduser()
     manifest_path = source_path / "asset-manifest.json"
@@ -46,19 +46,41 @@ def collect_ml1_assets(source_dir: str | Path) -> list[tuple[str, str]]:
     if not isinstance(asset_metadata, dict):
         raise ValueError(f"ML1 asset manifest has no valid assets map: {manifest_path}")
 
-    asset_paths = []
+    asset_paths: list[Path] = [manifest_path]
     for filename in ML1_ASSET_FILES:
+        if filename == "asset-manifest.json":
+            continue
         asset_path = source_path / filename
-        if not asset_path.is_file():
+        if not asset_path.is_file() or asset_path.stat().st_size == 0:
             raise FileNotFoundError(f"Missing ML1 asset: {asset_path}")
-        if filename != "asset-manifest.json":
-            _validate_asset(asset_path, asset_metadata.get(filename))
-        asset_paths.append((str(asset_path), ML1_ASSET_DESTINATION))
+        _validate_asset(asset_path, asset_metadata.get(filename))
+        asset_paths.append(asset_path)
 
     return asset_paths
 
 
-def _validate_asset(asset_path: Path, metadata: Any) -> None:
+def copy_ml1_assets(source_dir: str | Path, destination_dir: str | Path) -> list[Path]:
+    """Validate ML1 files and copy them into a runtime model directory.
+
+    Inputs:
+        source_dir: Directory containing an OCI pull of ML1 assets.
+        destination_dir: Runtime directory where the assets will be installed.
+
+    Returns:
+        Paths to the installed manifest and model files.
+    """
+    source_paths = validate_ml1_assets(source_dir)
+    destination_path = Path(destination_dir)
+    destination_path.mkdir(parents=True, exist_ok=True)
+    installed_paths = []
+    for source_path in source_paths:
+        installed_path = destination_path / source_path.name
+        shutil.copy2(source_path, installed_path)
+        installed_paths.append(installed_path)
+    return installed_paths
+
+
+def _validate_asset(asset_path: Path, metadata: object) -> None:
     """Verify an ML1 asset matches the size and digest in its manifest.
 
     Inputs:
@@ -70,15 +92,33 @@ def _validate_asset(asset_path: Path, metadata: Any) -> None:
 
     expected_size = metadata.get("size")
     expected_sha256 = metadata.get("sha256")
+    if (
+        not isinstance(expected_size, int)
+        or isinstance(expected_size, bool)
+        or expected_size <= 0
+    ):
+        raise ValueError(
+            f"ML1 asset manifest has an invalid size for {asset_path.name}"
+        )
+    if (
+        not isinstance(expected_sha256, str)
+        or len(expected_sha256) != 64
+        or any(
+            character not in "0123456789abcdefABCDEF" for character in expected_sha256
+        )
+    ):
+        raise ValueError(
+            f"ML1 asset manifest has an invalid SHA-256 for {asset_path.name}"
+        )
+
     actual_size = asset_path.stat().st_size
     if actual_size != expected_size:
         raise ValueError(
-            f"ML1 asset {asset_path.name} has size {actual_size}; expected {expected_size}. "
-            "The Git-LFS asset may not be hydrated."
+            f"ML1 asset {asset_path.name} has size {actual_size}; expected {expected_size}"
         )
 
     actual_sha256 = _sha256_file(asset_path)
-    if actual_sha256 != expected_sha256:
+    if actual_sha256.lower() != expected_sha256.lower():
         raise ValueError(
             f"ML1 asset {asset_path.name} has SHA-256 {actual_sha256}; expected {expected_sha256}"
         )
