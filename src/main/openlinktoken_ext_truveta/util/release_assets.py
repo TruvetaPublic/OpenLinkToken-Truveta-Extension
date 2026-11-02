@@ -11,6 +11,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
+from openlinktoken_ext_truveta.util.inferencing_assets import ML1_ASSET_FILES
+
+
+_ML1_ASSET_DIRECTORY = Path("_internal/openlinktoken/core/ai/tokens")
+
 
 @dataclass(frozen=True)
 class ReleaseAssetSpec:
@@ -176,6 +181,11 @@ def _create_zip_archive(bundle_root: Path, package_name: str, zip_path: Path) ->
         for source_path in sorted(bundle_root.rglob("*")):
             if source_path.is_file():
                 relative_path = source_path.relative_to(bundle_root)
+                if (
+                    relative_path.parent == _ML1_ASSET_DIRECTORY
+                    and relative_path.name in ML1_ASSET_FILES
+                ):
+                    continue
                 archive.write(source_path, arcname=package_root / relative_path)
 
 
