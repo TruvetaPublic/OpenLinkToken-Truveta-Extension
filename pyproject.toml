@@ -3,7 +3,13 @@ name = "openlinktoken-ext-truveta"
 version = "1.1.0"
 requires-python = ">=3.10"
 description = "Open Link Token extension for Truveta-specific CLI commands"
-dependencies = ["requests==2.34.2", "cryptography==50.0.2", "httpx==0.28.1", "pydantic==2.14.1"]
+dependencies = [
+    "requests==2.34.2",
+    "cryptography==50.0.2",
+    "httpx==0.28.1",
+    "pydantic==2.14.1",
+    "packaging>=26.3,<27.0",
+]
 
 [project.entry-points."openlinktoken.extensions"]
 truveta = "openlinktoken_ext_truveta.extension:TruvetaExtension"
@@ -17,7 +23,7 @@ dev = [
     "autoflake==2.4.0",
     "flake8==7.4.1",
 ]
-# Use OpenLinkToken's main branch so release packages and assets stay aligned.
+# Use OpenLinkToken's main branch for release packages and assets.
 release = [
     "openlinktoken @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@main#subdirectory=lib/python/openlinktoken",
     "openlinktoken-core-ai @ git+https://github.com/TruvetaPublic/OpenLinkToken.git@main#subdirectory=lib/python/openlinktoken-core-ai",
@@ -35,3 +41,6 @@ where = ["src/main"]
 pythonpath = ["src/main"]
 testpaths = ["src/test"]
 norecursedirs = [".venv", "node_modules", "__pycache__", ".git"]
+
+[tool.uv]
+conflicts = [[{ extra = "dev" }, { extra = "release" }]]
