@@ -129,10 +129,10 @@ If you already have the OLT CLI installed via Python, you can install just this 
 
 ```bash
 # From a downloaded release wheel
-olt extension install openlinktoken_ext_truveta-1.1.0-py3-none-any.whl
+olt extension install openlinktoken_ext_truveta-1.1.1-py3-none-any.whl
 
 # Pass --yes / -y to skip the security confirmation prompt
-olt extension install -y openlinktoken_ext_truveta-1.1.0-py3-none-any.whl
+olt extension install -y openlinktoken_ext_truveta-1.1.1-py3-none-any.whl
 ```
 
 ### Extension Updates
