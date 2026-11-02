@@ -10,7 +10,6 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from openlinktoken.core.ai.tokens.ml1_inference_config import ML1InferenceConfig
 from openlinktoken_cli.commands.package_command import PackageCommand
 
 from openlinktoken_ext_truveta.commands.initiate_exchange import _initiate_exchange
@@ -85,6 +84,14 @@ def _auto_upload(args: argparse.Namespace) -> int:
     with tempfile.TemporaryDirectory() as tmp_dir:
         zip_path = Path(tmp_dir) / zip_name
 
+        inferencing_batch_size = getattr(args, "inferencing_batch_size", None)
+        if inferencing_batch_size is None:
+            from openlinktoken.core.ai.tokens.ml1_inference_config import (
+                ML1InferenceConfig,
+            )
+
+            inferencing_batch_size = ML1InferenceConfig.DEFAULT_BATCH_SIZE
+
         package_cli_args = [
             "package",
             "--input",
@@ -94,13 +101,7 @@ def _auto_upload(args: argparse.Namespace) -> int:
             "--exchange-config",
             str(config_path),
             "--inferencing-batch-size",
-            str(
-                getattr(
-                    args,
-                    "inferencing_batch_size",
-                    ML1InferenceConfig.DEFAULT_BATCH_SIZE,
-                )
-            ),
+            str(inferencing_batch_size),
         ]
         if getattr(args, "disable_inferencing", False):
             package_cli_args.append("--disable-inferencing")
