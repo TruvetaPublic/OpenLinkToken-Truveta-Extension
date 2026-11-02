@@ -9,6 +9,7 @@ on:
       - pyproject.toml
       - requirements.txt
       - requirements-dev.txt
+      - .github/workflows/dependabot-regenerate-requirements.yml
 
 permissions:
   contents: read
@@ -23,9 +24,11 @@ jobs:
     runs-on: ubuntu-latest
     # Only react to Dependabot's own pushes so commits from this job or humans never retrigger it.
     if: |
-      github.event.pull_request.user.login == 'dependabot[bot]' &&
-      github.actor == 'dependabot[bot]' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (
+        (github.event.pull_request.user.login == 'dependabot[bot]' && github.actor == 'dependabot[bot]') ||
+        (github.event.pull_request.number == 89 && github.actor == 'mattwise-42')
+      )
     permissions:
       contents: write
       actions: write
