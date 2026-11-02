@@ -425,5 +425,5 @@ def _run_upload(
         print(str(exc), file=sys.stderr)
         return 1
 
-    print(f"{_GREEN}\u2713 Upload accepted.{_RESET}")
+    print(f"{_GREEN}\u2713 Upload accepted. Exchange ID: {exchange_id}{_RESET}")
     return 0
