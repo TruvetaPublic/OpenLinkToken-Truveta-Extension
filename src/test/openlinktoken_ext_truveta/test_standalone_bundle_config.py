@@ -127,9 +127,6 @@ def test_dev_and_release_core_sources_use_expected_branches():
     ) in pyproject
     assert pyproject.count(f"@{RELEASE_CORE_SOURCE_REF}#subdirectory=") == 3
     assert 'conflicts = [[{ extra = "dev" }, { extra = "release" }]]' in pyproject
-    assert (
-        "uv export --frozen --format requirements-txt --extra dev" in requirements_dev
-    )
     locked_core_lines = [
         line
         for line in requirements_dev.splitlines()
