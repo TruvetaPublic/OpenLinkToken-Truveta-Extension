@@ -120,6 +120,13 @@ CI is defined in `.github/workflows/ci.yml` and runs on every push and pull requ
 6. Builds the wheel and sdist (`python -m build`).
 7. Uploads `dist/` as a build artifact (7-day retention).
 
+For Dependabot PRs that change `pyproject.toml` or the requirements files,
+`.github/workflows/dependabot-regenerate-requirements.yml` regenerates `requirements.txt` and
+`requirements-dev.txt` with `uv pip compile` (universal, Python 3.10, hashed), pushes the result
+to the PR branch, and starts CI on the new commit. If resolution fails, the workflow fails;
+align the conflicting pin with OpenLinkToken manually. After this commit, Dependabot stops
+rebasing the PR automatically; comment `@dependabot recreate` to start over.
+
 ## Releases
 
 Releases are defined in `.github/workflows/auto-release.yml` and `.github/workflows/release.yml`:

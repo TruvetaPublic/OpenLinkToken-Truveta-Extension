@@ -1,0 +1,76 @@
+name: Regenerate Requirements for Dependabot
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - develop
+    paths:
+      - pyproject.toml
+      - requirements.txt
+      - requirements-dev.txt
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependabot-regenerate-requirements-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  regenerate:
+    name: Regenerate requirements files
+    runs-on: ubuntu-latest
+    # Only react to Dependabot's own pushes so commits from this job or humans never retrigger it.
+    if: |
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.actor == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.10"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+
+      - name: Regenerate requirements files
+        run: |
+          printf '%s\n' '-e .' | uv pip compile pyproject.toml - --universal --python-version 3.10 --generate-hashes --output-file requirements.txt
+          printf '%s\n' '-e .' | uv pip compile pyproject.toml - --extra dev --universal --python-version 3.10 --generate-hashes --output-file requirements-dev.txt
+
+      - name: Commit and push changes
+        id: commit
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if git diff --quiet -- requirements.txt requirements-dev.txt; then
+            echo "Requirements files are already up to date."
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add requirements.txt requirements-dev.txt
+          git commit -m "chore(deps): regenerate requirements files"
+          git push origin "HEAD:$HEAD_REF"
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      # Pushes made with GITHUB_TOKEN do not trigger pull_request workflows, so start CI explicitly.
+      - name: Run CI on regenerated commit
+        if: steps.commit.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"
