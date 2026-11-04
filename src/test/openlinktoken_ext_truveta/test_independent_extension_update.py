@@ -67,22 +67,34 @@ def test_smoke_bootstraps_and_updates_extension_without_core_changes(tmp_path):
     )
     fake_cli.chmod(0o755)
 
-    wheel_path = tmp_path / "extension.whl"
-    wheel_path.write_bytes(b"synthetic extension wheel")
-    wheel_digest = hashlib.sha256(wheel_path.read_bytes()).hexdigest()
+    bundle_records = []
+    for target in ("linux-x64", "macos-arm64", "windows-x64"):
+        bundle_path = tmp_path / f"{target}.zip"
+        bundle_path.write_bytes(target.encode())
+        bundle_records.append(
+            {
+                "target": target,
+                "python_abi": "cp312",
+                "url": bundle_path.as_uri(),
+                "sha256": hashlib.sha256(bundle_path.read_bytes()).hexdigest(),
+            }
+        )
     update_manifest = {
+        "schema_version": 2,
         "latest_version": "1.1.0",
-        "artifacts": [{"url": wheel_path.as_uri(), "sha256": wheel_digest}],
+        "minimum_runtime_protocol": 2,
+        "bundles": bundle_records,
     }
     update_manifest_path = tmp_path / "openlinktoken-ext-truveta-update.json"
     update_manifest_path.write_text(json.dumps(update_manifest), encoding="utf-8")
     bootstrap_manifest = {
+        "schema_version": 2,
+        "minimum_runtime_protocol": 2,
+        "bundles": bundle_records,
         "extension": {
             "version": "1.1.0",
             "update_manifest_url": "https://example.invalid/update.json",
-            "artifact_url": wheel_path.as_uri(),
-            "sha256": wheel_digest,
-        }
+        },
     }
     bootstrap_manifest_path = tmp_path / "openlinktoken-ext-truveta-bootstrap.json"
     bootstrap_manifest_path.write_text(json.dumps(bootstrap_manifest), encoding="utf-8")
@@ -94,6 +106,8 @@ def test_smoke_bootstraps_and_updates_extension_without_core_changes(tmp_path):
                 str(fake_cli),
                 "--manifest-url",
                 bootstrap_manifest_path.as_uri(),
+                "--target",
+                "linux-x64",
             ]
         )
         == 0

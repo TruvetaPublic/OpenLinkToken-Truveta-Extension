@@ -24,9 +24,143 @@ jobs:
       lookup-release: true
       release-tag: ${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.version && format('v{0}', github.event.inputs.version) || '' }}
 
-  build-and-release:
-    name: Build wheel and attach to GitHub Release
+  build-distributions:
+    name: Build extension wheel and source distribution
     needs: release-info
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.release-info.outputs.version }}
+      TAG: ${{ needs.release-info.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-info.outputs['release-found'] == 'true' && needs.release-info.outputs.tag || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: true
+
+      - name: Install package with dev extras
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Build wheel and sdist
+        run: uv build
+
+      - name: Upload built distributions as workflow artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: openlinktoken-ext-truveta-distributions-${{ env.TAG }}
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  build-extension-bundle:
+    name: Build extension dependency bundle (${{ matrix.target }})
+    needs: [release-info, build-distributions]
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+            python_abi: cp312
+          - os: macos-15
+            target: macos-arm64
+            python_abi: cp312
+          - os: windows-latest
+            target: windows-x64
+            python_abi: cp312
+    env:
+      VERSION: ${{ needs.release-info.outputs.version }}
+      TAG: ${{ needs.release-info.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release-info.outputs['release-found'] == 'true' && needs.release-info.outputs.tag || github.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: true
+
+      - name: Install extension bundle tooling
+        run: uv pip install --system -e .
+
+      - name: Download built extension wheel
+        uses: actions/download-artifact@v7
+        with:
+          name: openlinktoken-ext-truveta-distributions-${{ env.TAG }}
+          path: dist
+
+      - name: Download locked dependencies and build platform bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mapfile -t wheel_paths < <(
+            find dist -maxdepth 1 -type f -name '*.whl' -print | sort
+          )
+          if [ "${#wheel_paths[@]}" -ne 1 ]; then
+            printf 'Expected exactly one wheel from uv build; found %s:\n' \
+              "${#wheel_paths[@]}" >&2
+            printf '  %s\n' "${wheel_paths[@]}" >&2
+            exit 1
+          fi
+          wheel_path="${wheel_paths[0]}"
+          mkdir -p dependency-wheels bundle-assets
+          python - <<'PY'
+          from pathlib import Path
+
+          requirements = Path("requirements.txt").read_text(encoding="utf-8")
+          lines = [
+              line for line in requirements.splitlines()
+              if line.strip() != "-e ."
+          ]
+          Path("bundle-requirements.txt").write_text(
+              "\n".join(lines) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          python -m pip download \
+            --require-hashes \
+            --only-binary=:all: \
+            --dest dependency-wheels \
+            --requirement bundle-requirements.txt
+          PYTHONPATH=src/main python -m openlinktoken_ext_truveta.util.extension_bundles \
+            --version "${VERSION}" \
+            --target "${{ matrix.target }}" \
+            --python-abi "${{ matrix.python_abi }}" \
+            --extension-wheel "$wheel_path" \
+            --dependency-wheel-dir dependency-wheels \
+            --output-dir bundle-assets
+
+      - name: Upload extension bundle as workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: truveta-extension-bundle-${{ env.TAG }}-${{ matrix.target }}
+          path: bundle-assets/*
+          if-no-files-found: error
+
+  publish-release-assets:
+    name: Publish extension assets to GitHub Release
+    needs: [release-info, build-distributions, build-extension-bundle]
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
@@ -52,40 +186,58 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Install package with dev extras
-        run: uv pip install --system -e ".[dev]"
+      - name: Install extension manifest tooling
+        run: uv pip install --system -e .
 
-      - name: Build wheel and sdist
-        run: uv build
+      - name: Download built distributions
+        uses: actions/download-artifact@v7
+        with:
+          name: openlinktoken-ext-truveta-distributions-${{ env.TAG }}
+          path: dist
 
-      - name: Generate extension release manifests
+      - name: Download platform bundles
+        uses: actions/download-artifact@v7
+        with:
+          pattern: truveta-extension-bundle-${{ env.TAG }}-*
+          path: bundle-assets
+          merge-multiple: true
+
+      - name: Generate schema-v2 manifests and assemble release assets
+        shell: bash
         run: |
           set -euo pipefail
-          mkdir -p release-assets
-          mapfile -t wheel_paths < <(
-            find dist -maxdepth 1 -type f -name '*.whl' -print | sort
-          )
+          shopt -s nullglob
+          wheel_paths=(dist/*.whl)
+          bundle_paths=(bundle-assets/*.zip)
           if [ "${#wheel_paths[@]}" -ne 1 ]; then
-            printf 'Expected exactly one wheel from uv build; found %s:\n' \
+            printf 'Expected exactly one extension wheel; found %s\n' \
               "${#wheel_paths[@]}" >&2
-            printf '  %s\n' "${wheel_paths[@]}" >&2
             exit 1
           fi
-          wheel_path="${wheel_paths[0]}"
-          test -f "$wheel_path"
-          python -m openlinktoken_ext_truveta.util.extension_manifests \
+          if [ "${#bundle_paths[@]}" -ne 3 ]; then
+            printf 'Expected exactly three platform bundles; found %s\n' \
+              "${#bundle_paths[@]}" >&2
+            exit 1
+          fi
+
+          mkdir -p release-assets
+          cp dist/*.whl dist/*.tar.gz bundle-assets/* release-assets/
+          bundle_args=()
+          for bundle_path in "${bundle_paths[@]}"; do
+            bundle_args+=(--bundle "$bundle_path")
+          done
+          PYTHONPATH=src/main python -m openlinktoken_ext_truveta.util.extension_manifests \
             --version "${VERSION}" \
-            --wheel "$wheel_path" \
+            --wheel "${wheel_paths[0]}" \
+            "${bundle_args[@]}" \
             --output-dir release-assets
 
-      - name: Upload built distributions as workflow artifacts
+      - name: Upload complete release assets as workflow artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: openlinktoken-ext-truveta-${{ env.TAG }}
-          path: |
-            dist/*.whl
-            dist/*.tar.gz
-            release-assets/*
+          name: openlinktoken-ext-truveta-release-assets-${{ env.TAG }}
+          path: release-assets/*
+          if-no-files-found: error
 
       - name: Upload distributions to GitHub Release
         if: env.RELEASE_FOUND == 'true'
@@ -107,16 +259,12 @@ jobs:
               releaseId = release.data.id;
             }
 
-            const files = [
-              ...fs.readdirSync('dist')
-                .filter((name) => name.endsWith('.whl') || name.endsWith('.tar.gz'))
-                .map((name) => path.join('dist', name)),
-              ...fs.readdirSync('release-assets')
-                .map((name) => path.join('release-assets', name)),
-            ];
+            const files = fs.readdirSync('release-assets')
+              .map((name) => path.join('release-assets', name))
+              .filter((filePath) => fs.statSync(filePath).isFile());
 
             if (files.length === 0) {
-              throw new Error('No wheel or source distribution found in dist');
+              throw new Error('No release assets found in release-assets');
             }
 
             const release = await github.rest.repos.getRelease({
@@ -151,7 +299,7 @@ jobs:
 
   build-standalone:
     name: Build standalone distributable (${{ matrix.os }})
-    needs: [release-info, build-and-release]
+    needs: [release-info, publish-release-assets]
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ${{ matrix.os }}
     permissions:
@@ -159,7 +307,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-15, windows-latest]
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: macos-15
+            target: macos-arm64
+          - os: windows-latest
+            target: windows-x64
     env:
       VERSION: ${{ needs.release-info.outputs.version }}
       TAG: ${{ needs.release-info.outputs.tag }}
@@ -240,6 +394,7 @@ jobs:
             ./dist/olt/olt truveta logout
           python scripts/smoke_independent_extension_update.py \
             --cli dist/olt/olt \
+            --target "${{ matrix.target }}" \
             --manifest-url "https://github.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/releases/download/${TAG}/openlinktoken-ext-truveta-bootstrap.json"
           ./dist/olt/olt generate-key-pair --name recipient --force
           ./dist/olt/olt initiate-exchange --name smoke --public-key "$HOME/.openlinktoken/recipient.public.pem" --output smoke/smoke.exchange.json --hashingsecret secret
@@ -261,6 +416,7 @@ jobs:
           .\dist\olt\olt.exe truveta logout
           python scripts\smoke_independent_extension_update.py `
             --cli dist\olt\olt.exe `
+            --target "${{ matrix.target }}" `
             --manifest-url "https://github.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/releases/download/$env:TAG/openlinktoken-ext-truveta-bootstrap.json"
           .\dist\olt\olt.exe generate-key-pair --name recipient --force
           .\dist\olt\olt.exe initiate-exchange --name smoke --public-key "$HOME/.openlinktoken/recipient.public.pem" --output smoke\smoke.exchange.json --hashingsecret secret

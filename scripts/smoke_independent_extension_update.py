@@ -30,32 +30,61 @@ def main(argv: Sequence[str] | None = None) -> int:
         required=True,
         help="URL of the release's Truveta bootstrap manifest.",
     )
+    parser.add_argument(
+        "--target",
+        required=True,
+        choices=("linux-x64", "macos-arm64", "windows-x64"),
+        help="Standalone platform target whose bundle should be verified.",
+    )
     args = parser.parse_args(argv)
 
     cli_path = args.cli.resolve()
     core_metadata_before = _core_metadata_hashes(cli_path)
     bootstrap = _read_json(args.manifest_url)
+    if bootstrap.get("schema_version") != 2:
+        raise ValueError("Expected a schema-v2 bootstrap manifest")
     expected_version = bootstrap["extension"]["version"]
     update_manifest_url = (
         f"{args.manifest_url.rsplit('/', 1)[0]}/openlinktoken-ext-truveta-update.json"
     )
     update_manifest = _read_json(update_manifest_url)
+    if update_manifest.get("schema_version") != 2:
+        raise ValueError("Expected a schema-v2 update manifest")
     if update_manifest["latest_version"] != expected_version:
         raise ValueError(
             "Bootstrap and update manifests disagree on the extension version: "
             f"{expected_version} != {update_manifest['latest_version']}"
         )
 
-    bootstrap_extension = bootstrap["extension"]
-    update_artifact = update_manifest["artifacts"][0]
     if (
-        bootstrap_extension["artifact_url"] != update_artifact["url"]
-        or bootstrap_extension["sha256"] != update_artifact["sha256"]
+        bootstrap.get("minimum_runtime_protocol") != 2
+        or update_manifest.get("minimum_runtime_protocol") != 2
+        or bootstrap.get("minimum_runtime_protocol")
+        != update_manifest.get("minimum_runtime_protocol")
     ):
-        raise ValueError(
-            "Bootstrap and update manifests disagree on the wheel artifact"
-        )
-    _verify_artifact_digest(update_artifact["url"], update_artifact["sha256"])
+        raise ValueError("Bootstrap and update manifests must require protocol 2")
+
+    bootstrap_bundles = bootstrap.get("bundles")
+    if not isinstance(
+        bootstrap_bundles, list
+    ) or bootstrap_bundles != update_manifest.get("bundles"):
+        raise ValueError("Bootstrap and update manifests disagree on extension bundles")
+    if not all(isinstance(bundle, dict) for bundle in bootstrap_bundles):
+        raise ValueError("Manifests contain an invalid extension bundle record")
+    bundle_targets = [bundle.get("target") for bundle in bootstrap_bundles]
+    if (
+        len(bundle_targets) != 3
+        or not all(isinstance(target, str) for target in bundle_targets)
+        or set(bundle_targets) != {"linux-x64", "macos-arm64", "windows-x64"}
+    ):
+        raise ValueError("Manifests must contain exactly one bundle for each target")
+    bundle_by_target = dict(zip(bundle_targets, bootstrap_bundles))
+    selected_bundle = bundle_by_target[args.target]
+    if not isinstance(selected_bundle.get("url"), str) or not isinstance(
+        selected_bundle.get("sha256"), str
+    ):
+        raise ValueError(f"Invalid extension bundle record for {args.target}")
+    _verify_artifact_digest(selected_bundle["url"], selected_bundle["sha256"])
 
     with tempfile.TemporaryDirectory(prefix="olt-extension-update-") as temp_home:
         extensions_dir = Path(temp_home) / "extensions"
@@ -142,7 +171,7 @@ def _read_json(url: str) -> dict:
 
 
 def _verify_artifact_digest(url: str, expected_digest: str) -> None:
-    """Verify the release manifest's SHA-256 against its wheel artifact."""
+    """Verify the release manifest's SHA-256 against a bundle artifact."""
     digest = hashlib.sha256()
     with urlopen(url, timeout=30) as response:
         for chunk in iter(lambda: response.read(1024 * 1024), b""):
@@ -150,7 +179,7 @@ def _verify_artifact_digest(url: str, expected_digest: str) -> None:
     actual_digest = digest.hexdigest()
     if actual_digest != expected_digest:
         raise ValueError(
-            f"Wheel SHA-256 mismatch for {url}: "
+            f"Bundle SHA-256 mismatch for {url}: "
             f"expected {expected_digest}, found {actual_digest}"
         )
 

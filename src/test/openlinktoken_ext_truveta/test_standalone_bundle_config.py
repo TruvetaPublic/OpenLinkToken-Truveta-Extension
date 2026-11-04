@@ -79,41 +79,47 @@ def test_spec_bundles_core_distribution_metadata():
         assert f'"{distribution}"' in spec
 
 
-def test_release_workflow_generates_and_publishes_update_manifests():
+def test_release_workflow_builds_bundles_before_publishing_manifests():
     workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
 
-    build_index = workflow.index("run: uv build")
-    manifest_index = workflow.index(
-        "python -m openlinktoken_ext_truveta.util.extension_manifests"
+    distributions_index = workflow.index("  build-distributions:")
+    bundles_index = workflow.index("  build-extension-bundle:")
+    publish_index = workflow.index("  publish-release-assets:")
+    standalone_index = workflow.index("  build-standalone:")
+    assert distributions_index < bundles_index < publish_index < standalone_index
+
+    assert "needs: [release-info, build-distributions]" in workflow
+    assert (
+        "needs: [release-info, build-distributions, build-extension-bundle]" in workflow
     )
-    assert build_index < manifest_index
+    assert "needs: [release-info, publish-release-assets]" in workflow
+    assert 'python-version: "3.12"' in workflow
+    assert "python -m pip download" in workflow
+    assert "--require-hashes" in workflow
+    assert "--only-binary=:all:" in workflow
+    assert 'if line.strip() != "-e ."' in workflow
+    assert '--python-abi "${{ matrix.python_abi }}"' in workflow
+    assert 'bundle_args+=(--bundle "$bundle_path")' in workflow
+    assert "Expected exactly three platform bundles" in workflow
     assert '--version "${VERSION}"' in workflow
-    assert "find dist -maxdepth 1 -type f -name '*.whl' -print" in workflow
-    assert '--wheel "$wheel_path"' in workflow
-    assert "dist/openlinktoken_ext_truveta-${VERSION}-py3-none-any.whl" not in workflow
     assert "--output-dir release-assets" in workflow
+    assert "path: release-assets/*" in workflow
 
-    artifact_start = workflow.index(
-        "name: Upload built distributions as workflow artifacts"
-    )
-    artifact_end = workflow.index(
-        "name: Upload distributions to GitHub Release", artifact_start
-    )
-    assert "release-assets/*" in workflow[artifact_start:artifact_end]
-
-    publish_start = workflow.index("name: Upload distributions to GitHub Release")
+    publish_start = workflow.index("  publish-release-assets:")
     publish_end = workflow.index("  build-standalone:", publish_start)
-    assert "readdirSync('release-assets')" in workflow[publish_start:publish_end]
+    assert "fs.readdirSync('release-assets')" in workflow[publish_start:publish_end]
 
 
 def test_standalone_release_smokes_compatible_leaf_command():
     workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    standalone_workflow = workflow[workflow.index("  build-standalone:") :]
 
-    assert 'SMOKE_HOME="$(mktemp -d)"' in workflow
-    assert 'HOME="$SMOKE_HOME"' in workflow
-    assert "./dist/olt/olt truveta logout" in workflow
-    assert workflow.count("smoke_independent_extension_update.py") == 2
-    assert workflow.count("--manifest-url") == 2
+    assert 'SMOKE_HOME="$(mktemp -d)"' in standalone_workflow
+    assert 'HOME="$SMOKE_HOME"' in standalone_workflow
+    assert "./dist/olt/olt truveta logout" in standalone_workflow
+    assert standalone_workflow.count("smoke_independent_extension_update.py") == 2
+    assert standalone_workflow.count("--manifest-url") == 2
+    assert standalone_workflow.count('--target "${{ matrix.target }}"') == 2
 
 
 def test_release_workflow_verifies_oci_assets_and_supported_platforms():
@@ -121,7 +127,9 @@ def test_release_workflow_verifies_oci_assets_and_supported_platforms():
     standalone_workflow = workflow[workflow.index("  build-standalone:") :]
     matrix = standalone_workflow.split("      matrix:", 1)[1].split("    env:", 1)[0]
 
-    assert "os: [ubuntu-latest, macos-15, windows-latest]" in matrix
+    assert "- os: ubuntu-latest\n            target: linux-x64" in matrix
+    assert "- os: macos-15\n            target: macos-arm64" in matrix
+    assert "- os: windows-latest\n            target: windows-x64" in matrix
     assert "macos-latest" not in matrix
     assert "intel" not in matrix.lower()
     assert "OLT_ML1_MODEL_TAG: v1" in standalone_workflow
