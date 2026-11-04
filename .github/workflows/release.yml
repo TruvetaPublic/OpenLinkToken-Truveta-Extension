@@ -104,7 +104,7 @@ jobs:
         run: uv pip install --system -e .
 
       - name: Download built extension wheel
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: openlinktoken-ext-truveta-distributions-${{ env.TAG }}
           path: dist
@@ -190,13 +190,13 @@ jobs:
         run: uv pip install --system -e .
 
       - name: Download built distributions
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: openlinktoken-ext-truveta-distributions-${{ env.TAG }}
           path: dist
 
       - name: Download platform bundles
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: truveta-extension-bundle-${{ env.TAG }}-*
           path: bundle-assets
