@@ -12,6 +12,7 @@
   - [Branching and Release Policy](#branching-and-release-policy)
   - [Versioning](#versioning)
   - [Continuous Integration](#continuous-integration)
+    - [Cross-Repository Standalone Integration](#cross-repository-standalone-integration)
   - [Releases](#releases)
   - [Independent Extension Updates](#independent-extension-updates)
     - [Bootstrap, Inspection, and Recovery](#bootstrap-inspection-and-recovery)
@@ -161,6 +162,47 @@ For Dependabot PRs that change `pyproject.toml` or the requirements files,
 to the PR branch, and starts CI on the new commit. If resolution fails, the workflow fails;
 align the conflicting pin with OpenLinkToken manually. After this commit, Dependabot stops
 rebasing the PR automatically; comment `@dependabot recreate` to start over.
+
+### Cross-Repository Standalone Integration
+
+The `Standalone extension integration` workflow runs on extension pull requests.
+It builds real frozen core CLIs and hash-locked extension bundles on native
+Linux x64, macOS arm64, and Windows x64 runners, each with CPython 3.11 and 3.12.
+All six bundles must succeed before installation tests start.
+
+Automatic runs use a pinned, protocol-2-compatible OpenLinkToken commit rather
+than a moving branch. OpenLinkToken also calls this reusable workflow on its own
+pull requests with a pinned extension revision. Update the counterpart pins
+deliberately when changing the supported compatibility baseline.
+
+To test two unmerged branches without publishing a release:
+
+```bash
+gh workflow run standalone-integration.yml \
+  --repo TruvetaPublic/OpenLinkToken-Truveta-Extension \
+  --ref dev/mattwise-42/publish-truveta-extension-bundles \
+  -f core_ref=dev/mattwise-42/standalone-extension-dependency-isolation \
+  -f extension_ref=dev/mattwise-42/publish-truveta-extension-bundles
+```
+
+Both refs are resolved to exact commits once, recorded in the run summary, and
+used by every job. The workflow has read-only repository permissions and never
+uploads release assets.
+
+`scripts/test_standalone_install.py` serves temporary installer copies, release
+ZIPs, checksums, and manifests over loopback HTTPS with an ephemeral trusted CA.
+It tests latest-version discovery, explicit-version reinstallation, paths with
+spaces, checksum rejection without replacing the installation, a core command,
+and fresh extension install/update/worker execution. It also checks exact
+target/ABI bundle identity, rejection of corrupt or unavailable ABI bundles,
+and unchanged core metadata. Windows trusts the test CA only for the installer
+subprocess and removes it afterward.
+
+These are CPU-only installer tests with model assets included in the test ZIP,
+not tests of the separate ORAS/GHCR model download or CUDA installation paths.
+The existing release workflows separately verify OCI assets and tokenization.
+Python 3.13/3.14 remain covered by source tests; they need no standalone bundle
+until a supported frozen CLI embeds those runtimes.
 
 ## Releases
 

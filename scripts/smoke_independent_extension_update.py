@@ -27,6 +27,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Install and update the Truveta extension from release manifests."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--fresh-core",
+        action="store_true",
+        help="Test a core CLI without a preinstalled Truveta extension.",
+    )
+    parser.add_argument(
         "--cli", required=True, type=Path, help="Standalone OLT executable."
     )
     parser.add_argument(
@@ -121,17 +126,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "APPDATA": temp_home,
                 "XDG_CONFIG_HOME": str(Path(temp_home) / ".config"),
                 "OLT_EXTENSIONS_DIR": str(extensions_dir),
+                "OLT_DISABLE_UPDATE_CHECK": "1",
             }
         )
 
-        _run_cli(cli_path, ["truveta", "logout"], environment)
         registry_path = extensions_dir / "registry.json"
-        registry = json.loads(registry_path.read_text(encoding="utf-8"))
-        registry.pop("truveta", None)
-        registry_path.write_text(
-            json.dumps(registry, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        if not args.fresh_core:
+            _run_cli(cli_path, ["truveta", "logout"], environment)
+            registry = json.loads(registry_path.read_text(encoding="utf-8"))
+            registry.pop("truveta", None)
+            registry_path.write_text(
+                json.dumps(registry, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
 
         _run_cli(
             cli_path,
@@ -141,6 +148,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         registry = json.loads(registry_path.read_text(encoding="utf-8"))
         entry = registry["truveta"]
+        if args.fresh_core and (
+            entry.get("python_abi") != args.python_abi
+            or entry.get("bundle_sha256") != selected_bundle["sha256"]
+        ):
+            raise RuntimeError("Installation selected the wrong target/ABI bundle")
         entry["update_manifest_url"] = update_manifest_url
         entry["version"] = "0.0.0"
         registry_path.write_text(
@@ -149,6 +161,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
         _run_cli(cli_path, ["extension", "update", "truveta", "--yes"], environment)
+        _run_cli(cli_path, ["truveta", "--help"], environment)
         _run_cli(cli_path, ["truveta", "logout"], environment)
 
         updated_registry = json.loads(registry_path.read_text(encoding="utf-8"))
@@ -158,6 +171,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"expected {update_manifest['latest_version']}, "
                 f"found {updated_registry['truveta']['version']}"
             )
+        if args.fresh_core and (
+            updated_registry["truveta"].get("python_abi") != args.python_abi
+            or updated_registry["truveta"].get("bundle_sha256")
+            != selected_bundle["sha256"]
+        ):
+            raise RuntimeError("Update selected the wrong target/ABI bundle")
 
     if _core_metadata_hashes(cli_path) != core_metadata_before:
         raise RuntimeError(
@@ -213,13 +232,20 @@ def _verify_artifact_digest(url: str, expected_digest: str) -> None:
 def _core_metadata_hashes(cli_path: Path) -> dict[str, str]:
     """Hash bundled core distribution metadata to detect accidental core changes."""
     internal_dir = cli_path.parent / "_internal"
-    metadata_paths = sorted(internal_dir.glob("*.dist-info/METADATA"))
+    metadata_paths = sorted(
+        [
+            *internal_dir.glob("*.dist-info/METADATA"),
+            *internal_dir.glob("*.egg-info/PKG-INFO"),
+        ]
+    )
     core_metadata = {
-        metadata_path.parent.name: hashlib.sha256(
+        metadata_path.parent.name.replace(".egg-info", "-"): hashlib.sha256(
             metadata_path.read_bytes()
         ).hexdigest()
         for metadata_path in metadata_paths
-        if metadata_path.parent.name.startswith(_CORE_METADATA_PREFIXES)
+        if metadata_path.parent.name.replace(".egg-info", "-").startswith(
+            _CORE_METADATA_PREFIXES
+        )
     }
     found_prefixes = {
         prefix

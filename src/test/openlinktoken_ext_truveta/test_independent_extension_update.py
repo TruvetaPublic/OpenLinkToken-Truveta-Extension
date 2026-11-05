@@ -26,8 +26,10 @@ main = SMOKE_SCRIPT.main
 
 
 @pytest.mark.skipif(os.name == "nt", reason="The fake CLI uses a POSIX shebang.")
+@pytest.mark.parametrize("fresh_core", [False, True])
+@pytest.mark.parametrize("python_abi", ["cp311", "cp312"])
 def test_smoke_bootstraps_and_updates_extension_without_core_changes(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, fresh_core, python_abi
 ):
     """Verify the smoke script selects one exact target/ABI bundle."""
     bundle_dir = tmp_path / "dist" / "olt"
@@ -57,6 +59,9 @@ def test_smoke_bootstraps_and_updates_extension_without_core_changes(
         "    extension = manifest['extension']\n"
         "    entry = {'version': extension['version'], "
         "'update_manifest_url': extension['update_manifest_url']}\n"
+        f"    entry['python_abi'] = '{python_abi}'\n"
+        "    entry['bundle_sha256'] = next(b['sha256'] for b in manifest['bundles'] "
+        f"if b['target'] == 'linux-x64' and b['python_abi'] == '{python_abi}')\n"
         "    registry_path.parent.mkdir(parents=True, exist_ok=True)\n"
         "    registry_path.write_text(json.dumps({'truveta': entry}), encoding='utf-8')\n"
         "elif args[:3] == ['extension', 'update', 'truveta']:\n"
@@ -69,22 +74,24 @@ def test_smoke_bootstraps_and_updates_extension_without_core_changes(
         "    if not registry_path.exists():\n"
         "        registry_path.parent.mkdir(parents=True, exist_ok=True)\n"
         "        registry_path.write_text(json.dumps({'truveta': {}}), encoding='utf-8')\n"
+        "elif args == ['truveta', '--help']:\n"
+        "    pass\n"
         "else:\n"
         "    raise SystemExit(f'unexpected command: {args}')\n",
         encoding="utf-8",
     )
     fake_cli.chmod(0o755)
 
-    selected_bundle_path = tmp_path / "linux-x64-cp312.zip"
+    selected_bundle_path = tmp_path / f"linux-x64-{python_abi}.zip"
     bundle_records = []
     for target, python_abis in SUPPORTED_BUNDLE_TARGETS.items():
-        for python_abi in python_abis:
-            bundle_path = tmp_path / f"{target}-{python_abi}.zip"
-            bundle_path.write_bytes(f"{target}-{python_abi}".encode())
+        for bundle_abi in python_abis:
+            bundle_path = tmp_path / f"{target}-{bundle_abi}.zip"
+            bundle_path.write_bytes(f"{target}-{bundle_abi}".encode())
             bundle_records.append(
                 {
                     "target": target,
-                    "python_abi": python_abi,
+                    "python_abi": bundle_abi,
                     "url": bundle_path.as_uri(),
                     "sha256": hashlib.sha256(bundle_path.read_bytes()).hexdigest(),
                 }
@@ -121,10 +128,21 @@ def test_smoke_bootstraps_and_updates_extension_without_core_changes(
                 "--target",
                 "linux-x64",
                 "--python-abi",
-                "cp312",
+                python_abi,
+                *(["--fresh-core"] if fresh_core else []),
             ]
         )
         == 0
     )
     assert verify_bundle.call_count == 1
     assert verify_bundle.call_args.args[0] == selected_bundle_path.as_uri()
+
+
+def test_core_metadata_hashes_accepts_setuptools_egg_info(tmp_path):
+    """The frozen CLI can contain egg-info rather than dist-info."""
+    internal = tmp_path / "_internal"
+    for name in ("openlinktoken", "openlinktoken_cli", "openlinktoken_core_ai"):
+        directory = internal / f"{name}.egg-info"
+        directory.mkdir(parents=True)
+        (directory / "PKG-INFO").write_text(f"Name: {name}\nVersion: 2.2.1\n")
+    assert len(SMOKE_SCRIPT._core_metadata_hashes(tmp_path / "olt")) == 3
