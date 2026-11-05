@@ -172,7 +172,7 @@ Releases are defined in `.github/workflows/auto-release.yml` and `.github/workfl
 The asset workflow:
 
 1. Builds the extension wheel and source distribution.
-2. On native Linux x64, Windows x64, and macOS Apple Silicon runners with CPython 3.12, downloads the locked runtime dependencies from `requirements.txt` using required hashes and binary wheels, then creates a flat dependency bundle for each target.
+2. On native Linux x64, Windows x64, and macOS Apple Silicon runners, builds separate CPython 3.11 and 3.12 jobs, downloads the locked runtime dependencies from `requirements.txt` using required hashes and binary wheels, then creates a flat dependency bundle for each target/ABI pair.
 3. Waits for every dependency bundle, generates schema-v2 bootstrap and update manifests with each bundle's URL and SHA-256 digest, and publishes the wheel, source distribution, bundles, checksums, and manifests to the GitHub Release.
 4. Builds one-folder standalone distributions for Linux x64, Windows x64, and macOS Apple Silicon arm64 using PyInstaller, after the extension assets are published.
 5. Pulls the public OpenLinkToken ML1 OCI artifact with ORAS 1.3.3, verifies its manifest-declared sizes and SHA-256 digests, and installs it into the temporary smoke-test bundle.
@@ -238,12 +238,12 @@ After `uv build`, the release workflow creates these extension assets:
 - `openlinktoken_ext_truveta-<version>-py3-none-any.whl.sha256`
 - `openlinktoken-ext-truveta-bootstrap.json`
 - `openlinktoken-ext-truveta-update.json`
-- `openlinktoken-ext-truveta-<version>-linux-x64-cp312.zip` and `.zip.sha256`
-- `openlinktoken-ext-truveta-<version>-macos-arm64-cp312.zip` and `.zip.sha256`
-- `openlinktoken-ext-truveta-<version>-windows-x64-cp312.zip` and `.zip.sha256`
+- `openlinktoken-ext-truveta-<version>-<target>-<python-abi>.zip` and `.zip.sha256` for:
+  - Targets: `linux-x64`, `macos-arm64`, and `windows-x64`
+  - ABIs: `cp311` and `cp312`
 
 The schema-v2 manifests identify runtime protocol 2, the `truveta` command
-metadata, the supported core range, and all three dependency bundles. The
+metadata, the supported core range, and all six target/ABI dependency bundles. The
 workflow publishes these assets together with `dist/*.whl` and `dist/*.tar.gz`
 to the same GitHub Release. Each standalone build additionally publishes its
 complete standalone distribution and checksum pair:

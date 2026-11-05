@@ -47,7 +47,7 @@ def create_extension_release_assets(
     Args:
         version: Semantic version of the extension release.
         wheel_path: Built extension wheel to publish.
-        bundle_paths: Platform-specific dependency bundles to publish.
+        bundle_paths: Dependency bundles for every supported target/ABI pair.
         output_dir: Directory where release assets are written.
         repository: GitHub repository in OWNER/REPOSITORY form.
 
@@ -111,14 +111,18 @@ def _load_bundle_records(
     """Validate bundle locks and create their release URL records.
 
     Args:
-        bundle_paths: Bundle ZIPs created for the supported targets.
+        bundle_paths: Bundle ZIPs created for the supported target/ABI pairs.
         version: Validated release version.
         repository: GitHub repository in OWNER/REPOSITORY form.
 
     Returns:
-        Bundle records sorted by the supported target order.
+        Bundle records sorted by the supported target/ABI order.
     """
-    expected_pairs = set(SUPPORTED_BUNDLE_TARGETS.items())
+    expected_pairs = {
+        (target, python_abi)
+        for target, python_abis in SUPPORTED_BUNDLE_TARGETS.items()
+        for python_abi in python_abis
+    }
     bundle_records: dict[tuple[str, str], dict[str, str]] = {}
     for bundle_path in bundle_paths:
         if not bundle_path.is_file():
@@ -166,11 +170,12 @@ def _load_bundle_records(
 
     if set(bundle_records) != expected_pairs:
         missing = sorted(expected_pairs - set(bundle_records))
-        raise ValueError(f"Missing extension bundle targets: {missing}")
+        raise ValueError(f"Missing extension bundle target/ABI pairs: {missing}")
 
     return [
         bundle_records[(target, python_abi)]
-        for target, python_abi in SUPPORTED_BUNDLE_TARGETS.items()
+        for target, python_abis in SUPPORTED_BUNDLE_TARGETS.items()
+        for python_abi in python_abis
     ]
 
 
@@ -263,7 +268,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         required=True,
         action="append",
         type=Path,
-        help="Built platform-specific extension dependency bundle; repeat for each target.",
+        help="Built extension dependency bundle; repeat for each supported target/ABI pair.",
     )
     parser.add_argument(
         "--output-dir",

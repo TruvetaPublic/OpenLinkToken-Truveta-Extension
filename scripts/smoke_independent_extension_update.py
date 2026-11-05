@@ -12,6 +12,10 @@ from pathlib import Path
 from typing import Sequence
 from urllib.request import urlopen
 
+from openlinktoken_ext_truveta.util.extension_bundles import (
+    SUPPORTED_BUNDLE_TARGETS,
+)
+
 _CORE_METADATA_PREFIXES = (
     "openlinktoken-",
     "openlinktoken_cli-",
@@ -33,8 +37,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--target",
         required=True,
-        choices=("linux-x64", "macos-arm64", "windows-x64"),
+        choices=tuple(SUPPORTED_BUNDLE_TARGETS),
         help="Standalone platform target whose bundle should be verified.",
+    )
+    parser.add_argument(
+        "--python-abi",
+        required=True,
+        choices=tuple(
+            sorted({abi for abis in SUPPORTED_BUNDLE_TARGETS.values() for abi in abis})
+        ),
+        help="Embedded CPython ABI whose bundle should be verified.",
     )
     args = parser.parse_args(argv)
 
@@ -71,19 +83,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise ValueError("Bootstrap and update manifests disagree on extension bundles")
     if not all(isinstance(bundle, dict) for bundle in bootstrap_bundles):
         raise ValueError("Manifests contain an invalid extension bundle record")
-    bundle_targets = [bundle.get("target") for bundle in bootstrap_bundles]
-    if (
-        len(bundle_targets) != 3
-        or not all(isinstance(target, str) for target in bundle_targets)
-        or set(bundle_targets) != {"linux-x64", "macos-arm64", "windows-x64"}
+    bundle_pairs = [
+        (bundle.get("target"), bundle.get("python_abi")) for bundle in bootstrap_bundles
+    ]
+    if not all(
+        isinstance(target, str) and isinstance(python_abi, str)
+        for target, python_abi in bundle_pairs
     ):
-        raise ValueError("Manifests must contain exactly one bundle for each target")
-    bundle_by_target = dict(zip(bundle_targets, bootstrap_bundles))
-    selected_bundle = bundle_by_target[args.target]
+        raise ValueError(
+            "Manifests contain an invalid extension bundle target/ABI pair"
+        )
+    expected_pairs = {
+        (target, python_abi)
+        for target, python_abis in SUPPORTED_BUNDLE_TARGETS.items()
+        for python_abi in python_abis
+    }
+    if len(bundle_pairs) != len(expected_pairs) or set(bundle_pairs) != expected_pairs:
+        raise ValueError(
+            "Manifests must contain exactly one bundle for each supported target/ABI pair"
+        )
+    bundle_by_pair = dict(zip(bundle_pairs, bootstrap_bundles))
+    selected_bundle = bundle_by_pair[(args.target, args.python_abi)]
     if not isinstance(selected_bundle.get("url"), str) or not isinstance(
         selected_bundle.get("sha256"), str
     ):
-        raise ValueError(f"Invalid extension bundle record for {args.target}")
+        raise ValueError(
+            f"Invalid extension bundle record for {args.target}/{args.python_abi}"
+        )
     _verify_artifact_digest(selected_bundle["url"], selected_bundle["sha256"])
 
     with tempfile.TemporaryDirectory(prefix="olt-extension-update-") as temp_home:

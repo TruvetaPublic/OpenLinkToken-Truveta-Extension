@@ -64,7 +64,7 @@ jobs:
           if-no-files-found: error
 
   build-extension-bundle:
-    name: Build extension dependency bundle (${{ matrix.target }})
+    name: Build extension dependency bundle (${{ matrix.target }} / ${{ matrix.python_abi }})
     needs: [release-info, build-distributions]
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ${{ matrix.os }}
@@ -74,13 +74,28 @@ jobs:
         include:
           - os: ubuntu-latest
             target: linux-x64
+            python_abi: cp311
+            python_version: "3.11"
+          - os: ubuntu-latest
+            target: linux-x64
             python_abi: cp312
+            python_version: "3.12"
+          - os: macos-15
+            target: macos-arm64
+            python_abi: cp311
+            python_version: "3.11"
           - os: macos-15
             target: macos-arm64
             python_abi: cp312
+            python_version: "3.12"
+          - os: windows-latest
+            target: windows-x64
+            python_abi: cp311
+            python_version: "3.11"
           - os: windows-latest
             target: windows-x64
             python_abi: cp312
+            python_version: "3.12"
     env:
       VERSION: ${{ needs.release-info.outputs.version }}
       TAG: ${{ needs.release-info.outputs.tag }}
@@ -93,7 +108,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "${{ matrix.python_version }}"
 
       - name: Install uv
         uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
@@ -154,7 +169,7 @@ jobs:
       - name: Upload extension bundle as workflow artifact
         uses: actions/upload-artifact@v7
         with:
-          name: truveta-extension-bundle-${{ env.TAG }}-${{ matrix.target }}
+          name: truveta-extension-bundle-${{ env.TAG }}-${{ matrix.target }}-${{ matrix.python_abi }}
           path: bundle-assets/*
           if-no-files-found: error
 
@@ -214,8 +229,8 @@ jobs:
               "${#wheel_paths[@]}" >&2
             exit 1
           fi
-          if [ "${#bundle_paths[@]}" -ne 3 ]; then
-            printf 'Expected exactly three platform bundles; found %s\n' \
+          if [ "${#bundle_paths[@]}" -ne 6 ]; then
+            printf 'Expected exactly six platform/ABI bundles; found %s\n' \
               "${#bundle_paths[@]}" >&2
             exit 1
           fi
@@ -395,6 +410,7 @@ jobs:
           python scripts/smoke_independent_extension_update.py \
             --cli dist/olt/olt \
             --target "${{ matrix.target }}" \
+            --python-abi cp312 \
             --manifest-url "https://github.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/releases/download/${TAG}/openlinktoken-ext-truveta-bootstrap.json"
           ./dist/olt/olt generate-key-pair --name recipient --force
           ./dist/olt/olt initiate-exchange --name smoke --public-key "$HOME/.openlinktoken/recipient.public.pem" --output smoke/smoke.exchange.json --hashingsecret secret
@@ -417,6 +433,7 @@ jobs:
           python scripts\smoke_independent_extension_update.py `
             --cli dist\olt\olt.exe `
             --target "${{ matrix.target }}" `
+            --python-abi cp312 `
             --manifest-url "https://github.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/releases/download/$env:TAG/openlinktoken-ext-truveta-bootstrap.json"
           .\dist\olt\olt.exe generate-key-pair --name recipient --force
           .\dist\olt\olt.exe initiate-exchange --name smoke --public-key "$HOME/.openlinktoken/recipient.public.pem" --output smoke\smoke.exchange.json --hashingsecret secret

@@ -4,8 +4,13 @@ import json
 import os
 import sys
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
+
+from openlinktoken_ext_truveta.util.extension_bundles import (
+    SUPPORTED_BUNDLE_TARGETS,
+)
 
 SMOKE_SCRIPT_PATH = (
     Path(__file__).parents[3] / "scripts" / "smoke_independent_extension_update.py"
@@ -21,7 +26,10 @@ main = SMOKE_SCRIPT.main
 
 
 @pytest.mark.skipif(os.name == "nt", reason="The fake CLI uses a POSIX shebang.")
-def test_smoke_bootstraps_and_updates_extension_without_core_changes(tmp_path):
+def test_smoke_bootstraps_and_updates_extension_without_core_changes(
+    tmp_path, monkeypatch
+):
+    """Verify the smoke script selects one exact target/ABI bundle."""
     bundle_dir = tmp_path / "dist" / "olt"
     internal_dir = bundle_dir / "_internal"
     internal_dir.mkdir(parents=True)
@@ -67,18 +75,20 @@ def test_smoke_bootstraps_and_updates_extension_without_core_changes(tmp_path):
     )
     fake_cli.chmod(0o755)
 
+    selected_bundle_path = tmp_path / "linux-x64-cp312.zip"
     bundle_records = []
-    for target in ("linux-x64", "macos-arm64", "windows-x64"):
-        bundle_path = tmp_path / f"{target}.zip"
-        bundle_path.write_bytes(target.encode())
-        bundle_records.append(
-            {
-                "target": target,
-                "python_abi": "cp312",
-                "url": bundle_path.as_uri(),
-                "sha256": hashlib.sha256(bundle_path.read_bytes()).hexdigest(),
-            }
-        )
+    for target, python_abis in SUPPORTED_BUNDLE_TARGETS.items():
+        for python_abi in python_abis:
+            bundle_path = tmp_path / f"{target}-{python_abi}.zip"
+            bundle_path.write_bytes(f"{target}-{python_abi}".encode())
+            bundle_records.append(
+                {
+                    "target": target,
+                    "python_abi": python_abi,
+                    "url": bundle_path.as_uri(),
+                    "sha256": hashlib.sha256(bundle_path.read_bytes()).hexdigest(),
+                }
+            )
     update_manifest = {
         "schema_version": 2,
         "latest_version": "1.1.0",
@@ -99,6 +109,8 @@ def test_smoke_bootstraps_and_updates_extension_without_core_changes(tmp_path):
     bootstrap_manifest_path = tmp_path / "openlinktoken-ext-truveta-bootstrap.json"
     bootstrap_manifest_path.write_text(json.dumps(bootstrap_manifest), encoding="utf-8")
 
+    verify_bundle = Mock(wraps=SMOKE_SCRIPT._verify_artifact_digest)
+    monkeypatch.setattr(SMOKE_SCRIPT, "_verify_artifact_digest", verify_bundle)
     assert (
         main(
             [
@@ -108,7 +120,11 @@ def test_smoke_bootstraps_and_updates_extension_without_core_changes(tmp_path):
                 bootstrap_manifest_path.as_uri(),
                 "--target",
                 "linux-x64",
+                "--python-abi",
+                "cp312",
             ]
         )
         == 0
     )
+    assert verify_bundle.call_count == 1
+    assert verify_bundle.call_args.args[0] == selected_bundle_path.as_uri()

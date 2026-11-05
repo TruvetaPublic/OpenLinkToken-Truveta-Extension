@@ -21,9 +21,9 @@ from openlinktoken_ext_truveta import (
 )
 
 SUPPORTED_BUNDLE_TARGETS = {
-    "linux-x64": "cp312",
-    "macos-arm64": "cp312",
-    "windows-x64": "cp312",
+    "linux-x64": ("cp311", "cp312"),
+    "macos-arm64": ("cp311", "cp312"),
+    "windows-x64": ("cp311", "cp312"),
 }
 _CORE_DISTRIBUTIONS = frozenset(
     {
@@ -56,7 +56,7 @@ def create_extension_bundle_assets(
         Paths to the bundle ZIP and checksum sidecar.
     """
     normalized_version = _validate_version(version)
-    if SUPPORTED_BUNDLE_TARGETS.get(target) != python_abi:
+    if python_abi not in SUPPORTED_BUNDLE_TARGETS.get(target, ()):
         raise ValueError(
             f"Unsupported extension bundle target/ABI: {target}/{python_abi}"
         )
@@ -139,7 +139,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--python-abi",
         required=True,
-        choices=sorted(set(SUPPORTED_BUNDLE_TARGETS.values())),
+        choices=sorted(
+            {abi for abis in SUPPORTED_BUNDLE_TARGETS.values() for abi in abis}
+        ),
         help="Embedded CPython ABI.",
     )
     parser.add_argument(

@@ -50,16 +50,17 @@ def _write_bundle_set(tmp_path, version):
         )
 
     bundle_paths = []
-    for target, python_abi in SUPPORTED_BUNDLE_TARGETS.items():
-        bundle_path, _ = create_extension_bundle_assets(
-            version,
-            target,
-            python_abi,
-            extension_wheel,
-            dependency_wheel_dir,
-            tmp_path / "bundles" / target,
-        )
-        bundle_paths.append(bundle_path)
+    for target, python_abis in SUPPORTED_BUNDLE_TARGETS.items():
+        for python_abi in python_abis:
+            bundle_path, _ = create_extension_bundle_assets(
+                version,
+                target,
+                python_abi,
+                extension_wheel,
+                dependency_wheel_dir,
+                tmp_path / "bundles" / target,
+            )
+            bundle_paths.append(bundle_path)
     return bundle_paths
 
 
@@ -97,11 +98,16 @@ def test_create_extension_release_assets_writes_checksummed_manifests(tmp_path):
     assert bootstrap["minimum_runtime_protocol"] == 2
     assert bootstrap["command_name"] == "truveta"
     assert bootstrap["description"] == EXTENSION_DESCRIPTION
-    assert [bundle["target"] for bundle in bootstrap["bundles"]] == list(
-        SUPPORTED_BUNDLE_TARGETS
-    )
+    expected_pairs = [
+        (target, python_abi)
+        for target, python_abis in SUPPORTED_BUNDLE_TARGETS.items()
+        for python_abi in python_abis
+    ]
+    assert [
+        (bundle["target"], bundle["python_abi"]) for bundle in bootstrap["bundles"]
+    ] == expected_pairs
     for bundle, bundle_path in zip(bootstrap["bundles"], bundle_paths):
-        assert bundle["python_abi"] == SUPPORTED_BUNDLE_TARGETS[bundle["target"]]
+        assert bundle["python_abi"] in SUPPORTED_BUNDLE_TARGETS[bundle["target"]]
         assert bundle["url"].endswith(f"/releases/download/v1.2.3/{bundle_path.name}")
         assert bundle["sha256"] == hashlib.sha256(bundle_path.read_bytes()).hexdigest()
 
@@ -188,7 +194,7 @@ def test_create_extension_release_assets_requires_each_target_bundle(tmp_path):
     bundle_paths = _write_bundle_set(tmp_path, "1.2.3")
     output_dir = tmp_path / "release-assets"
 
-    with pytest.raises(ValueError, match="Missing extension bundle targets"):
+    with pytest.raises(ValueError, match="Missing extension bundle target/ABI pairs"):
         create_extension_release_assets(
             "1.2.3", wheel_path, bundle_paths[:-1], output_dir
         )

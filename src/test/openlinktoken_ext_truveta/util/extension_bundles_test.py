@@ -5,8 +5,15 @@ import zipfile
 import pytest
 
 from openlinktoken_ext_truveta.util.extension_bundles import (
+    SUPPORTED_BUNDLE_TARGETS,
     create_extension_bundle_assets,
 )
+
+_SUPPORTED_BUNDLE_PAIRS = [
+    (target, python_abi)
+    for target, python_abis in SUPPORTED_BUNDLE_TARGETS.items()
+    for python_abi in python_abis
+]
 
 
 def _write_wheel(path, distribution_name, version):
@@ -20,7 +27,10 @@ def _write_wheel(path, distribution_name, version):
     return path
 
 
-def test_create_extension_bundle_assets_writes_flat_hash_locked_bundle(tmp_path):
+@pytest.mark.parametrize(("target", "python_abi"), _SUPPORTED_BUNDLE_PAIRS)
+def test_create_extension_bundle_assets_writes_flat_hash_locked_bundle(
+    tmp_path, target, python_abi
+):
     extension_wheel = _write_wheel(
         tmp_path / "openlinktoken_ext_truveta-1.2.3-py3-none-any.whl",
         "openlinktoken-ext-truveta",
@@ -36,14 +46,16 @@ def test_create_extension_bundle_assets_writes_flat_hash_locked_bundle(tmp_path)
 
     bundle_path, checksum_path = create_extension_bundle_assets(
         "1.2.3",
-        "linux-x64",
-        "cp312",
+        target,
+        python_abi,
         extension_wheel,
         dependency_wheel_dir,
         tmp_path / "assets",
     )
 
-    assert bundle_path.name == "openlinktoken-ext-truveta-1.2.3-linux-x64-cp312.zip"
+    assert bundle_path.name == (
+        f"openlinktoken-ext-truveta-1.2.3-{target}-{python_abi}.zip"
+    )
     assert checksum_path.read_text(encoding="utf-8") == (
         f"{hashlib.sha256(bundle_path.read_bytes()).hexdigest()}  {bundle_path.name}\n"
     )
@@ -57,8 +69,8 @@ def test_create_extension_bundle_assets_writes_flat_hash_locked_bundle(tmp_path)
         records = {record["name"]: record for record in manifest["wheels"]}
         assert manifest["schema_version"] == 1
         assert manifest["extension"] == {"name": "truveta", "version": "1.2.3"}
-        assert manifest["target"] == "linux-x64"
-        assert manifest["python_abi"] == "cp312"
+        assert manifest["target"] == target
+        assert manifest["python_abi"] == python_abi
         assert records["openlinktoken-ext-truveta"]["filename"] == extension_wheel.name
         assert records["openlinktoken-ext-truveta"]["tags"] == ["py3-none-any"]
         assert records["openlinktoken-ext-truveta"]["version"] == "1.2.3"

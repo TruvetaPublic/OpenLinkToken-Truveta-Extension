@@ -100,10 +100,19 @@ def test_release_workflow_builds_bundles_before_publishing_manifests():
     assert 'if line.strip() != "-e ."' in workflow
     assert '--python-abi "${{ matrix.python_abi }}"' in workflow
     assert 'bundle_args+=(--bundle "$bundle_path")' in workflow
-    assert "Expected exactly three platform bundles" in workflow
+    assert "Expected exactly six platform/ABI bundles" in workflow
     assert '--version "${VERSION}"' in workflow
     assert "--output-dir release-assets" in workflow
     assert "path: release-assets/*" in workflow
+
+    bundle_workflow = workflow[
+        workflow.index("  build-extension-bundle:") : workflow.index(
+            "  publish-release-assets:"
+        )
+    ]
+    assert bundle_workflow.count("python_abi: cp311") == 3
+    assert bundle_workflow.count("python_abi: cp312") == 3
+    assert 'python-version: "${{ matrix.python_version }}"' in bundle_workflow
 
     publish_start = workflow.index("  publish-release-assets:")
     publish_end = workflow.index("  build-standalone:", publish_start)
@@ -120,6 +129,7 @@ def test_standalone_release_smokes_compatible_leaf_command():
     assert standalone_workflow.count("smoke_independent_extension_update.py") == 2
     assert standalone_workflow.count("--manifest-url") == 2
     assert standalone_workflow.count('--target "${{ matrix.target }}"') == 2
+    assert standalone_workflow.count("--python-abi cp312") == 2
 
 
 def test_release_workflow_verifies_oci_assets_and_supported_platforms():
