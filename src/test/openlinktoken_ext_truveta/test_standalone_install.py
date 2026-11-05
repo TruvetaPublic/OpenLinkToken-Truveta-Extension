@@ -1,10 +1,12 @@
 """Checks for the real-artifact installer integration harness."""
 
 import importlib.util
+import os
 from pathlib import Path
 import subprocess
 
 import pytest
+from cryptography import x509
 
 
 @pytest.fixture
@@ -47,6 +49,14 @@ def test_endpoint_drift_fails_explicitly(harness, tmp_path):
     source.write_text("changed endpoints")
     with pytest.raises(RuntimeError, match="Installer endpoints changed"):
         harness.stage_installer(source, tmp_path / "out", "https://127.0.0.1:1")
+
+
+def test_tls_certificates_use_sha256(harness, tmp_path):
+    """Do not inherit LibreSSL's legacy SHA-1 signing defaults on macOS."""
+    harness.prepare_tls(tmp_path, os.environ.copy())
+    for name in ("ca.crt", "server.crt"):
+        certificate = x509.load_pem_x509_certificate((tmp_path / name).read_bytes())
+        assert certificate.signature_hash_algorithm.name == "sha256"
 
 
 @pytest.mark.parametrize("code,fails", [(0, True), (1, False)])

@@ -14,6 +14,7 @@ import ssl
 import subprocess
 import tempfile
 import threading
+from urllib.request import urlopen
 import zipfile
 
 from smoke_independent_extension_update import main as smoke_update
@@ -48,6 +49,7 @@ def prepare_tls(directory: Path, environment: dict[str, str]) -> None:
         [
             "openssl",
             "req",
+            "-sha256",
             "-x509",
             "-newkey",
             "rsa:2048",
@@ -69,6 +71,7 @@ def prepare_tls(directory: Path, environment: dict[str, str]) -> None:
         [
             "openssl",
             "req",
+            "-sha256",
             "-newkey",
             "rsa:2048",
             "-nodes",
@@ -91,6 +94,7 @@ def prepare_tls(directory: Path, environment: dict[str, str]) -> None:
         [
             "openssl",
             "x509",
+            "-sha256",
             "-req",
             "-days",
             "1",
@@ -194,18 +198,12 @@ def exercise(args: argparse.Namespace, root: Path, base: str) -> None:
     staged_script = serve / f"install.{suffix}"
     stage_installer(args.core / f"install.{suffix}", staged_script, base)
     downloaded = root / f"downloaded-install.{suffix}"
-    run(
-        [
-            "curl.exe" if os.name == "nt" else "curl",
-            "-fsS",
-            "--cacert",
-            str(root / "ca.crt"),
-            f"{base}/{staged_script.name}",
-            "--output",
-            str(downloaded),
-        ],
-        environment,
-    )
+    with urlopen(
+        f"{base}/{staged_script.name}",
+        context=ssl.create_default_context(cafile=str(root / "ca.crt")),
+        timeout=30,
+    ) as response:
+        downloaded.write_bytes(response.read())
     if downloaded.read_bytes() != staged_script.read_bytes():
         raise RuntimeError("Downloaded installer differs from served installer")
     install = root / "install with spaces"

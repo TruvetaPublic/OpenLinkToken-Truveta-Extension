@@ -195,7 +195,9 @@ It tests latest-version discovery, explicit-version reinstallation, paths with
 spaces, checksum rejection without replacing the installation, a core command,
 and fresh extension install/update/worker execution. It also checks exact
 target/ABI bundle identity, rejection of corrupt or unavailable ABI bundles,
-and unchanged core metadata. Windows trusts the test CA only for the installer
+and unchanged core metadata. Update must activate a new installation directory
+with the expected Python payload; merely editing the registry version fails.
+Windows trusts the test CA only for the installer
 subprocess and removes it afterward.
 
 These are CPU-only installer tests with model assets included in the test ZIP,

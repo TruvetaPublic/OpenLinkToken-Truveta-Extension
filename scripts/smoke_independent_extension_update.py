@@ -153,6 +153,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             or entry.get("bundle_sha256") != selected_bundle["sha256"]
         ):
             raise RuntimeError("Installation selected the wrong target/ABI bundle")
+        installed_location = (
+            Path(entry["install_location"]) if args.fresh_core else None
+        )
+        installed_payload = (
+            _payload_hashes(installed_location)
+            if installed_location is not None
+            else {}
+        )
         entry["update_manifest_url"] = update_manifest_url
         entry["version"] = "0.0.0"
         registry_path.write_text(
@@ -165,6 +173,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         _run_cli(cli_path, ["truveta", "logout"], environment)
 
         updated_registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        if installed_location is not None:
+            updated_location = Path(updated_registry["truveta"]["install_location"])
+            if (
+                updated_location == installed_location
+                or not installed_payload
+                or _payload_hashes(updated_location) != installed_payload
+            ):
+                raise RuntimeError("Update did not activate a newly installed payload")
         if updated_registry["truveta"]["version"] != update_manifest["latest_version"]:
             raise RuntimeError(
                 "Extension update did not persist the manifest version: "
@@ -188,6 +204,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"{expected_version}; OpenLinkToken core metadata remained unchanged."
     )
     return 0
+
+
+def _payload_hashes(directory: Path) -> dict[str, str]:
+    """Hash installed Python sources to distinguish reinstall from registry edits."""
+    return {
+        str(path.relative_to(directory)): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in directory.rglob("*.py")
+    }
 
 
 def _run_cli(cli_path: Path, arguments: list[str], environment: dict[str, str]) -> None:

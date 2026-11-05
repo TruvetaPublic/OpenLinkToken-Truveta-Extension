@@ -1,4 +1,5 @@
 import hashlib
+from contextlib import nullcontext
 import importlib.util
 import json
 import os
@@ -28,8 +29,9 @@ main = SMOKE_SCRIPT.main
 @pytest.mark.skipif(os.name == "nt", reason="The fake CLI uses a POSIX shebang.")
 @pytest.mark.parametrize("fresh_core", [False, True])
 @pytest.mark.parametrize("python_abi", ["cp311", "cp312"])
+@pytest.mark.parametrize("registry_only", [False, True])
 def test_smoke_bootstraps_and_updates_extension_without_core_changes(
-    tmp_path, monkeypatch, fresh_core, python_abi
+    tmp_path, monkeypatch, fresh_core, python_abi, registry_only
 ):
     """Verify the smoke script selects one exact target/ABI bundle."""
     bundle_dir = tmp_path / "dist" / "olt"
@@ -47,7 +49,7 @@ def test_smoke_bootstraps_and_updates_extension_without_core_changes(
     fake_cli = bundle_dir / "olt"
     fake_cli.write_text(
         f"#!{sys.executable}\n"
-        "import json, os, sys\n"
+        "import json, os, shutil, sys\n"
         "from pathlib import Path\n"
         "from urllib.request import urlopen\n"
         "args = sys.argv[1:]\n"
@@ -62,6 +64,10 @@ def test_smoke_bootstraps_and_updates_extension_without_core_changes(
         f"    entry['python_abi'] = '{python_abi}'\n"
         "    entry['bundle_sha256'] = next(b['sha256'] for b in manifest['bundles'] "
         f"if b['target'] == 'linux-x64' and b['python_abi'] == '{python_abi}')\n"
+        "    payload = registry_path.parent / 'initial'\n"
+        "    payload.mkdir(parents=True)\n"
+        "    (payload / 'extension.py').write_text('PAYLOAD = True\\n')\n"
+        "    entry['install_location'] = str(payload)\n"
         "    registry_path.parent.mkdir(parents=True, exist_ok=True)\n"
         "    registry_path.write_text(json.dumps({'truveta': entry}), encoding='utf-8')\n"
         "elif args[:3] == ['extension', 'update', 'truveta']:\n"
@@ -69,6 +75,10 @@ def test_smoke_bootstraps_and_updates_extension_without_core_changes(
         "    with urlopen(registry['truveta']['update_manifest_url']) as response:\n"
         "        manifest = json.load(response)\n"
         "    registry['truveta']['version'] = manifest['latest_version']\n"
+        f"    if not {registry_only!r}:\n"
+        "        payload = registry_path.parent / 'updated'\n"
+        "        shutil.copytree(registry['truveta']['install_location'], payload)\n"
+        "        registry['truveta']['install_location'] = str(payload)\n"
         "    registry_path.write_text(json.dumps(registry), encoding='utf-8')\n"
         "elif args == ['truveta', 'logout']:\n"
         "    if not registry_path.exists():\n"
@@ -118,22 +128,28 @@ def test_smoke_bootstraps_and_updates_extension_without_core_changes(
 
     verify_bundle = Mock(wraps=SMOKE_SCRIPT._verify_artifact_digest)
     monkeypatch.setattr(SMOKE_SCRIPT, "_verify_artifact_digest", verify_bundle)
-    assert (
-        main(
-            [
-                "--cli",
-                str(fake_cli),
-                "--manifest-url",
-                bootstrap_manifest_path.as_uri(),
-                "--target",
-                "linux-x64",
-                "--python-abi",
-                python_abi,
-                *(["--fresh-core"] if fresh_core else []),
-            ]
-        )
-        == 0
+    context = (
+        pytest.raises(RuntimeError, match="newly installed payload")
+        if fresh_core and registry_only
+        else nullcontext()
     )
+    with context:
+        assert (
+            main(
+                [
+                    "--cli",
+                    str(fake_cli),
+                    "--manifest-url",
+                    bootstrap_manifest_path.as_uri(),
+                    "--target",
+                    "linux-x64",
+                    "--python-abi",
+                    python_abi,
+                    *(["--fresh-core"] if fresh_core else []),
+                ]
+            )
+            == 0
+        )
     assert verify_bundle.call_count == 1
     assert verify_bundle.call_args.args[0] == selected_bundle_path.as_uri()
 
