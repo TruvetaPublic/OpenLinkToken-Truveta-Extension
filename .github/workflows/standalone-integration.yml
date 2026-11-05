@@ -2,13 +2,13 @@ name: Standalone extension integration
 
 on:
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, "release/**"]
   workflow_dispatch:
     inputs:
       core_ref:
         description: "OpenLinkToken branch, tag or SHA (default: tested protocol-2 baseline)"
         type: string
-        default: "bebd09f50e94926a35dc37df9c5714c391298ae6"
+        default: "7db08eb1b0646074d373521dfbe4fe1624514ed2"
       extension_ref:
         description: "Extension branch, tag or SHA (default: selected workflow ref)"
         type: string
@@ -35,7 +35,7 @@ jobs:
         with:
           repository: TruvetaPublic/OpenLinkToken
           # Deliberate compatibility baseline; never silently follow a moving branch.
-          ref: ${{ inputs.core_ref || 'bebd09f50e94926a35dc37df9c5714c391298ae6' }}
+          ref: ${{ inputs.core_ref || '7db08eb1b0646074d373521dfbe4fe1624514ed2' }}
           path: core
           persist-credentials: false
       - uses: actions/checkout@v7

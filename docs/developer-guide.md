@@ -165,7 +165,8 @@ rebasing the PR automatically; comment `@dependabot recreate` to start over.
 
 ### Cross-Repository Standalone Integration
 
-The `Standalone extension integration` workflow runs on extension pull requests.
+The `Standalone extension integration` workflow runs on extension pull requests
+targeting `main`, `develop`, or `release/**`, alongside source CI and CodeQL.
 It builds real frozen core CLIs and hash-locked extension bundles on native
 Linux x64, macOS arm64, and Windows x64 runners, each with CPython 3.11 and 3.12.
 All six bundles must succeed before installation tests start.
