@@ -327,7 +327,8 @@ def main() -> None:
         root = Path(directory)
         (root / "serve").mkdir()
         prepare_tls(root)
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
         context.load_cert_chain(root / "server.crt", root / "server.key")
         handler = functools.partial(
             http.server.SimpleHTTPRequestHandler, directory=str(root / "serve")

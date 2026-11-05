@@ -71,7 +71,8 @@ def test_native_installer_https_trust(harness, tmp_path):
         http.server.SimpleHTTPRequestHandler, directory=str(tmp_path)
     )
     with http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler) as server:
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
         context.load_cert_chain(tmp_path / "server.crt", tmp_path / "server.key")
         server.socket = context.wrap_socket(server.socket, server_side=True)
         thread = threading.Thread(target=server.serve_forever)
