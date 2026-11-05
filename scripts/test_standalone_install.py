@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timedelta, timezone
 import functools
 import hashlib
 import http.server
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -17,6 +19,10 @@ import threading
 from urllib.request import urlopen
 import zipfile
 
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 from smoke_independent_extension_update import main as smoke_update
 from openlinktoken_ext_truveta.util.extension_manifests import (
     create_extension_release_assets,
@@ -43,74 +49,66 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def prepare_tls(directory: Path, environment: dict[str, str]) -> None:
+def prepare_tls(directory: Path) -> None:
     """Create an ephemeral CA and a localhost server certificate."""
-    run(
-        [
-            "openssl",
-            "req",
-            "-sha256",
-            "-x509",
-            "-newkey",
-            "rsa:2048",
-            "-nodes",
-            "-days",
-            "1",
-            "-subj",
-            "/CN=OLT integration CA",
-            "-addext",
-            "basicConstraints=critical,CA:TRUE",
-            "-keyout",
-            str(directory / "ca.key"),
-            "-out",
-            str(directory / "ca.crt"),
-        ],
-        environment,
+    now = datetime.now(timezone.utc)
+    issuer_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    server_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, directory.name)])
+    ca = (
+        x509.CertificateBuilder()
+        .subject_name(issuer)
+        .issuer_name(issuer)
+        .public_key(issuer_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=5))
+        .not_valid_after(now + timedelta(days=1))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+        .add_extension(
+            x509.KeyUsage(False, False, False, False, False, True, True, False, False),
+            critical=True,
+        )
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(issuer_key.public_key()),
+            critical=False,
+        )
+        .sign(issuer_key, hashes.SHA256())
     )
-    run(
-        [
-            "openssl",
-            "req",
-            "-sha256",
-            "-newkey",
-            "rsa:2048",
-            "-nodes",
-            "-subj",
-            "/CN=127.0.0.1",
-            "-keyout",
-            str(directory / "server.key"),
-            "-out",
-            str(directory / "server.csr"),
-        ],
-        environment,
+    server = (
+        x509.CertificateBuilder()
+        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "127.0.0.1")]))
+        .issuer_name(issuer)
+        .public_key(server_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(minutes=5))
+        .not_valid_after(now + timedelta(days=1))
+        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+        .add_extension(
+            x509.SubjectAlternativeName(
+                [x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]
+            ),
+            critical=False,
+        )
+        .add_extension(
+            x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False
+        )
+        .add_extension(
+            x509.AuthorityKeyIdentifier.from_issuer_public_key(issuer_key.public_key()),
+            critical=False,
+        )
+        .sign(issuer_key, hashes.SHA256())
     )
-    extensions = directory / "extensions.cnf"
-    extensions.write_text(
-        "subjectAltName=IP:127.0.0.1\nbasicConstraints=CA:FALSE\n"
-        "extendedKeyUsage=serverAuth\n",
-        encoding="utf-8",
+    ca_bytes = ca.public_bytes(serialization.Encoding.PEM)
+    (directory / "ca.crt").write_bytes(ca_bytes)
+    (directory / "server.crt").write_bytes(
+        server.public_bytes(serialization.Encoding.PEM) + ca_bytes
     )
-    run(
-        [
-            "openssl",
-            "x509",
-            "-sha256",
-            "-req",
-            "-days",
-            "1",
-            "-in",
-            str(directory / "server.csr"),
-            "-CA",
-            str(directory / "ca.crt"),
-            "-CAkey",
-            str(directory / "ca.key"),
-            "-CAcreateserial",
-            "-extfile",
-            str(extensions),
-            "-out",
-            str(directory / "server.crt"),
-        ],
-        environment,
+    (directory / "server.key").write_bytes(
+        server_key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
     )
 
 
@@ -149,13 +147,14 @@ def installer_command(
         return "'" + str(path).replace("'", "''") + "'"
 
     command = (
-        f"$cert = Import-Certificate -FilePath {quote(ca)} "
-        "-CertStoreLocation Cert:\\CurrentUser\\Root; "
+        f"$cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new({quote(ca)}); "
+        f"certutil.exe -user -f -addstore Root {quote(ca)}; "
+        "if ($LASTEXITCODE -ne 0) { throw 'Unable to trust test CA' }; "
         "try { "
         f"& {quote(script)} -InstallDir {quote(install)} "
         + (f"-Version {quote(version)} " if version else "")
-        + "} finally { Remove-Item -LiteralPath "
-        "('Cert:\\CurrentUser\\Root\\' + $cert.Thumbprint) }"
+        + "} finally { certutil.exe -user -delstore Root $cert.Thumbprint; "
+        "if ($LASTEXITCODE -ne 0) { throw 'Unable to remove test CA' } }"
     )
     return [
         "pwsh",
@@ -317,7 +316,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="olt-integration-") as directory:
         root = Path(directory)
         (root / "serve").mkdir()
-        prepare_tls(root, os.environ.copy())
+        prepare_tls(root)
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(root / "server.crt", root / "server.key")
         handler = functools.partial(

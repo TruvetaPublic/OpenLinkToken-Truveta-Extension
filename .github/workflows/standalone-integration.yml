@@ -101,6 +101,8 @@ jobs:
         run: |
           set -euo pipefail
           uv pip install --system -e .
+          uv pip install --system pytest
+          python -m pytest -q src/test/openlinktoken_ext_truveta/test_standalone_install.py
           uv build --wheel
           python - <<'PY'
           from pathlib import Path

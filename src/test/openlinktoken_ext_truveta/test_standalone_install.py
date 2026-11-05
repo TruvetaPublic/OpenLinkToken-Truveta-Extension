@@ -1,9 +1,13 @@
 """Checks for the real-artifact installer integration harness."""
 
 import importlib.util
+import functools
+import http.server
 import os
 from pathlib import Path
+import ssl
 import subprocess
+import threading
 
 import pytest
 from cryptography import x509
@@ -52,11 +56,43 @@ def test_endpoint_drift_fails_explicitly(harness, tmp_path):
 
 
 def test_tls_certificates_use_sha256(harness, tmp_path):
-    """Do not inherit LibreSSL's legacy SHA-1 signing defaults on macOS."""
-    harness.prepare_tls(tmp_path, os.environ.copy())
+    """Generate an explicit chain without platform OpenSSL configuration."""
+    harness.prepare_tls(tmp_path)
     for name in ("ca.crt", "server.crt"):
         certificate = x509.load_pem_x509_certificate((tmp_path / name).read_bytes())
         assert certificate.signature_hash_algorithm.name == "sha256"
+
+
+def test_native_installer_https_trust(harness, tmp_path):
+    """Prove native curl/PowerShell trust before expensive frozen builds."""
+    harness.prepare_tls(tmp_path)
+    (tmp_path / "probe").write_text("verified TLS probe")
+    handler = functools.partial(
+        http.server.SimpleHTTPRequestHandler, directory=str(tmp_path)
+    )
+    with http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler) as server:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(tmp_path / "server.crt", tmp_path / "server.key")
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+        thread = threading.Thread(target=server.serve_forever)
+        thread.start()
+        try:
+            url = f"https://127.0.0.1:{server.server_port}/probe"
+            windows = os.name == "nt"
+            script = tmp_path / ("probe.ps1" if windows else "probe.sh")
+            script.write_text(
+                f"param([string]$InstallDir)\nInvoke-RestMethod -Uri '{url}'\n"
+                if windows
+                else f"curl -fsS '{url}'\n"
+            )
+            environment = dict(os.environ, CURL_CA_BUNDLE=str(tmp_path / "ca.crt"))
+            command = harness.installer_command(
+                script, tmp_path / "install", tmp_path / "ca.crt", None
+            )
+            assert "verified TLS probe" in harness.run(command, environment)
+        finally:
+            server.shutdown()
+            thread.join()
 
 
 @pytest.mark.parametrize("code,fails", [(0, True), (1, False)])
