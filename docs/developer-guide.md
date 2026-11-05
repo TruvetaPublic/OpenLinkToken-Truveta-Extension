@@ -12,6 +12,7 @@
   - [Branching and Release Policy](#branching-and-release-policy)
   - [Versioning](#versioning)
   - [Continuous Integration](#continuous-integration)
+    - [Cross-Repository Standalone Integration](#cross-repository-standalone-integration)
   - [Releases](#releases)
   - [Independent Extension Updates](#independent-extension-updates)
     - [Bootstrap, Inspection, and Recovery](#bootstrap-inspection-and-recovery)
@@ -162,6 +163,52 @@ to the PR branch, and starts CI on the new commit. If resolution fails, the work
 align the conflicting pin with OpenLinkToken manually. After this commit, Dependabot stops
 rebasing the PR automatically; comment `@dependabot recreate` to start over.
 
+### Cross-Repository Standalone Integration
+
+The `Standalone extension integration` workflow runs on extension pull requests
+targeting `main`, `develop`, or `release/**`, alongside source CI and CodeQL.
+It builds real frozen core CLIs and hash-locked extension bundles on native
+Linux x64, macOS arm64, and Windows x64 runners, each with CPython 3.11 and 3.12.
+All six bundles must succeed before installation tests start.
+
+Automatic runs use a pinned, protocol-2-compatible OpenLinkToken commit rather
+than a moving branch. OpenLinkToken also calls this reusable workflow on its own
+pull requests with a pinned extension revision. Update the counterpart pins
+deliberately when changing the supported compatibility baseline.
+
+To test two unmerged branches without publishing a release:
+
+```bash
+gh workflow run standalone-integration.yml \
+  --repo TruvetaPublic/OpenLinkToken-Truveta-Extension \
+  --ref dev/mattwise-42/publish-truveta-extension-bundles \
+  -f core_ref=dev/mattwise-42/standalone-extension-dependency-isolation \
+  -f extension_ref=dev/mattwise-42/publish-truveta-extension-bundles
+```
+
+Both refs are resolved to exact commits once, recorded in the run summary, and
+used by every job. The workflow has read-only repository permissions and never
+uploads release assets.
+
+`scripts/test_standalone_install.py` serves temporary installer copies, release
+ZIPs, checksums, and manifests over loopback HTTPS with an ephemeral trusted CA.
+It tests latest-version discovery, explicit-version reinstallation, paths with
+spaces, checksum rejection without replacing the installation, a core command,
+and fresh extension install/update/worker execution. It also checks exact
+target/ABI bundle identity, rejection of corrupt or unavailable ABI bundles,
+and unchanged core metadata. Update must activate a new installation directory
+with the expected Python payload; merely editing the registry version fails.
+Windows temporarily trusts the test CA in the disposable hosted runner's
+machine certificate store and removes it after each installer subprocess.
+Running the Windows harness locally requires an elevated PowerShell process;
+do not use it on a shared or production machine.
+
+These are CPU-only installer tests with model assets included in the test ZIP,
+not tests of the separate ORAS/GHCR model download or CUDA installation paths.
+The existing release workflows separately verify OCI assets and tokenization.
+Python 3.13/3.14 remain covered by source tests; they need no standalone bundle
+until a supported frozen CLI embeds those runtimes.
+
 ## Releases
 
 Releases are defined in `.github/workflows/auto-release.yml` and `.github/workflows/release.yml`:
@@ -171,12 +218,13 @@ Releases are defined in `.github/workflows/auto-release.yml` and `.github/workfl
 
 The asset workflow:
 
-1. Builds the wheel and sdist, generates extension update manifests and a wheel checksum, then attaches them to the GitHub Release.
-2. Builds one-folder standalone bundles for Linux x64, Windows x64, and macOS Apple Silicon arm64 using PyInstaller.
-3. Pulls the public OpenLinkToken ML1 OCI artifact with ORAS 1.3.3, verifies its manifest-declared sizes and SHA-256 digests, and installs it into the temporary smoke-test bundle.
-4. Runs a tokenization smoke test against each executable and verifies that the published ZIP does not contain any ML1 payload files.
-5. Packages each model-free bundle as a ZIP with a SHA-256 checksum.
-6. Attaches the wheel, source distribution, update manifests, ZIP bundles, and checksums to the GitHub Release.
+1. Builds the extension wheel and source distribution.
+2. On native Linux x64, Windows x64, and macOS Apple Silicon runners, builds separate CPython 3.11 and 3.12 jobs, downloads the locked runtime dependencies from `requirements.txt` using required hashes and binary wheels, then creates a flat dependency bundle for each target/ABI pair.
+3. Waits for every dependency bundle, generates schema-v2 bootstrap and update manifests with each bundle's URL and SHA-256 digest, and publishes the wheel, source distribution, bundles, checksums, and manifests to the GitHub Release.
+4. Builds one-folder standalone distributions for Linux x64, Windows x64, and macOS Apple Silicon arm64 using PyInstaller, after the extension assets are published.
+5. Pulls the public OpenLinkToken ML1 OCI artifact with ORAS 1.3.3, verifies its manifest-declared sizes and SHA-256 digests, and installs it into the temporary smoke-test bundle.
+6. Runs a bootstrap-and-update smoke test against the platform's published dependency bundle, runs a tokenization smoke test against each executable, and verifies that the standalone ZIP does not contain ML1 payload files.
+7. Packages each model-free standalone distribution as a ZIP with a SHA-256 checksum and attaches it to the GitHub Release.
 
 The standalone build contains the `openlinktoken` CLI, the Truveta extension, and runtime dependencies in a reusable one-folder distribution — no Python installation required for end users. Model payloads are not included in release ZIPs; the official installers retrieve and verify them from `ghcr.io/truvetapublic/openlinktoken-ml1-assets:v1` by default. The local bundle is `dist/olt/` with executable `dist/olt/olt` on POSIX systems or `dist/olt/olt.exe` on Windows. Release assets are ZIP bundles plus `.sha256` files; the raw executable is not published separately because it requires the adjacent `_internal/` directory. Release dependencies and model assets use OpenLinkToken `main`; development tooling uses the `develop` branch. The extension runtime compatibility range remains `>=2.2.1,<3.0.0`. Standalone macOS releases support Apple Silicon arm64 only; Intel macOS is not supported. Help-oriented invocations load the installed extension registry so extension commands appear in the main menu. Heavy processing dependencies remain lazy until tokenization or packaging runs.
 
@@ -215,6 +263,10 @@ uninstall operations can write it, and core discovery can persist `disabled` and
 `error` state for incompatible or failed frozen extensions.
 
 The Truveta extension supports OpenLinkToken core versions `>=2.2.1,<3.0.0`.
+Installing or updating it from the standalone bootstrap and update manifests
+requires an OpenLinkToken runtime with extension protocol 2. Python package
+installations continue to use the ordinary wheel and do not require this
+standalone bundle protocol.
 For frozen standalone bundles, an incompatible extension is disabled instead of being
 allowed to break core commands. Update the extension to a compatible release, or roll
 back the core bundle to a version in the supported range.
@@ -228,16 +280,20 @@ remain available.
 
 #### Release Assets
 
-After `uv build`, the release workflow generates these extension assets in
-`release-assets/`:
+After `uv build`, the release workflow creates these extension assets:
 
 - `openlinktoken_ext_truveta-<version>-py3-none-any.whl.sha256`
 - `openlinktoken-ext-truveta-bootstrap.json`
 - `openlinktoken-ext-truveta-update.json`
+- `openlinktoken-ext-truveta-<version>-<target>-<python-abi>.zip` and `.zip.sha256` for:
+  - Targets: `linux-x64`, `macos-arm64`, and `windows-x64`
+  - ABIs: `cp311` and `cp312`
 
-The workflow publishes those files together with `dist/*.whl` and `dist/*.tar.gz` to
-the same GitHub Release. Each standalone build additionally publishes the complete
-bundle and checksum pair for every supported platform:
+The schema-v2 manifests identify runtime protocol 2, the `truveta` command
+metadata, the supported core range, and all six target/ABI dependency bundles. The
+workflow publishes these assets together with `dist/*.whl` and `dist/*.tar.gz`
+to the same GitHub Release. Each standalone build additionally publishes its
+complete standalone distribution and checksum pair:
 
 - `olt-truveta-<version>-linux-x64.zip` and `.zip.sha256`
 - `olt-truveta-<version>-macos-arm64.zip` and `.zip.sha256`
