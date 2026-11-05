@@ -1,0 +1,185 @@
+name: Standalone extension integration
+
+on:
+  pull_request:
+    branches: [main, develop, "release/**"]
+  workflow_dispatch:
+    inputs:
+      core_ref:
+        description: "OpenLinkToken branch, tag or SHA (default: tested protocol-2 baseline)"
+        type: string
+        default: "7db08eb1b0646074d373521dfbe4fe1624514ed2"
+      extension_ref:
+        description: "Extension branch, tag or SHA (default: selected workflow ref)"
+        type: string
+  workflow_call:
+    inputs:
+      core_ref:
+        required: true
+        type: string
+      extension_ref:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  sources:
+    runs-on: ubuntu-latest
+    outputs:
+      core: ${{ steps.refs.outputs.core }}
+      extension: ${{ steps.refs.outputs.extension }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: TruvetaPublic/OpenLinkToken
+          # Deliberate compatibility baseline; never silently follow a moving branch.
+          ref: ${{ inputs.core_ref || '7db08eb1b0646074d373521dfbe4fe1624514ed2' }}
+          path: core
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: TruvetaPublic/OpenLinkToken-Truveta-Extension
+          ref: ${{ inputs.extension_ref || github.event.pull_request.head.sha || github.sha }}
+          path: extension
+          persist-credentials: false
+      - id: refs
+        shell: bash
+        run: |
+          echo "core=$(git -C core rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "extension=$(git -C extension rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          {
+            echo '## Exact integration sources'
+            echo "Core: $(git -C core rev-parse HEAD)"
+            echo "Extension: $(git -C extension rev-parse HEAD)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  bundles:
+    needs: sources
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix: &targets
+        include:
+          - os: ubuntu-latest
+            target: linux-x64
+            python: "3.11"
+            abi: cp311
+          - os: ubuntu-latest
+            target: linux-x64
+            python: "3.12"
+            abi: cp312
+          - os: macos-15
+            target: macos-arm64
+            python: "3.11"
+            abi: cp311
+          - os: macos-15
+            target: macos-arm64
+            python: "3.12"
+            abi: cp312
+          - os: windows-latest
+            target: windows-x64
+            python: "3.11"
+            abi: cp311
+          - os: windows-latest
+            target: windows-x64
+            python: "3.12"
+            abi: cp312
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: TruvetaPublic/OpenLinkToken-Truveta-Extension
+          ref: ${{ needs.sources.outputs.extension }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - name: Build native hash-locked extension bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv pip install --system -e .
+          uv pip install --system pytest
+          python -m pytest -q src/test/openlinktoken_ext_truveta/test_standalone_install.py
+          uv build --wheel
+          python - <<'PY'
+          from pathlib import Path
+          lines = Path("requirements.txt").read_text().splitlines()
+          Path("bundle-requirements.txt").write_text(
+              "\n".join(line for line in lines if line.strip() != "-e .") + "\n"
+          )
+          PY
+          python -m pip download --require-hashes --only-binary=:all: \
+            --dest dependency-wheels -r bundle-requirements.txt
+          version=$(python -c 'from importlib.metadata import version; print(version("openlinktoken-ext-truveta"))')
+          python -m openlinktoken_ext_truveta.util.extension_bundles \
+            --version "$version" --target "${{ matrix.target }}" \
+            --python-abi "${{ matrix.abi }}" --extension-wheel dist/*.whl \
+            --dependency-wheel-dir dependency-wheels --output-dir bundle-assets
+      - uses: actions/upload-artifact@v7
+        with:
+          name: integration-bundle-${{ matrix.target }}-${{ matrix.abi }}
+          path: bundle-assets/*.zip
+          if-no-files-found: error
+          retention-days: 3
+
+  install:
+    name: Install and update (${{ matrix.target }} / ${{ matrix.abi }})
+    needs: [sources, bundles]
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: *targets
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: TruvetaPublic/OpenLinkToken
+          ref: ${{ needs.sources.outputs.core }}
+          path: core
+          lfs: true
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: TruvetaPublic/OpenLinkToken-Truveta-Extension
+          ref: ${{ needs.sources.outputs.extension }}
+          path: extension
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - name: Build actual standalone core CLI
+        working-directory: core
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv sync --all-packages --python "${{ matrix.python }}"
+          uv run --no-sync python -c \
+            'import sys; assert f"cp{sys.version_info.major}{sys.version_info.minor}" == "${{ matrix.abi }}"'
+          uv run --no-sync pyinstaller --clean --noconfirm \
+            lib/python/openlinktoken-cli/openlinktoken-cli.spec
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: integration-bundle-*
+          path: bundles
+          merge-multiple: true
+      - name: Test downloaded installer and extension lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv pip install --system -e ./extension
+          uv build --wheel --out-dir "$GITHUB_WORKSPACE/wheel" ./extension
+          core_version=$(uv run --project core --no-sync python -c \
+            'from importlib.metadata import version; print(version("openlinktoken-cli"))')
+          extension_version=$(python -c \
+            'from importlib.metadata import version; print(version("openlinktoken-ext-truveta"))')
+          cli=core/dist/olt/olt
+          if [[ "$RUNNER_OS" == Windows ]]; then cli="${cli}.exe"; fi
+          python extension/scripts/test_standalone_install.py \
+            --core core --cli "$cli" --wheel wheel/*.whl --bundles bundles \
+            --core-version "$core_version" --extension-version "$extension_version" \
+            --target "${{ matrix.target }}" --python-abi "${{ matrix.abi }}"

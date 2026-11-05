@@ -11,6 +11,10 @@ from typing import Callable
 
 from openlinktoken_cli.extension import OpenLinkTokenExtension
 
+from openlinktoken_ext_truveta import (
+    EXTENSION_COMMAND_NAME,
+    EXTENSION_DESCRIPTION,
+)
 from openlinktoken_ext_truveta.compatibility import (
     ExtensionCompatibilityError,
     validate_runtime_compatibility,
@@ -166,7 +170,7 @@ class TruvetaExtension(OpenLinkTokenExtension):
         Returns:
             The root CLI subcommand string implemented by this extension.
         """
-        return "truveta"
+        return EXTENSION_COMMAND_NAME
 
     @property
     def description(self) -> str:
@@ -179,7 +183,7 @@ class TruvetaExtension(OpenLinkTokenExtension):
         Returns:
             A concise human-readable description for CLI help text.
         """
-        return "Truveta-specific Open Link Token commands"
+        return EXTENSION_DESCRIPTION
 
     @property
     def version(self) -> str:
