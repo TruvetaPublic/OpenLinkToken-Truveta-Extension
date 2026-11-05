@@ -12,6 +12,10 @@ from pathlib import Path
 from typing import Sequence
 from urllib.request import urlopen
 
+from openlinktoken_ext_truveta.util.extension_bundles import (
+    SUPPORTED_BUNDLE_TARGETS,
+)
+
 _CORE_METADATA_PREFIXES = (
     "openlinktoken-",
     "openlinktoken_cli-",
@@ -23,6 +27,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Install and update the Truveta extension from release manifests."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--fresh-core",
+        action="store_true",
+        help="Test a core CLI without a preinstalled Truveta extension.",
+    )
+    parser.add_argument(
         "--cli", required=True, type=Path, help="Standalone OLT executable."
     )
     parser.add_argument(
@@ -30,32 +39,83 @@ def main(argv: Sequence[str] | None = None) -> int:
         required=True,
         help="URL of the release's Truveta bootstrap manifest.",
     )
+    parser.add_argument(
+        "--target",
+        required=True,
+        choices=tuple(SUPPORTED_BUNDLE_TARGETS),
+        help="Standalone platform target whose bundle should be verified.",
+    )
+    parser.add_argument(
+        "--python-abi",
+        required=True,
+        choices=tuple(
+            sorted({abi for abis in SUPPORTED_BUNDLE_TARGETS.values() for abi in abis})
+        ),
+        help="Embedded CPython ABI whose bundle should be verified.",
+    )
     args = parser.parse_args(argv)
 
     cli_path = args.cli.resolve()
     core_metadata_before = _core_metadata_hashes(cli_path)
     bootstrap = _read_json(args.manifest_url)
+    if bootstrap.get("schema_version") != 2:
+        raise ValueError("Expected a schema-v2 bootstrap manifest")
     expected_version = bootstrap["extension"]["version"]
     update_manifest_url = (
         f"{args.manifest_url.rsplit('/', 1)[0]}/openlinktoken-ext-truveta-update.json"
     )
     update_manifest = _read_json(update_manifest_url)
+    if update_manifest.get("schema_version") != 2:
+        raise ValueError("Expected a schema-v2 update manifest")
     if update_manifest["latest_version"] != expected_version:
         raise ValueError(
             "Bootstrap and update manifests disagree on the extension version: "
             f"{expected_version} != {update_manifest['latest_version']}"
         )
 
-    bootstrap_extension = bootstrap["extension"]
-    update_artifact = update_manifest["artifacts"][0]
     if (
-        bootstrap_extension["artifact_url"] != update_artifact["url"]
-        or bootstrap_extension["sha256"] != update_artifact["sha256"]
+        bootstrap.get("minimum_runtime_protocol") != 2
+        or update_manifest.get("minimum_runtime_protocol") != 2
+        or bootstrap.get("minimum_runtime_protocol")
+        != update_manifest.get("minimum_runtime_protocol")
+    ):
+        raise ValueError("Bootstrap and update manifests must require protocol 2")
+
+    bootstrap_bundles = bootstrap.get("bundles")
+    if not isinstance(
+        bootstrap_bundles, list
+    ) or bootstrap_bundles != update_manifest.get("bundles"):
+        raise ValueError("Bootstrap and update manifests disagree on extension bundles")
+    if not all(isinstance(bundle, dict) for bundle in bootstrap_bundles):
+        raise ValueError("Manifests contain an invalid extension bundle record")
+    bundle_pairs = [
+        (bundle.get("target"), bundle.get("python_abi")) for bundle in bootstrap_bundles
+    ]
+    if not all(
+        isinstance(target, str) and isinstance(python_abi, str)
+        for target, python_abi in bundle_pairs
     ):
         raise ValueError(
-            "Bootstrap and update manifests disagree on the wheel artifact"
+            "Manifests contain an invalid extension bundle target/ABI pair"
         )
-    _verify_artifact_digest(update_artifact["url"], update_artifact["sha256"])
+    expected_pairs = {
+        (target, python_abi)
+        for target, python_abis in SUPPORTED_BUNDLE_TARGETS.items()
+        for python_abi in python_abis
+    }
+    if len(bundle_pairs) != len(expected_pairs) or set(bundle_pairs) != expected_pairs:
+        raise ValueError(
+            "Manifests must contain exactly one bundle for each supported target/ABI pair"
+        )
+    bundle_by_pair = dict(zip(bundle_pairs, bootstrap_bundles))
+    selected_bundle = bundle_by_pair[(args.target, args.python_abi)]
+    if not isinstance(selected_bundle.get("url"), str) or not isinstance(
+        selected_bundle.get("sha256"), str
+    ):
+        raise ValueError(
+            f"Invalid extension bundle record for {args.target}/{args.python_abi}"
+        )
+    _verify_artifact_digest(selected_bundle["url"], selected_bundle["sha256"])
 
     with tempfile.TemporaryDirectory(prefix="olt-extension-update-") as temp_home:
         extensions_dir = Path(temp_home) / "extensions"
@@ -66,17 +126,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "APPDATA": temp_home,
                 "XDG_CONFIG_HOME": str(Path(temp_home) / ".config"),
                 "OLT_EXTENSIONS_DIR": str(extensions_dir),
+                "OLT_DISABLE_UPDATE_CHECK": "1",
             }
         )
 
-        _run_cli(cli_path, ["truveta", "logout"], environment)
         registry_path = extensions_dir / "registry.json"
-        registry = json.loads(registry_path.read_text(encoding="utf-8"))
-        registry.pop("truveta", None)
-        registry_path.write_text(
-            json.dumps(registry, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        if not args.fresh_core:
+            _run_cli(cli_path, ["truveta", "logout"], environment)
+            registry = json.loads(registry_path.read_text(encoding="utf-8"))
+            registry.pop("truveta", None)
+            registry_path.write_text(
+                json.dumps(registry, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
 
         _run_cli(
             cli_path,
@@ -86,6 +148,19 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         registry = json.loads(registry_path.read_text(encoding="utf-8"))
         entry = registry["truveta"]
+        if args.fresh_core and (
+            entry.get("python_abi") != args.python_abi
+            or entry.get("bundle_sha256") != selected_bundle["sha256"]
+        ):
+            raise RuntimeError("Installation selected the wrong target/ABI bundle")
+        installed_location = (
+            Path(entry["install_location"]) if args.fresh_core else None
+        )
+        installed_payload = (
+            _payload_hashes(installed_location)
+            if installed_location is not None
+            else {}
+        )
         entry["update_manifest_url"] = update_manifest_url
         entry["version"] = "0.0.0"
         registry_path.write_text(
@@ -94,15 +169,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
         _run_cli(cli_path, ["extension", "update", "truveta", "--yes"], environment)
+        _run_cli(cli_path, ["truveta", "--help"], environment)
         _run_cli(cli_path, ["truveta", "logout"], environment)
 
         updated_registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        if installed_location is not None:
+            updated_location = Path(updated_registry["truveta"]["install_location"])
+            if (
+                updated_location == installed_location
+                or not installed_payload
+                or _payload_hashes(updated_location) != installed_payload
+            ):
+                raise RuntimeError("Update did not activate a newly installed payload")
         if updated_registry["truveta"]["version"] != update_manifest["latest_version"]:
             raise RuntimeError(
                 "Extension update did not persist the manifest version: "
                 f"expected {update_manifest['latest_version']}, "
                 f"found {updated_registry['truveta']['version']}"
             )
+        if args.fresh_core and (
+            updated_registry["truveta"].get("python_abi") != args.python_abi
+            or updated_registry["truveta"].get("bundle_sha256")
+            != selected_bundle["sha256"]
+        ):
+            raise RuntimeError("Update selected the wrong target/ABI bundle")
 
     if _core_metadata_hashes(cli_path) != core_metadata_before:
         raise RuntimeError(
@@ -114,6 +204,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"{expected_version}; OpenLinkToken core metadata remained unchanged."
     )
     return 0
+
+
+def _payload_hashes(directory: Path) -> dict[str, str]:
+    """Hash installed Python sources to distinguish reinstall from registry edits."""
+    return {
+        str(path.relative_to(directory)): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in directory.rglob("*.py")
+    }
 
 
 def _run_cli(cli_path: Path, arguments: list[str], environment: dict[str, str]) -> None:
@@ -142,7 +240,7 @@ def _read_json(url: str) -> dict:
 
 
 def _verify_artifact_digest(url: str, expected_digest: str) -> None:
-    """Verify the release manifest's SHA-256 against its wheel artifact."""
+    """Verify the release manifest's SHA-256 against a bundle artifact."""
     digest = hashlib.sha256()
     with urlopen(url, timeout=30) as response:
         for chunk in iter(lambda: response.read(1024 * 1024), b""):
@@ -150,7 +248,7 @@ def _verify_artifact_digest(url: str, expected_digest: str) -> None:
     actual_digest = digest.hexdigest()
     if actual_digest != expected_digest:
         raise ValueError(
-            f"Wheel SHA-256 mismatch for {url}: "
+            f"Bundle SHA-256 mismatch for {url}: "
             f"expected {expected_digest}, found {actual_digest}"
         )
 
@@ -158,13 +256,20 @@ def _verify_artifact_digest(url: str, expected_digest: str) -> None:
 def _core_metadata_hashes(cli_path: Path) -> dict[str, str]:
     """Hash bundled core distribution metadata to detect accidental core changes."""
     internal_dir = cli_path.parent / "_internal"
-    metadata_paths = sorted(internal_dir.glob("*.dist-info/METADATA"))
+    metadata_paths = sorted(
+        [
+            *internal_dir.glob("*.dist-info/METADATA"),
+            *internal_dir.glob("*.egg-info/PKG-INFO"),
+        ]
+    )
     core_metadata = {
-        metadata_path.parent.name: hashlib.sha256(
+        metadata_path.parent.name.replace(".egg-info", "-"): hashlib.sha256(
             metadata_path.read_bytes()
         ).hexdigest()
         for metadata_path in metadata_paths
-        if metadata_path.parent.name.startswith(_CORE_METADATA_PREFIXES)
+        if metadata_path.parent.name.replace(".egg-info", "-").startswith(
+            _CORE_METADATA_PREFIXES
+        )
     }
     found_prefixes = {
         prefix
