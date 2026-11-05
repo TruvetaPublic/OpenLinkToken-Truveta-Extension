@@ -29,10 +29,21 @@ from openlinktoken_ext_truveta.util.extension_manifests import (
 )
 
 
-def run(command: list[str], environment: dict[str, str], *, fails: bool = False) -> str:
+def run(
+    command: list[str],
+    environment: dict[str, str],
+    *,
+    fails: bool = False,
+    timeout: int = 600,
+) -> str:
     """Run a command, exposing its diagnostics and enforcing its exit status."""
     result = subprocess.run(
-        command, env=environment, capture_output=True, text=True, check=False
+        command,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=timeout,
     )
     print(f"$ {command}\n{result.stdout}\n{result.stderr}", flush=True)
     if (result.returncode != 0) != fails:
@@ -147,14 +158,13 @@ def installer_command(
         return "'" + str(path).replace("'", "''") + "'"
 
     command = (
-        f"$cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new({quote(ca)}); "
-        f"certutil.exe -user -f -addstore Root {quote(ca)}; "
-        "if ($LASTEXITCODE -ne 0) { throw 'Unable to trust test CA' }; "
+        f"$cert = Import-Certificate -FilePath {quote(ca)} "
+        "-CertStoreLocation Cert:\\LocalMachine\\Root; "
         "try { "
         f"& {quote(script)} -InstallDir {quote(install)} "
         + (f"-Version {quote(version)} " if version else "")
-        + "} finally { certutil.exe -user -delstore Root $cert.Thumbprint; "
-        "if ($LASTEXITCODE -ne 0) { throw 'Unable to remove test CA' } }"
+        + "} finally { Remove-Item -LiteralPath "
+        "('Cert:\\LocalMachine\\Root\\' + $cert.Thumbprint) }"
     )
     return [
         "pwsh",

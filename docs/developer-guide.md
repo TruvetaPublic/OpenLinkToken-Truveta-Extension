@@ -197,8 +197,10 @@ and fresh extension install/update/worker execution. It also checks exact
 target/ABI bundle identity, rejection of corrupt or unavailable ABI bundles,
 and unchanged core metadata. Update must activate a new installation directory
 with the expected Python payload; merely editing the registry version fails.
-Windows trusts the test CA only for the installer
-subprocess and removes it afterward.
+Windows temporarily trusts the test CA in the disposable hosted runner's
+machine certificate store and removes it after each installer subprocess.
+Running the Windows harness locally requires an elevated PowerShell process;
+do not use it on a shared or production machine.
 
 These are CPU-only installer tests with model assets included in the test ZIP,
 not tests of the separate ORAS/GHCR model download or CUDA installation paths.

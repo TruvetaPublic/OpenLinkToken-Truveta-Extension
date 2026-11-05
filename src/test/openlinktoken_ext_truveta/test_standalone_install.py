@@ -89,7 +89,7 @@ def test_native_installer_https_trust(harness, tmp_path):
             command = harness.installer_command(
                 script, tmp_path / "install", tmp_path / "ca.crt", None
             )
-            assert "verified TLS probe" in harness.run(command, environment)
+            assert "verified TLS probe" in harness.run(command, environment, timeout=60)
         finally:
             server.shutdown()
             thread.join()
