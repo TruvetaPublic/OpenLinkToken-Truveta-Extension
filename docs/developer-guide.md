@@ -214,7 +214,13 @@ until a supported frozen CLI embeds those runtimes.
 Releases are defined in `.github/workflows/auto-release.yml` and `.github/workflows/release.yml`:
 
 1. When a `release/x.y.z` pull request is merged into `main`, `Create Release on Merge` reads `current_version` from `.bumpversion.cfg`, creates the corresponding `v<version>` tag, and creates the GitHub Release.
-2. `Build Release Assets` runs after the release is created or published. It also supports manual dispatch for rebuilding assets for an existing release.
+2. `Build Release Assets` runs after the release is created or published. It also supports manual dispatch for rebuilding assets for an existing release. Manual runs use the release tag by default; set `source_ref` to build from another ref that contains the requested version. Assets with matching names are replaced.
+
+To rebuild an existing release from `main`, dispatch the workflow with its version and source ref:
+
+```bash
+gh workflow run release.yml --ref main -f version=1.1.2 -f source_ref=main
+```
 
 The asset workflow:
 

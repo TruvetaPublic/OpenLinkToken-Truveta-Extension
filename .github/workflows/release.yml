@@ -9,6 +9,10 @@ on:
         description: "Version to release (e.g., 1.0.0)"
         required: false
         type: string
+      source_ref:
+        description: "Optional source ref for a manual rebuild (must contain the requested version)"
+        required: false
+        type: string
   workflow_run:
     workflows: ["Create Release on Merge"]
     types: [completed]
@@ -36,7 +40,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ needs.release-info.outputs['release-found'] == 'true' && needs.release-info.outputs.tag || github.sha }}
+          ref: ${{ github.event.inputs.source_ref || (needs.release-info.outputs['release-found'] == 'true' && needs.release-info.outputs.tag || github.sha) }}
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -103,7 +107,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ needs.release-info.outputs['release-found'] == 'true' && needs.release-info.outputs.tag || github.sha }}
+          ref: ${{ github.event.inputs.source_ref || (needs.release-info.outputs['release-found'] == 'true' && needs.release-info.outputs.tag || github.sha) }}
 
       # Bundle generation code can be newer than the already-published release tag.
       - name: Checkout bundle tooling
@@ -194,7 +198,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ needs.release-info.outputs['release-found'] == 'true' && needs.release-info.outputs.tag || github.sha }}
+          ref: ${{ github.event.inputs.source_ref || (needs.release-info.outputs['release-found'] == 'true' && needs.release-info.outputs.tag || github.sha) }}
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -344,7 +348,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ needs.release-info.outputs['release-found'] == 'true' && needs.release-info.outputs.tag || github.sha }}
+          ref: ${{ github.event.inputs.source_ref || (needs.release-info.outputs['release-found'] == 'true' && needs.release-info.outputs.tag || github.sha) }}
 
       - name: Set up Python
         uses: actions/setup-python@v7

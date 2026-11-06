@@ -34,7 +34,7 @@ def test_embedded_registry_declares_truveta_extension():
     assert entry["module"] == "openlinktoken_ext_truveta.extension"
     assert entry["class"] == "TruvetaExtension"
     assert entry["command_name"] == "truveta"
-    assert entry["source_path"] == ""
+    assert entry["source_path"] is None
     assert entry["schema_version"] == 1
     assert entry["supported_core"] == ">=2.2.1,<3.0.0"
     assert entry["supported_core_version_range"] == ">=2.2.1,<3.0.0"
@@ -98,6 +98,18 @@ def test_release_workflow_builds_bundles_before_publishing_manifests():
     assert "--require-hashes" in workflow
     assert "--only-binary=:all:" in workflow
     assert 'if line.strip() != "-e ."' in workflow
+
+
+def test_manual_release_rebuild_can_override_existing_tag_source():
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    manual_rebuild_ref = (
+        "ref: ${{ github.event.inputs.source_ref || "
+        "(needs.release-info.outputs['release-found'] == 'true' && "
+        "needs.release-info.outputs.tag || github.sha) }}"
+    )
+
+    assert "      source_ref:" in workflow
+    assert workflow.count(manual_rebuild_ref) == 4
     assert '--python-abi "${{ matrix.python_abi }}"' in workflow
     assert 'bundle_args+=(--bundle "$bundle_path")' in workflow
     assert "Expected exactly six platform/ABI bundles" in workflow
