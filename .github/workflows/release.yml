@@ -105,6 +105,13 @@ jobs:
         with:
           ref: ${{ needs.release-info.outputs['release-found'] == 'true' && needs.release-info.outputs.tag || github.sha }}
 
+      # Bundle generation code can be newer than the already-published release tag.
+      - name: Checkout bundle tooling
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: bundle-tooling
+
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
@@ -129,9 +136,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          mapfile -t wheel_paths < <(
-            find dist -maxdepth 1 -type f -name '*.whl' -print | sort
-          )
+          wheel_paths=(dist/*.whl)
           if [ "${#wheel_paths[@]}" -ne 1 ]; then
             printf 'Expected exactly one wheel from uv build; found %s:\n' \
               "${#wheel_paths[@]}" >&2
@@ -158,7 +163,7 @@ jobs:
             --only-binary=:all: \
             --dest dependency-wheels \
             --requirement bundle-requirements.txt
-          PYTHONPATH=src/main python -m openlinktoken_ext_truveta.util.extension_bundles \
+          PYTHONPATH=bundle-tooling/src/main python -m openlinktoken_ext_truveta.util.extension_bundles \
             --version "${VERSION}" \
             --target "${{ matrix.target }}" \
             --python-abi "${{ matrix.python_abi }}" \
