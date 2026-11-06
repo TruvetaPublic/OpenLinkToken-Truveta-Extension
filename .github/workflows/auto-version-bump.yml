@@ -7,7 +7,6 @@ on:
       - main
 
 permissions:
-  contents: write
   pull-requests: write
 
 jobs:
@@ -16,11 +15,18 @@ jobs:
     if: startsWith(github.event.pull_request.head.ref, 'release/')
 
     steps:
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.APP_TRUVETAPUBLIC_RELEASE_BOT_ID }}
+          private-key: ${{ secrets.APP_TRUVETAPUBLIC_RELEASE_BOT_SECRET }}
+
       - name: Checkout PR branch
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.ref }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
 
       - name: Extract version from branch name
@@ -87,8 +93,8 @@ jobs:
         if: steps.check_version.outputs.needs_update == 'true'
         shell: bash
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
+          git config user.email "${{ steps.app-token.outputs.app-slug }}[bot]@users.noreply.github.com"
 
       - name: Commit version changes
         if: steps.check_version.outputs.needs_update == 'true'
@@ -109,6 +115,7 @@ jobs:
         if: steps.check_version.outputs.needs_update == 'true'
         uses: actions/github-script@v9
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             await github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -116,22 +123,14 @@ jobs:
               issue_number: context.issue.number,
               body: `🤖 **Version Auto-Updated**
 
-              Version has been automatically updated to \`${{ steps.extract_version.outputs.version }}\` based on the release branch name.
-
-              Updated files:
-              - \`.bumpversion.cfg\`
-              - \`pyproject.toml\`
-              - \`README.md\`
-              - \`src/main/openlinktoken_ext_truveta/extension.py\`
-              - \`src/test/openlinktoken_ext_truveta/test_extension.py\`
-
-              Please review the changes before merging.`
+              Version has been automatically updated to \`${{ steps.extract_version.outputs.version }}\` based on the release branch name.`
             });
 
       - name: Version already up-to-date comment
         if: steps.check_version.outputs.needs_update == 'false'
         uses: actions/github-script@v9
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             await github.rest.issues.createComment({
               owner: context.repo.owner,
