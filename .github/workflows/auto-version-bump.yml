@@ -6,7 +6,8 @@ on:
     branches:
       - main
 
-permissions: {}
+permissions:
+  pull-requests: write
 
 jobs:
   auto-version-bump:
@@ -109,3 +110,33 @@ jobs:
           else
             echo "No changes to commit"
           fi
+
+      - name: Add comment to PR
+        if: steps.check_version.outputs.needs_update == 'true'
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `🤖 **Version Auto-Updated**
+
+              Version has been automatically updated to \`${{ steps.extract_version.outputs.version }}\` based on the release branch name.`
+            });
+
+      - name: Version already up-to-date comment
+        if: steps.check_version.outputs.needs_update == 'false'
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `✅ **Version Check Passed**
+
+              Version is already set to \`${{ steps.extract_version.outputs.version }}\` - no update needed.`
+            });
