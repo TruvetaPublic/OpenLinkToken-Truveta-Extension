@@ -6,8 +6,7 @@ on:
     branches:
       - main
 
-permissions:
-  issues: write
+permissions: {}
 
 jobs:
   auto-version-bump:
@@ -110,40 +109,3 @@ jobs:
           else
             echo "No changes to commit"
           fi
-
-      - name: Add comment to PR
-        if: steps.check_version.outputs.needs_update == 'true'
-        uses: actions/github-script@v9
-        with:
-          script: |
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: `🤖 **Version Auto-Updated**
-
-              Version has been automatically updated to \`${{ steps.extract_version.outputs.version }}\` based on the release branch name.
-
-              Updated files:
-              - \`.bumpversion.cfg\`
-              - \`pyproject.toml\`
-              - \`README.md\`
-              - \`src/main/openlinktoken_ext_truveta/extension.py\`
-              - \`src/test/openlinktoken_ext_truveta/test_extension.py\`
-
-              Please review the changes before merging.`
-            });
-
-      - name: Version already up-to-date comment
-        if: steps.check_version.outputs.needs_update == 'false'
-        uses: actions/github-script@v9
-        with:
-          script: |
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: `✅ **Version Check Passed**
-
-              Version is already set to \`${{ steps.extract_version.outputs.version }}\` - no update needed.`
-            });
