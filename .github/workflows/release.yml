@@ -44,7 +44,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
 
@@ -105,13 +105,20 @@ jobs:
         with:
           ref: ${{ needs.release-info.outputs['release-found'] == 'true' && needs.release-info.outputs.tag || github.sha }}
 
+      # Bundle generation code can be newer than the already-published release tag.
+      - name: Checkout bundle tooling
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: bundle-tooling
+
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
           python-version: "${{ matrix.python_version }}"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
 
@@ -129,9 +136,7 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          mapfile -t wheel_paths < <(
-            find dist -maxdepth 1 -type f -name '*.whl' -print | sort
-          )
+          wheel_paths=(dist/*.whl)
           if [ "${#wheel_paths[@]}" -ne 1 ]; then
             printf 'Expected exactly one wheel from uv build; found %s:\n' \
               "${#wheel_paths[@]}" >&2
@@ -158,7 +163,7 @@ jobs:
             --only-binary=:all: \
             --dest dependency-wheels \
             --requirement bundle-requirements.txt
-          PYTHONPATH=src/main python -m openlinktoken_ext_truveta.util.extension_bundles \
+          PYTHONPATH=bundle-tooling/src/main python -m openlinktoken_ext_truveta.util.extension_bundles \
             --version "${VERSION}" \
             --target "${{ matrix.target }}" \
             --python-abi "${{ matrix.python_abi }}" \
@@ -197,7 +202,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
 
@@ -347,7 +352,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           enable-cache: true
 
@@ -373,7 +378,7 @@ jobs:
         run: pyinstaller --clean --noconfirm openlinktoken-ext-truveta.spec
 
       - name: Install ORAS
-        uses: oras-project/setup-oras@005458ad77f1c8facd38a094e4af2e69e5607ff4 # v2.0.2
+        uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
         with:
           version: 1.3.3
 
