@@ -3,11 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timedelta, timezone
-import functools
 import hashlib
-import http.server
-import ipaddress
 import json
 import os
 from pathlib import Path
@@ -15,14 +11,10 @@ import shutil
 import ssl
 import subprocess
 import tempfile
-import threading
 from urllib.request import urlopen
 import zipfile
 
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+from local_https_assets import serve_local_https
 from smoke_independent_extension_update import main as smoke_update
 from openlinktoken_ext_truveta.util.extension_manifests import (
     create_extension_release_assets,
@@ -58,69 +50,6 @@ def sha256(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def prepare_tls(directory: Path) -> None:
-    """Create an ephemeral CA and a localhost server certificate."""
-    now = datetime.now(timezone.utc)
-    issuer_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    server_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, directory.name)])
-    ca = (
-        x509.CertificateBuilder()
-        .subject_name(issuer)
-        .issuer_name(issuer)
-        .public_key(issuer_key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(now - timedelta(minutes=5))
-        .not_valid_after(now + timedelta(days=1))
-        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
-        .add_extension(
-            x509.KeyUsage(False, False, False, False, False, True, True, False, False),
-            critical=True,
-        )
-        .add_extension(
-            x509.SubjectKeyIdentifier.from_public_key(issuer_key.public_key()),
-            critical=False,
-        )
-        .sign(issuer_key, hashes.SHA256())
-    )
-    server = (
-        x509.CertificateBuilder()
-        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "127.0.0.1")]))
-        .issuer_name(issuer)
-        .public_key(server_key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(now - timedelta(minutes=5))
-        .not_valid_after(now + timedelta(days=1))
-        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
-        .add_extension(
-            x509.SubjectAlternativeName(
-                [x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]
-            ),
-            critical=False,
-        )
-        .add_extension(
-            x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False
-        )
-        .add_extension(
-            x509.AuthorityKeyIdentifier.from_issuer_public_key(issuer_key.public_key()),
-            critical=False,
-        )
-        .sign(issuer_key, hashes.SHA256())
-    )
-    ca_bytes = ca.public_bytes(serialization.Encoding.PEM)
-    (directory / "ca.crt").write_bytes(ca_bytes)
-    (directory / "server.crt").write_bytes(
-        server.public_bytes(serialization.Encoding.PEM) + ca_bytes
-    )
-    (directory / "server.key").write_bytes(
-        server_key.private_bytes(
-            serialization.Encoding.PEM,
-            serialization.PrivateFormat.PKCS8,
-            serialization.NoEncryption(),
-        )
-    )
 
 
 def stage_installer(source: Path, destination: Path, base: str) -> None:
@@ -175,7 +104,9 @@ def installer_command(
     ]
 
 
-def exercise(args: argparse.Namespace, root: Path, base: str) -> None:
+def exercise(
+    args: argparse.Namespace, root: Path, base: str, ca_certificate: Path
+) -> None:
     """Install, reinstall and reject corrupt downloads, then run extension smoke."""
     environment = dict(
         os.environ,
@@ -184,8 +115,8 @@ def exercise(args: argparse.Namespace, root: Path, base: str) -> None:
         XDG_CONFIG_HOME=str(root / "home/.config"),
         OLT_EXTENSIONS_DIR=str(root / "home/extensions"),
         OLT_DISABLE_UPDATE_CHECK="1",
-        SSL_CERT_FILE=str(root / "ca.crt"),
-        CURL_CA_BUNDLE=str(root / "ca.crt"),
+        SSL_CERT_FILE=str(ca_certificate),
+        CURL_CA_BUNDLE=str(ca_certificate),
     )
     (root / "home").mkdir()
     serve = root / "serve"
@@ -209,7 +140,7 @@ def exercise(args: argparse.Namespace, root: Path, base: str) -> None:
     downloaded = root / f"downloaded-install.{suffix}"
     with urlopen(
         f"{base}/{staged_script.name}",
-        context=ssl.create_default_context(cafile=str(root / "ca.crt")),
+        context=ssl.create_default_context(cafile=str(ca_certificate)),
         timeout=30,
     ) as response:
         downloaded.write_bytes(response.read())
@@ -217,8 +148,7 @@ def exercise(args: argparse.Namespace, root: Path, base: str) -> None:
         raise RuntimeError("Downloaded installer differs from served installer")
     install = root / "install with spaces"
     cli = install / ("olt.exe" if os.name == "nt" else "olt")
-    ca = root / "ca.crt"
-    run(installer_command(downloaded, install, ca, None), environment)
+    run(installer_command(downloaded, install, ca_certificate, None), environment)
     if args.core_version not in run([str(cli), "--version"], environment):
         raise RuntimeError("Installed CLI has the wrong version")
     before = sha256(cli)
@@ -226,7 +156,7 @@ def exercise(args: argparse.Namespace, root: Path, base: str) -> None:
     checksum.write_text(f"{'0' * 64}  {asset}\n", encoding="utf-8")
     try:
         output = run(
-            installer_command(downloaded, install, ca, args.core_version),
+            installer_command(downloaded, install, ca_certificate, args.core_version),
             environment,
             fails=True,
         )
@@ -234,7 +164,10 @@ def exercise(args: argparse.Namespace, root: Path, base: str) -> None:
             raise RuntimeError("Corrupt download was not rejected safely")
     finally:
         checksum.write_bytes(saved)
-    run(installer_command(downloaded, install, ca, args.core_version), environment)
+    run(
+        installer_command(downloaded, install, ca_certificate, args.core_version),
+        environment,
+    )
     if sha256(cli) != before:
         raise RuntimeError("Reinstallation changed the CLI executable")
     run(
@@ -296,7 +229,7 @@ def exercise(args: argparse.Namespace, root: Path, base: str) -> None:
                 )
         finally:
             bootstrap.write_bytes(original)
-    os.environ["SSL_CERT_FILE"] = str(ca)
+    os.environ["SSL_CERT_FILE"] = str(ca_certificate)
     smoke_update(
         [
             "--fresh-core",
@@ -306,8 +239,8 @@ def exercise(args: argparse.Namespace, root: Path, base: str) -> None:
             args.target,
             "--python-abi",
             args.python_abi,
-            "--manifest-url",
-            base + "/openlinktoken-ext-truveta-bootstrap.json",
+            "--local-assets-dir",
+            str(serve),
         ]
     )
     print(f"PASS: installer + extension lifecycle: {args.target}/{args.python_abi}")
@@ -325,23 +258,10 @@ def main() -> None:
         setattr(args, name, getattr(args, name).resolve())
     with tempfile.TemporaryDirectory(prefix="olt-integration-") as directory:
         root = Path(directory)
-        (root / "serve").mkdir()
-        prepare_tls(root)
-        context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-        context.minimum_version = ssl.TLSVersion.TLSv1_2
-        context.load_cert_chain(root / "server.crt", root / "server.key")
-        handler = functools.partial(
-            http.server.SimpleHTTPRequestHandler, directory=str(root / "serve")
-        )
-        with http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler) as server:
-            server.socket = context.wrap_socket(server.socket, server_side=True)
-            thread = threading.Thread(target=server.serve_forever)
-            thread.start()
-            try:
-                exercise(args, root, f"https://127.0.0.1:{server.server_port}")
-            finally:
-                server.shutdown()
-                thread.join()
+        serve = root / "serve"
+        serve.mkdir()
+        with serve_local_https(serve) as (base, ca_certificate):
+            exercise(args, root, base, ca_certificate)
 
 
 if __name__ == "__main__":

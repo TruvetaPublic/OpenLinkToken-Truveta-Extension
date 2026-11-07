@@ -3,12 +3,19 @@ name: Build Release Assets
 on:
   release:
     types: [created, published]
+  pull_request:
+    branches: ["release/**"]
   workflow_dispatch:
     inputs:
       version:
         description: "Version to release (e.g., 1.0.0)"
         required: false
         type: string
+      dry_run:
+        description: "Build and test assets without publishing to GitHub Releases"
+        required: false
+        default: false
+        type: boolean
       source_ref:
         description: "Optional source ref for a manual rebuild (must contain the requested version)"
         required: false
@@ -25,7 +32,7 @@ jobs:
     uses: ./.github/workflows/release-context.yml
     secrets: inherit
     with:
-      lookup-release: true
+      lookup-release: ${{ github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true' }}
       release-tag: ${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.version && format('v{0}', github.event.inputs.version) || '' }}
 
   build-distributions:
@@ -113,7 +120,7 @@ jobs:
       - name: Checkout bundle tooling
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.inputs.source_ref || github.sha }}
           path: bundle-tooling
 
       - name: Set up Python
@@ -182,18 +189,16 @@ jobs:
           path: bundle-assets/*
           if-no-files-found: error
 
-  publish-release-assets:
-    name: Publish extension assets to GitHub Release
+  assemble-release-assets:
+    name: Assemble complete extension release assets
     needs: [release-info, build-distributions, build-extension-bundle]
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     env:
       VERSION: ${{ needs.release-info.outputs.version }}
       TAG: ${{ needs.release-info.outputs.tag }}
-      RELEASE_FOUND: ${{ needs.release-info.outputs['release-found'] }}
-      RELEASE_ID: ${{ needs.release-info.outputs['release-id'] }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -263,6 +268,24 @@ jobs:
           path: release-assets/*
           if-no-files-found: error
 
+  publish-release-assets:
+    name: Publish extension assets to GitHub Release
+    needs: [release-info, assemble-release-assets]
+    if: ${{ (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') && github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true' && needs.release-info.outputs['release-found'] == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.release-info.outputs.tag }}
+      RELEASE_FOUND: ${{ needs.release-info.outputs['release-found'] }}
+      RELEASE_ID: ${{ needs.release-info.outputs['release-id'] }}
+    steps:
+      - name: Download complete release assets
+        uses: actions/download-artifact@v8
+        with:
+          name: openlinktoken-ext-truveta-release-assets-${{ env.TAG }}
+          path: release-assets
+
       - name: Upload distributions to GitHub Release
         if: env.RELEASE_FOUND == 'true'
         uses: actions/github-script@v9
@@ -323,11 +346,11 @@ jobs:
 
   build-standalone:
     name: Build standalone distributable (${{ matrix.os }})
-    needs: [release-info, publish-release-assets]
+    needs: [release-info, assemble-release-assets]
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ${{ matrix.os }}
     permissions:
-      contents: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -341,14 +364,18 @@ jobs:
     env:
       VERSION: ${{ needs.release-info.outputs.version }}
       TAG: ${{ needs.release-info.outputs.tag }}
-      RELEASE_FOUND: ${{ needs.release-info.outputs['release-found'] }}
-      RELEASE_ID: ${{ needs.release-info.outputs['release-id'] }}
       OLT_ML1_MODEL_TAG: v1
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.inputs.source_ref || (needs.release-info.outputs['release-found'] == 'true' && needs.release-info.outputs.tag || github.sha) }}
+
+      - name: Download complete release assets
+        uses: actions/download-artifact@v8
+        with:
+          name: openlinktoken-ext-truveta-release-assets-${{ env.TAG }}
+          path: release-assets
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -420,7 +447,7 @@ jobs:
             --cli dist/olt/olt \
             --target "${{ matrix.target }}" \
             --python-abi cp312 \
-            --manifest-url "https://github.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/releases/download/${TAG}/openlinktoken-ext-truveta-bootstrap.json"
+            --local-assets-dir release-assets
           ./dist/olt/olt generate-key-pair --name recipient --force
           ./dist/olt/olt initiate-exchange --name smoke --public-key "$HOME/.openlinktoken/recipient.public.pem" --output smoke/smoke.exchange.json --hashingsecret secret
           ./dist/olt/olt tokenize -i smoke/input.csv -o smoke/out.csv --exchange-config smoke/smoke.exchange.json --private-key "$HOME/.openlinktoken/smoke.private.pem"
@@ -443,7 +470,7 @@ jobs:
             --cli dist\olt\olt.exe `
             --target "${{ matrix.target }}" `
             --python-abi cp312 `
-            --manifest-url "https://github.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/releases/download/$env:TAG/openlinktoken-ext-truveta-bootstrap.json"
+            --local-assets-dir release-assets
           .\dist\olt\olt.exe generate-key-pair --name recipient --force
           .\dist\olt\olt.exe initiate-exchange --name smoke --public-key "$HOME/.openlinktoken/recipient.public.pem" --output smoke\smoke.exchange.json --hashingsecret secret
           .\dist\olt\olt.exe tokenize -i smoke\input.csv -o smoke\out.csv --exchange-config smoke\smoke.exchange.json --private-key "$HOME/.openlinktoken/smoke.private.pem"
@@ -500,6 +527,26 @@ jobs:
           name: olt-truveta-${{ env.VERSION }}-${{ matrix.os }}
           path: release-assets/*
           if-no-files-found: error
+
+  publish-standalone-assets:
+    name: Publish standalone assets to GitHub Release
+    needs: [release-info, build-standalone, publish-release-assets]
+    if: ${{ (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') && github.event_name != 'pull_request' && github.event.inputs.dry_run != 'true' && needs.release-info.outputs['release-found'] == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.release-info.outputs.version }}
+      TAG: ${{ needs.release-info.outputs.tag }}
+      RELEASE_FOUND: ${{ needs.release-info.outputs['release-found'] }}
+      RELEASE_ID: ${{ needs.release-info.outputs['release-id'] }}
+    steps:
+      - name: Download standalone workflow artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: olt-truveta-${{ env.VERSION }}-*
+          path: release-assets
+          merge-multiple: true
 
       - name: Upload release assets to GitHub Release
         if: env.RELEASE_FOUND == 'true'

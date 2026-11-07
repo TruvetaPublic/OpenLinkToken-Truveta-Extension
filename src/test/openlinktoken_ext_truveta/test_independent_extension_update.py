@@ -16,6 +16,7 @@ from openlinktoken_ext_truveta.util.extension_bundles import (
 SMOKE_SCRIPT_PATH = (
     Path(__file__).parents[3] / "scripts" / "smoke_independent_extension_update.py"
 )
+sys.path.insert(0, str(SMOKE_SCRIPT_PATH.parent))
 SMOKE_SCRIPT_SPEC = importlib.util.spec_from_file_location(
     "smoke_independent_extension_update", SMOKE_SCRIPT_PATH
 )
@@ -27,11 +28,12 @@ main = SMOKE_SCRIPT.main
 
 
 @pytest.mark.skipif(os.name == "nt", reason="The fake CLI uses a POSIX shebang.")
+@pytest.mark.parametrize("local_assets", [False, True])
 @pytest.mark.parametrize("fresh_core", [False, True])
 @pytest.mark.parametrize("python_abi", ["cp311", "cp312"])
 @pytest.mark.parametrize("registry_only", [False, True])
 def test_smoke_bootstraps_and_updates_extension_without_core_changes(
-    tmp_path, monkeypatch, fresh_core, python_abi, registry_only
+    tmp_path, monkeypatch, local_assets, fresh_core, python_abi, registry_only
 ):
     """Verify the smoke script selects one exact target/ABI bundle."""
     bundle_dir = tmp_path / "dist" / "olt"
@@ -59,6 +61,10 @@ def test_smoke_bootstraps_and_updates_extension_without_core_changes(
         "    with urlopen(manifest_url) as response:\n"
         "        manifest = json.load(response)\n"
         "    extension = manifest['extension']\n"
+        "    with urlopen(extension['update_manifest_url']) as response:\n"
+        "        update_manifest = json.load(response)\n"
+        "    if update_manifest['latest_version'] != extension['version']:\n"
+        "        raise SystemExit('bootstrap update manifest URL is incorrect')\n"
         "    entry = {'version': extension['version'], "
         "'update_manifest_url': extension['update_manifest_url']}\n"
         f"    entry['python_abi'] = '{python_abi}'\n"
@@ -102,7 +108,11 @@ def test_smoke_bootstraps_and_updates_extension_without_core_changes(
                 {
                     "target": target,
                     "python_abi": bundle_abi,
-                    "url": bundle_path.as_uri(),
+                    "url": (
+                        f"https://example.invalid/{bundle_path.name}"
+                        if local_assets
+                        else bundle_path.as_uri()
+                    ),
                     "sha256": hashlib.sha256(bundle_path.read_bytes()).hexdigest(),
                 }
             )
@@ -120,7 +130,11 @@ def test_smoke_bootstraps_and_updates_extension_without_core_changes(
         "bundles": bundle_records,
         "extension": {
             "version": "1.1.0",
-            "update_manifest_url": "https://example.invalid/update.json",
+            "update_manifest_url": (
+                "https://example.invalid/openlinktoken-ext-truveta-update.json"
+                if local_assets
+                else update_manifest_path.as_uri()
+            ),
         },
     }
     bootstrap_manifest_path = tmp_path / "openlinktoken-ext-truveta-bootstrap.json"
@@ -134,13 +148,17 @@ def test_smoke_bootstraps_and_updates_extension_without_core_changes(
         else nullcontext()
     )
     with context:
+        asset_arguments = (
+            ["--local-assets-dir", str(tmp_path)]
+            if local_assets
+            else ["--manifest-url", bootstrap_manifest_path.as_uri()]
+        )
         assert (
             main(
                 [
                     "--cli",
                     str(fake_cli),
-                    "--manifest-url",
-                    bootstrap_manifest_path.as_uri(),
+                    *asset_arguments,
                     "--target",
                     "linux-x64",
                     "--python-abi",
@@ -151,7 +169,98 @@ def test_smoke_bootstraps_and_updates_extension_without_core_changes(
             == 0
         )
     assert verify_bundle.call_count == 1
-    assert verify_bundle.call_args.args[0] == selected_bundle_path.as_uri()
+    bundle_url = verify_bundle.call_args.args[0]
+    if local_assets:
+        assert bundle_url.startswith("https://127.0.0.1:")
+        assert bundle_url.endswith(f"/{selected_bundle_path.name}")
+    else:
+        assert bundle_url == selected_bundle_path.as_uri()
+
+
+def _write_local_assets(directory: Path, missing_bundle: str | None = None) -> None:
+    """Create matching manifests and supported bundle records for local-mode tests."""
+    bundle_records = []
+    for target, python_abis in SUPPORTED_BUNDLE_TARGETS.items():
+        for python_abi in python_abis:
+            filename = f"{target}-{python_abi}.zip"
+            payload = filename.encode()
+            bundle_records.append(
+                {
+                    "target": target,
+                    "python_abi": python_abi,
+                    "url": f"https://example.invalid/{filename}",
+                    "sha256": hashlib.sha256(payload).hexdigest(),
+                }
+            )
+            if filename != missing_bundle:
+                (directory / filename).write_bytes(payload)
+
+    update_manifest = {
+        "schema_version": 2,
+        "latest_version": "1.1.0",
+        "minimum_runtime_protocol": 2,
+        "bundles": bundle_records,
+    }
+    bootstrap_manifest = {
+        "schema_version": 2,
+        "minimum_runtime_protocol": 2,
+        "bundles": bundle_records,
+        "extension": {
+            "version": "1.1.0",
+            "update_manifest_url": "https://example.invalid/update.json",
+        },
+    }
+    (directory / "openlinktoken-ext-truveta-update.json").write_text(
+        json.dumps(update_manifest), encoding="utf-8"
+    )
+    (directory / "openlinktoken-ext-truveta-bootstrap.json").write_text(
+        json.dumps(bootstrap_manifest), encoding="utf-8"
+    )
+
+
+def test_local_assets_mode_requires_bootstrap_manifest(tmp_path, monkeypatch):
+    """Local mode reports a missing generated bootstrap manifest."""
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir()
+    monkeypatch.setattr(SMOKE_SCRIPT, "_core_metadata_hashes", lambda _: {})
+
+    with pytest.raises(
+        FileNotFoundError, match="openlinktoken-ext-truveta-bootstrap.json"
+    ):
+        main(
+            [
+                "--cli",
+                str(tmp_path / "unused"),
+                "--local-assets-dir",
+                str(assets_dir),
+                "--target",
+                "linux-x64",
+                "--python-abi",
+                "cp312",
+            ]
+        )
+
+
+def test_local_assets_mode_requires_selected_bundle(tmp_path, monkeypatch):
+    """Local mode reports a missing bundle referenced by the manifests."""
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir()
+    _write_local_assets(assets_dir, missing_bundle="linux-x64-cp312.zip")
+    monkeypatch.setattr(SMOKE_SCRIPT, "_core_metadata_hashes", lambda _: {})
+
+    with pytest.raises(FileNotFoundError, match="linux-x64-cp312.zip"):
+        main(
+            [
+                "--cli",
+                str(tmp_path / "unused"),
+                "--local-assets-dir",
+                str(assets_dir),
+                "--target",
+                "linux-x64",
+                "--python-abi",
+                "cp312",
+            ]
+        )
 
 
 def test_core_metadata_hashes_accepts_setuptools_egg_info(tmp_path):

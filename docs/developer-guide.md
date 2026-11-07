@@ -14,6 +14,7 @@
   - [Continuous Integration](#continuous-integration)
     - [Cross-Repository Standalone Integration](#cross-repository-standalone-integration)
   - [Releases](#releases)
+    - [Testing Release Changes](#testing-release-changes)
   - [Independent Extension Updates](#independent-extension-updates)
     - [Bootstrap, Inspection, and Recovery](#bootstrap-inspection-and-recovery)
     - [Release Assets](#release-assets)
@@ -221,6 +222,20 @@ To rebuild an existing release from `main`, dispatch the workflow with its versi
 ```bash
 gh workflow run release.yml --ref main -f version=1.1.2 -f source_ref=main
 ```
+
+### Testing Release Changes
+
+Pull requests targeting `release/**` run `Build Release Assets` in artifact-only
+mode. The workflow builds the extension and standalone assets, then runs
+standalone smoke tests against assets generated in the same run. It uploads
+those files as Actions workflow artifacts for inspection; it does not create,
+replace, or delete GitHub Release assets.
+
+To run this validation manually, dispatch `Build Release Assets` from the target
+release ref and set `dry_run` to `true`. The input defaults to `false`; leave it
+false for a normal rebuild of an existing GitHub Release. Set `version` to
+select a release version and `source_ref` to build from another ref. If
+`source_ref` differs from the dispatch ref, provide a matching `version`.
 
 The asset workflow:
 
