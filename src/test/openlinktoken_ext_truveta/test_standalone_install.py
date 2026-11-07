@@ -1,13 +1,12 @@
 """Checks for the real-artifact installer integration harness."""
 
 import importlib.util
-import functools
-import http.server
+import http.client
 import os
 from pathlib import Path
 import ssl
 import subprocess
-import threading
+from urllib.parse import urlsplit
 
 import pytest
 from cryptography import x509
@@ -57,43 +56,43 @@ def test_endpoint_drift_fails_explicitly(harness, tmp_path):
 
 def test_tls_certificates_use_sha256(harness, tmp_path):
     """Generate an explicit chain without platform OpenSSL configuration."""
-    harness.prepare_tls(tmp_path)
-    for name in ("ca.crt", "server.crt"):
-        certificate = x509.load_pem_x509_certificate((tmp_path / name).read_bytes())
-        assert certificate.signature_hash_algorithm.name == "sha256"
+    with harness.serve_local_https(tmp_path) as (base_url, ca_certificate):
+        ca = x509.load_pem_x509_certificate(ca_certificate.read_bytes())
+        assert ca.signature_hash_algorithm.name == "sha256"
+        port = urlsplit(base_url).port
+        assert port is not None
+        context = ssl.create_default_context(cafile=str(ca_certificate))
+        connection = http.client.HTTPSConnection("127.0.0.1", port, context=context)
+        try:
+            connection.request("GET", "/")
+            assert connection.sock is not None
+            server = x509.load_der_x509_certificate(
+                connection.sock.getpeercert(binary_form=True)
+            )
+            response = connection.getresponse()
+            response.read()
+        finally:
+            connection.close()
+        assert server.signature_hash_algorithm.name == "sha256"
 
 
 def test_native_installer_https_trust(harness, tmp_path):
     """Prove native curl/PowerShell trust before expensive frozen builds."""
-    harness.prepare_tls(tmp_path)
     (tmp_path / "probe").write_text("verified TLS probe")
-    handler = functools.partial(
-        http.server.SimpleHTTPRequestHandler, directory=str(tmp_path)
-    )
-    with http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler) as server:
-        context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-        context.minimum_version = ssl.TLSVersion.TLSv1_2
-        context.load_cert_chain(tmp_path / "server.crt", tmp_path / "server.key")
-        server.socket = context.wrap_socket(server.socket, server_side=True)
-        thread = threading.Thread(target=server.serve_forever)
-        thread.start()
-        try:
-            url = f"https://127.0.0.1:{server.server_port}/probe"
-            windows = os.name == "nt"
-            script = tmp_path / ("probe.ps1" if windows else "probe.sh")
-            script.write_text(
-                f"param([string]$InstallDir)\nInvoke-RestMethod -Uri '{url}'\n"
-                if windows
-                else f"curl -fsS '{url}'\n"
-            )
-            environment = dict(os.environ, CURL_CA_BUNDLE=str(tmp_path / "ca.crt"))
-            command = harness.installer_command(
-                script, tmp_path / "install", tmp_path / "ca.crt", None
-            )
-            assert "verified TLS probe" in harness.run(command, environment, timeout=60)
-        finally:
-            server.shutdown()
-            thread.join()
+    with harness.serve_local_https(tmp_path) as (base_url, ca_certificate):
+        url = f"{base_url}/probe"
+        windows = os.name == "nt"
+        script = tmp_path / ("probe.ps1" if windows else "probe.sh")
+        script.write_text(
+            f"param([string]$InstallDir)\nInvoke-RestMethod -Uri '{url}'\n"
+            if windows
+            else f"curl -fsS '{url}'\n"
+        )
+        environment = dict(os.environ, CURL_CA_BUNDLE=str(ca_certificate))
+        command = harness.installer_command(
+            script, tmp_path / "install", ca_certificate, None
+        )
+        assert "verified TLS probe" in harness.run(command, environment, timeout=60)
 
 
 @pytest.mark.parametrize("code,fails", [(0, True), (1, False)])

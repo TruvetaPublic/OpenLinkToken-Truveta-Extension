@@ -14,6 +14,7 @@
   - [Continuous Integration](#continuous-integration)
     - [Cross-Repository Standalone Integration](#cross-repository-standalone-integration)
   - [Releases](#releases)
+    - [Testing Release Changes](#testing-release-changes)
   - [Independent Extension Updates](#independent-extension-updates)
     - [Bootstrap, Inspection, and Recovery](#bootstrap-inspection-and-recovery)
     - [Release Assets](#release-assets)
@@ -214,7 +215,27 @@ until a supported frozen CLI embeds those runtimes.
 Releases are defined in `.github/workflows/auto-release.yml` and `.github/workflows/release.yml`:
 
 1. When a `release/x.y.z` pull request is merged into `main`, `Create Release on Merge` reads `current_version` from `.bumpversion.cfg`, creates the corresponding `v<version>` tag, and creates the GitHub Release.
-2. `Build Release Assets` runs after the release is created or published. It also supports manual dispatch for rebuilding assets for an existing release.
+2. `Build Release Assets` runs after the release is created or published. It also supports manual dispatch for rebuilding assets for an existing release. Manual runs use the release tag by default; set `source_ref` to build from another ref that contains the requested version. Assets with matching names are replaced.
+
+To rebuild an existing release from `main`, dispatch the workflow with its version and source ref:
+
+```bash
+gh workflow run release.yml --ref main -f version=1.1.2 -f source_ref=main
+```
+
+### Testing Release Changes
+
+Pull requests targeting `release/**` run `Build Release Assets` in artifact-only
+mode. The workflow builds the extension and standalone assets, then runs
+standalone smoke tests against assets generated in the same run. It uploads
+those files as Actions workflow artifacts for inspection; it does not create,
+replace, or delete GitHub Release assets.
+
+To run this validation manually, dispatch `Build Release Assets` from the target
+release ref and set `dry_run` to `true`. The input defaults to `false`; leave it
+false for a normal rebuild of an existing GitHub Release. Set `version` to
+select a release version and `source_ref` to build from another ref. If
+`source_ref` differs from the dispatch ref, provide a matching `version`.
 
 The asset workflow:
 
