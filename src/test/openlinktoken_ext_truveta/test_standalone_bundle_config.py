@@ -6,7 +6,13 @@ Regression tests for standalone bundle extension discovery.
 
 import json
 import re
+import runpy
+import sys
+import types
 from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 
 
 REPOSITORY_ROOT = Path(__file__).parents[3]
@@ -314,3 +320,110 @@ def test_dev_and_release_core_sources_use_expected_branches():
     assert len(set(locked_core_refs)) == 1
     assert len(locked_core_refs[0]) == 40
     int(locked_core_refs[0], 16)
+
+
+def _run_spec_with_inventory_writer(tmp_path, inventory_writer):
+    """Execute the PyInstaller spec with controlled analysis and inventory output."""
+    analysis_results = []
+
+    def fake_analysis(*args, **kwargs):
+        data_files = list(kwargs["datas"])
+        analysis = types.SimpleNamespace(
+            pure=["analysis-module"],
+            binaries=["analysis-binary"],
+            datas=list(data_files),
+            input_datas=data_files,
+            scripts=[],
+            zipped_data=[],
+            zipfiles=[],
+        )
+        analysis_results.append(analysis)
+        return analysis
+
+    fake_hooks = types.ModuleType("PyInstaller.utils.hooks")
+    fake_hooks.collect_all = lambda package_name: ([], [], [])
+    fake_hooks.collect_submodules = lambda package_name: []
+    fake_hooks.copy_metadata = lambda distribution_name: []
+    fake_utils = types.ModuleType("PyInstaller.utils")
+    fake_utils.hooks = fake_hooks
+    fake_pyinstaller = types.ModuleType("PyInstaller")
+    fake_pyinstaller.utils = fake_utils
+    fake_inventory = types.ModuleType(
+        "openlinktoken_cli.extension.core_runtime_inventory"
+    )
+    fake_inventory.write_core_runtime_inventory = inventory_writer
+
+    original_path = list(sys.path)
+    try:
+        with patch.dict(
+            sys.modules,
+            {
+                "PyInstaller": fake_pyinstaller,
+                "PyInstaller.utils": fake_utils,
+                "PyInstaller.utils.hooks": fake_hooks,
+                "openlinktoken_cli.extension.core_runtime_inventory": fake_inventory,
+            },
+        ):
+            runpy.run_path(
+                str(SPEC_PATH),
+                init_globals={
+                    "SPECPATH": str(tmp_path),
+                    "Analysis": fake_analysis,
+                    "PYZ": lambda *args, **kwargs: object(),
+                    "EXE": lambda *args, **kwargs: object(),
+                    "COLLECT": lambda *args, **kwargs: object(),
+                },
+            )
+    finally:
+        sys.path[:] = original_path
+
+    return analysis_results[0]
+
+
+def test_spec_bundles_core_runtime_inventory(tmp_path):
+    inventory_calls = []
+    inventory_contents = '{"schema_version": 1, "distributions": {}}\n'
+
+    def write_inventory(analysis_items, output_path):
+        inventory_calls.append((list(analysis_items), output_path))
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(inventory_contents, encoding="utf-8")
+
+    analysis = _run_spec_with_inventory_writer(tmp_path, write_inventory)
+    inventory_path = tmp_path / "build" / "core_runtime_inventory.json"
+
+    assert inventory_calls == [
+        (analysis.pure + analysis.binaries + analysis.input_datas, inventory_path)
+    ]
+    assert (
+        "openlinktoken_cli/data/core_runtime_inventory.json",
+        str(inventory_path),
+        "DATA",
+    ) in analysis.datas
+    assert inventory_path.read_text(encoding="utf-8") == inventory_contents
+
+
+def test_spec_propagates_core_inventory_generation_failure(tmp_path):
+    def fail_inventory_generation(analysis_items, output_path):
+        raise RuntimeError("inventory generation failed")
+
+    with pytest.raises(RuntimeError, match="inventory generation failed"):
+        _run_spec_with_inventory_writer(tmp_path, fail_inventory_generation)
+
+
+def test_windows_standalone_smoke_propagates_python_exit_code():
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    windows_smoke = _job_block(workflow, "build-standalone").split(
+        "      - name: Smoke test (Windows)", 1
+    )[1]
+    smoke_script = windows_smoke.split(
+        "python scripts\\smoke_independent_extension_update.py `", 1
+    )[1].split("          .\\dist\\olt\\olt.exe generate-key-pair", 1)[0]
+
+    assert re.search(
+        r"--local-assets-dir release-assets\r?\n"
+        r"\s*if \(\$LASTEXITCODE -ne 0\) \{\r?\n"
+        r"\s*exit \$LASTEXITCODE\r?\n"
+        r"\s*\}",
+        smoke_script,
+    )
