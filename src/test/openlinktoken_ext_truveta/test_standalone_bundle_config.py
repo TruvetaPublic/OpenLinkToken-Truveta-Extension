@@ -177,6 +177,33 @@ def test_release_prs_and_manual_dry_runs_skip_release_lookup():
     ) in workflow
 
 
+def test_release_pr_version_comes_from_pr_checkout():
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    release_info = _job_block(workflow, "release-info")
+    release_context = (
+        REPOSITORY_ROOT / ".github" / "workflows" / "release-context.yml"
+    ).read_text(encoding="utf-8")
+    release_context_job = _job_block(release_context, "release-info")
+    checkout_step, version_steps = release_context_job.split(
+        "      - name: Determine version", 1
+    )
+    version_resolution = version_steps.split("      - name: Resolve GitHub release", 1)[
+        0
+    ]
+    build_distributions = _job_block(workflow, "build-distributions")
+
+    assert (
+        "release-tag: ${{ github.event_name == 'release' && "
+        "github.event.release.tag_name || github.event.inputs.version && "
+        "format('v{0}', github.event.inputs.version) || '' }}"
+    ) in release_info
+    assert "uses: actions/checkout@v7" in checkout_step
+    assert "ref:" not in checkout_step
+    assert "else\n            VERSION=$(sed -n" in version_resolution
+    assert ".bumpversion.cfg" in version_resolution
+    assert "|| github.sha) }}" in build_distributions
+
+
 def test_release_publishers_are_write_scoped_and_gated():
     workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
     publisher_gate = (

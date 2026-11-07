@@ -263,6 +263,42 @@ def test_local_assets_mode_requires_selected_bundle(tmp_path, monkeypatch):
         )
 
 
+def test_local_assets_mode_rejects_bundle_digest_mismatch(tmp_path, monkeypatch):
+    """Local mode rejects a bundle that does not match its manifest digest."""
+    assets_dir = tmp_path / "assets"
+    assets_dir.mkdir()
+    _write_local_assets(assets_dir)
+    invalid_digest = "0" * 64
+    for manifest_name in (
+        "openlinktoken-ext-truveta-bootstrap.json",
+        "openlinktoken-ext-truveta-update.json",
+    ):
+        manifest_path = assets_dir / manifest_name
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        selected_bundle = next(
+            bundle
+            for bundle in manifest["bundles"]
+            if bundle["target"] == "linux-x64" and bundle["python_abi"] == "cp312"
+        )
+        selected_bundle["sha256"] = invalid_digest
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setattr(SMOKE_SCRIPT, "_core_metadata_hashes", lambda _: {})
+
+    with pytest.raises(ValueError, match="Bundle SHA-256 mismatch"):
+        main(
+            [
+                "--cli",
+                str(tmp_path / "unused"),
+                "--local-assets-dir",
+                str(assets_dir),
+                "--target",
+                "linux-x64",
+                "--python-abi",
+                "cp312",
+            ]
+        )
+
+
 def test_core_metadata_hashes_accepts_setuptools_egg_info(tmp_path):
     """The frozen CLI can contain egg-info rather than dist-info."""
     internal = tmp_path / "_internal"
