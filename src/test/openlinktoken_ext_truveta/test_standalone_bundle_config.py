@@ -5,7 +5,14 @@ Regression tests for standalone bundle extension discovery.
 """
 
 import json
+import re
+import runpy
+import sys
+import types
 from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 
 
 REPOSITORY_ROOT = Path(__file__).parents[3]
@@ -27,6 +34,16 @@ CORE_DISTRIBUTIONS = (
 )
 
 
+def _job_block(workflow: str, name: str) -> str:
+    """Return one top-level job block from the release workflow."""
+    marker = f"  {name}:\n"
+    start = workflow.index(marker)
+    remaining = workflow[start + len(marker) :]
+    next_job = re.search(r"^  [A-Za-z][A-Za-z0-9_-]*:\s*$", remaining, re.MULTILINE)
+    end = start + len(marker) + next_job.start() if next_job else len(workflow)
+    return workflow[start:end]
+
+
 def test_embedded_registry_declares_truveta_extension():
     registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
     entry = registry["truveta"]
@@ -34,7 +51,7 @@ def test_embedded_registry_declares_truveta_extension():
     assert entry["module"] == "openlinktoken_ext_truveta.extension"
     assert entry["class"] == "TruvetaExtension"
     assert entry["command_name"] == "truveta"
-    assert entry["source_path"] == ""
+    assert entry["source_path"] is None
     assert entry["schema_version"] == 1
     assert entry["supported_core"] == ">=2.2.1,<3.0.0"
     assert entry["supported_core_version_range"] == ">=2.2.1,<3.0.0"
@@ -84,20 +101,42 @@ def test_release_workflow_builds_bundles_before_publishing_manifests():
 
     distributions_index = workflow.index("  build-distributions:")
     bundles_index = workflow.index("  build-extension-bundle:")
+    assemble_index = workflow.index("  assemble-release-assets:")
     publish_index = workflow.index("  publish-release-assets:")
     standalone_index = workflow.index("  build-standalone:")
-    assert distributions_index < bundles_index < publish_index < standalone_index
+    publish_standalone_index = workflow.index("  publish-standalone-assets:")
+    assert (
+        distributions_index
+        < bundles_index
+        < assemble_index
+        < publish_index
+        < standalone_index
+        < publish_standalone_index
+    )
 
     assert "needs: [release-info, build-distributions]" in workflow
     assert (
-        "needs: [release-info, build-distributions, build-extension-bundle]" in workflow
+        "needs: [release-info, build-distributions, build-extension-bundle]"
+        in _job_block(workflow, "assemble-release-assets")
     )
-    assert "needs: [release-info, publish-release-assets]" in workflow
+    assert "needs: [release-info, assemble-release-assets]" in workflow
     assert 'python-version: "3.12"' in workflow
     assert "python -m pip download" in workflow
     assert "--require-hashes" in workflow
     assert "--only-binary=:all:" in workflow
     assert 'if line.strip() != "-e ."' in workflow
+
+
+def test_manual_release_rebuild_can_override_existing_tag_source():
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    manual_rebuild_ref = (
+        "ref: ${{ github.event.inputs.source_ref || "
+        "(needs.release-info.outputs['release-found'] == 'true' && "
+        "needs.release-info.outputs.tag || github.sha) }}"
+    )
+
+    assert "      source_ref:" in workflow
+    assert workflow.count(manual_rebuild_ref) == 4
     assert '--python-abi "${{ matrix.python_abi }}"' in workflow
     assert 'bundle_args+=(--bundle "$bundle_path")' in workflow
     assert "Expected exactly six platform/ABI bundles" in workflow
@@ -105,31 +144,104 @@ def test_release_workflow_builds_bundles_before_publishing_manifests():
     assert "--output-dir release-assets" in workflow
     assert "path: release-assets/*" in workflow
 
-    bundle_workflow = workflow[
-        workflow.index("  build-extension-bundle:") : workflow.index(
-            "  publish-release-assets:"
-        )
-    ]
+    bundle_workflow = _job_block(workflow, "build-extension-bundle")
     assert bundle_workflow.count("python_abi: cp311") == 3
     assert bundle_workflow.count("python_abi: cp312") == 3
     assert 'python-version: "${{ matrix.python_version }}"' in bundle_workflow
 
-    publish_start = workflow.index("  publish-release-assets:")
-    publish_end = workflow.index("  build-standalone:", publish_start)
-    assert "fs.readdirSync('release-assets')" in workflow[publish_start:publish_end]
+    publish_workflow = _job_block(workflow, "publish-release-assets")
+    assert "fs.readdirSync('release-assets')" in publish_workflow
 
 
 def test_standalone_release_smokes_compatible_leaf_command():
     workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
-    standalone_workflow = workflow[workflow.index("  build-standalone:") :]
+    standalone_workflow = _job_block(workflow, "build-standalone")
 
     assert 'SMOKE_HOME="$(mktemp -d)"' in standalone_workflow
     assert 'HOME="$SMOKE_HOME"' in standalone_workflow
     assert "./dist/olt/olt truveta logout" in standalone_workflow
     assert standalone_workflow.count("smoke_independent_extension_update.py") == 2
-    assert standalone_workflow.count("--manifest-url") == 2
+    assert standalone_workflow.count("--local-assets-dir release-assets") == 2
+    assert "--manifest-url" not in standalone_workflow
     assert standalone_workflow.count('--target "${{ matrix.target }}"') == 2
     assert standalone_workflow.count("--python-abi cp312") == 2
+
+
+def test_release_prs_and_manual_dry_runs_skip_release_lookup():
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    dispatch = workflow.split("  workflow_dispatch:\n", 1)[1].split(
+        "  workflow_run:\n", 1
+    )[0]
+
+    assert '  pull_request:\n    branches: ["release/**"]' in workflow
+    assert "      dry_run:" in dispatch
+    assert "        default: false" in dispatch
+    assert "        type: boolean" in dispatch
+    assert (
+        "lookup-release: ${{ github.event_name != 'pull_request' "
+        "&& github.event.inputs.dry_run != 'true' }}"
+    ) in workflow
+
+
+def test_release_pr_version_comes_from_pr_checkout():
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    release_info = _job_block(workflow, "release-info")
+    release_context = (
+        REPOSITORY_ROOT / ".github" / "workflows" / "release-context.yml"
+    ).read_text(encoding="utf-8")
+    release_context_job = _job_block(release_context, "release-info")
+    checkout_step, version_steps = release_context_job.split(
+        "      - name: Determine version", 1
+    )
+    version_resolution = version_steps.split("      - name: Resolve GitHub release", 1)[
+        0
+    ]
+    build_distributions = _job_block(workflow, "build-distributions")
+
+    assert (
+        "release-tag: ${{ github.event_name == 'release' && "
+        "github.event.release.tag_name || github.event.inputs.version && "
+        "format('v{0}', github.event.inputs.version) || '' }}"
+    ) in release_info
+    assert "uses: actions/checkout@v7" in checkout_step
+    assert "ref:" not in checkout_step
+    assert "else\n            VERSION=$(sed -n" in version_resolution
+    assert ".bumpversion.cfg" in version_resolution
+    assert "|| github.sha) }}" in build_distributions
+
+
+def test_release_publishers_are_write_scoped_and_gated():
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    publisher_gate = (
+        "github.event_name != 'pull_request' "
+        "&& github.event.inputs.dry_run != 'true' "
+        "&& needs.release-info.outputs['release-found'] == 'true'"
+    )
+
+    for job_name in (
+        "build-distributions",
+        "build-extension-bundle",
+        "assemble-release-assets",
+        "build-standalone",
+    ):
+        assert "contents: write" not in _job_block(workflow, job_name)
+
+    for job_name in ("publish-release-assets", "publish-standalone-assets"):
+        job = _job_block(workflow, job_name)
+        assert "permissions:\n      contents: write" in job
+        assert publisher_gate in job
+
+
+def test_standalone_smoke_uses_release_assets_from_the_same_run():
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    assembly = _job_block(workflow, "assemble-release-assets")
+    standalone = _job_block(workflow, "build-standalone")
+
+    artifact_name = "openlinktoken-ext-truveta-release-assets-${{ env.TAG }}"
+    assert f"name: {artifact_name}" in assembly
+    assert f"name: {artifact_name}" in standalone
+    assert "needs: [release-info, assemble-release-assets]" in standalone
+    assert standalone.count("--local-assets-dir release-assets") == 2
 
 
 def test_release_workflow_verifies_oci_assets_and_supported_platforms():
@@ -208,3 +320,110 @@ def test_dev_and_release_core_sources_use_expected_branches():
     assert len(set(locked_core_refs)) == 1
     assert len(locked_core_refs[0]) == 40
     int(locked_core_refs[0], 16)
+
+
+def _run_spec_with_inventory_writer(tmp_path, inventory_writer):
+    """Execute the PyInstaller spec with controlled analysis and inventory output."""
+    analysis_results = []
+
+    def fake_analysis(*args, **kwargs):
+        data_files = list(kwargs["datas"])
+        analysis = types.SimpleNamespace(
+            pure=["analysis-module"],
+            binaries=["analysis-binary"],
+            datas=list(data_files),
+            input_datas=data_files,
+            scripts=[],
+            zipped_data=[],
+            zipfiles=[],
+        )
+        analysis_results.append(analysis)
+        return analysis
+
+    fake_hooks = types.ModuleType("PyInstaller.utils.hooks")
+    fake_hooks.collect_all = lambda package_name: ([], [], [])
+    fake_hooks.collect_submodules = lambda package_name: []
+    fake_hooks.copy_metadata = lambda distribution_name: []
+    fake_utils = types.ModuleType("PyInstaller.utils")
+    fake_utils.hooks = fake_hooks
+    fake_pyinstaller = types.ModuleType("PyInstaller")
+    fake_pyinstaller.utils = fake_utils
+    fake_inventory = types.ModuleType(
+        "openlinktoken_cli.extension.core_runtime_inventory"
+    )
+    fake_inventory.write_core_runtime_inventory = inventory_writer
+
+    original_path = list(sys.path)
+    try:
+        with patch.dict(
+            sys.modules,
+            {
+                "PyInstaller": fake_pyinstaller,
+                "PyInstaller.utils": fake_utils,
+                "PyInstaller.utils.hooks": fake_hooks,
+                "openlinktoken_cli.extension.core_runtime_inventory": fake_inventory,
+            },
+        ):
+            runpy.run_path(
+                str(SPEC_PATH),
+                init_globals={
+                    "SPECPATH": str(tmp_path),
+                    "Analysis": fake_analysis,
+                    "PYZ": lambda *args, **kwargs: object(),
+                    "EXE": lambda *args, **kwargs: object(),
+                    "COLLECT": lambda *args, **kwargs: object(),
+                },
+            )
+    finally:
+        sys.path[:] = original_path
+
+    return analysis_results[0]
+
+
+def test_spec_bundles_core_runtime_inventory(tmp_path):
+    inventory_calls = []
+    inventory_contents = '{"schema_version": 1, "distributions": {}}\n'
+
+    def write_inventory(analysis_items, output_path):
+        inventory_calls.append((list(analysis_items), output_path))
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(inventory_contents, encoding="utf-8")
+
+    analysis = _run_spec_with_inventory_writer(tmp_path, write_inventory)
+    inventory_path = tmp_path / "build" / "core_runtime_inventory.json"
+
+    assert inventory_calls == [
+        (analysis.pure + analysis.binaries + analysis.input_datas, inventory_path)
+    ]
+    assert (
+        "openlinktoken_cli/data/core_runtime_inventory.json",
+        str(inventory_path),
+        "DATA",
+    ) in analysis.datas
+    assert inventory_path.read_text(encoding="utf-8") == inventory_contents
+
+
+def test_spec_propagates_core_inventory_generation_failure(tmp_path):
+    def fail_inventory_generation(analysis_items, output_path):
+        raise RuntimeError("inventory generation failed")
+
+    with pytest.raises(RuntimeError, match="inventory generation failed"):
+        _run_spec_with_inventory_writer(tmp_path, fail_inventory_generation)
+
+
+def test_windows_standalone_smoke_propagates_python_exit_code():
+    workflow = RELEASE_WORKFLOW_PATH.read_text(encoding="utf-8")
+    windows_smoke = _job_block(workflow, "build-standalone").split(
+        "      - name: Smoke test (Windows)", 1
+    )[1]
+    smoke_script = windows_smoke.split(
+        "python scripts\\smoke_independent_extension_update.py `", 1
+    )[1].split("          .\\dist\\olt\\olt.exe generate-key-pair", 1)[0]
+
+    assert re.search(
+        r"--local-assets-dir release-assets\r?\n"
+        r"\s*if \(\$LASTEXITCODE -ne 0\) \{\r?\n"
+        r"\s*exit \$LASTEXITCODE\r?\n"
+        r"\s*\}",
+        smoke_script,
+    )

@@ -4,7 +4,7 @@
     "command_name": "truveta",
     "dist_name": "openlinktoken-ext-truveta",
     "module": "openlinktoken_ext_truveta.extension",
-    "source_path": "",
+    "source_path": null,
     "version": "1.1.2",
     "schema_version": 1,
     "update_manifest_url": "https://github.com/TruvetaPublic/OpenLinkToken-Truveta-Extension/releases/latest/download/openlinktoken-ext-truveta-update.json",
