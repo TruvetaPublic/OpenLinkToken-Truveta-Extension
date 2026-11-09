@@ -3,8 +3,10 @@
 
 import os
 import sys
+from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules, copy_metadata
+from openlinktoken_cli.extension.core_runtime_inventory import write_core_runtime_inventory
 
 block_cipher = None
 
@@ -72,6 +74,17 @@ a = Analysis(
     excludes=[],
     noarchive=False,
 )
+
+inventory_path = Path(base_dir) / "build" / "core_runtime_inventory.json"
+write_core_runtime_inventory(a.pure + a.binaries + a.datas, inventory_path)
+a.datas += [
+    (
+        "openlinktoken_cli/data/core_runtime_inventory.json",
+        str(inventory_path),
+        "DATA",
+    )
+]
+
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
