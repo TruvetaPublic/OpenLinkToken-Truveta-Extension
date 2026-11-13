@@ -7,7 +7,7 @@ dependencies = [
     "requests==2.34.2",
     "cryptography==50.0.2",
     "httpx==0.28.1",
-    "pydantic==2.14.2",
+    "pydantic==2.14.3",
     "packaging>=26.3,<27.0",
 ]
 
